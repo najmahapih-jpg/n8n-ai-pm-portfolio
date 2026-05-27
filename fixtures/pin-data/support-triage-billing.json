@@ -1,0 +1,11 @@
+{
+  "body": {
+    "customerEmail": "riley@example.test",
+    "subject": "Invoice and refund question",
+    "message": "We were charged twice for this month's invoice and need a refund applied to the account.",
+    "plan": "business",
+    "receivedAt": "2026-05-27T10:10:00-04:00",
+    "source": "email",
+    "accountId": "acct_billing_002"
+  }
+}

@@ -7,7 +7,7 @@ Local Workflow-as-Code project for building n8n automations with Codex or Claude
 - AI-assisted workflow design with template-first research.
 - Official n8n MCP workflow creation, validation, and test execution.
 - Safe Git versioning for scrubbed workflow JSON.
-- Local Docker-based export that does not depend on host mounts.
+- Docker CLI export for broad backups plus API export for exact draft workflow snapshots.
 - Secret scanning and credential scrubbing before commit.
 
 ## Repository Layout
@@ -19,6 +19,7 @@ prompts/                  Codex/Claude workflow-building prompts
 scripts/                  PowerShell automation for checks, export, scrub, validation
 workflows/raw/            Raw exports, ignored by Git
 workflows/generated/      Timestamped export batches, ignored except .gitkeep
+workflows/sdk/            Reviewable n8n Workflow SDK source of truth
 workflows/canonical/      Scrubbed workflow JSON tracked in Git
 workflows/releases/       Versioned release snapshots
 artifacts/validation/     Local validation reports, ignored by Git
@@ -50,9 +51,12 @@ pwsh -NoProfile -File .\scripts\Test-N8nConnection.ps1
 
 ```powershell
 pwsh -NoProfile -File .\scripts\Test-N8nConnection.ps1
+pwsh -NoProfile -File .\scripts\Sync-N8nWorkflowFromSdk.ps1
+pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1
 pwsh -NoProfile -File .\scripts\Export-N8nWorkflows.ps1 -OutputDirectory .\workflows\generated
+pwsh -NoProfile -File .\scripts\Export-N8nWorkflowApi.ps1 -WorkflowId RPkw9jGJ93lqs7jO -OutputDirectory .\workflows\generated
 pwsh -NoProfile -File .\scripts\Scrub-N8nWorkflow.ps1 -InputPath .\workflows\generated\<timestamp> -OutputDirectory .\workflows\canonical
-pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canonical
+pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canonical -MinimumNodes 21
 ```
 
 ## Local n8n Runtime Checklist
@@ -68,21 +72,29 @@ pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canon
 | Official MCP works | pass | `validate_workflow`, `create_workflow_from_code`, and `test_workflow` passed |
 | Community n8n-mcp docs profile works | configured | Codex config no longer passes n8n API credentials to community n8n-mcp; restart Codex to reload |
 
-## First Demo Workflow
+## Engineering Demo Workflow
 
-The first portfolio workflow is `Portfolio - Support Triage API`.
+The portfolio workflow is `Portfolio - Support Triage API`.
 
-It receives a support ticket through a webhook, validates required fields, classifies urgency with deterministic logic, and returns a structured response. The MVP avoids third-party credentials so the MCP build and export/scrub lifecycle can be demonstrated reliably before adding LLM or SaaS integrations.
+It receives a support ticket through a webhook, normalizes payload variants, validates required fields, classifies category, scores urgency, routes the owning team, computes SLA, branches escalation, creates a redacted audit event, and returns a structured response. The workflow intentionally avoids third-party credentials so the orchestration, testing, export, scrub, and release lifecycle can be demonstrated reliably.
+
+Current workflow scale:
+
+- 21 n8n nodes.
+- 8 official MCP pin-data test paths.
+- 5 category outcomes: `incident`, `billing`, `account`, `bug`, `general`.
+- 4 urgency tiers: `critical`, `urgent`, `high`, `normal`.
+- 2 handling paths: `escalated`, `standard`.
 
 ## Lifecycle
 
 1. Capture the requirement under `fixtures/requests`.
 2. Use community n8n-mcp for template and node research.
-3. Use official n8n MCP to validate, create/update, and test the local draft.
-4. Export with `Export-N8nWorkflows.ps1`.
-5. Scrub with `Scrub-N8nWorkflow.ps1`.
-6. Validate canonical JSON with `Test-N8nWorkflowJson.ps1`.
-7. Commit only docs, fixtures, scripts, canonical JSON, and release snapshots.
+3. Treat `workflows/sdk/portfolio-support-triage-api.workflow.js` as the source of truth.
+4. Run `Sync-N8nWorkflowFromSdk.ps1` to validate SDK code through official MCP, update the local draft, export via API, scrub canonical JSON, and copy the release snapshot.
+5. Run `Test-SupportTriageWorkflow.ps1` to prove all current pin-data branches.
+6. Use `Export-N8nWorkflows.ps1` for broad Docker backup exports when needed.
+7. Commit only docs, fixtures, scripts, SDK source, canonical JSON, and release snapshots.
 
 ## Resume Bullet
 
@@ -93,9 +105,9 @@ Built a local n8n Workflow-as-Code platform using Codex/Claude, official n8n MCP
 - Planning complete.
 - Project skeleton created.
 - Local n8n runtime verified.
-- Official MCP created `Portfolio - Support Triage API` as a draft workflow.
-- Official MCP pin-data test passed with `urgency=urgent`, `routingTeam=platform-support`, and `slaHours=2`.
-- Canonical workflow JSON exported, scrubbed, validated, and saved under `workflows/canonical`.
+- Official MCP created and upgraded `Portfolio - Support Triage API` as a 21-node draft workflow.
+- Official MCP multi-path pin-data tests passed for enterprise incident, urgent incident, billing, account alias, bug, general, invalid-date, and missing-field requests.
+- Canonical workflow JSON and `v0.2.0` release snapshot contain the enhanced 21-node workflow.
 
 ## Verification
 
@@ -108,6 +120,9 @@ Built a local n8n Workflow-as-Code platform using Codex/Claude, official n8n MCP
 - official MCP workflow validation: pass.
 - official MCP workflow creation: pass.
 - official MCP workflow test: pass.
-- export script: pass.
-- canonical JSON validation: pass.
-- release JSON validation: pass.
+- official MCP multi-path tests: pass for 8 payloads.
+- SDK sync script: pass.
+- export scripts: pass.
+- API draft export script: pass.
+- canonical JSON validation with 21-node floor: pass.
+- release JSON validation with 21-node floor: pass.

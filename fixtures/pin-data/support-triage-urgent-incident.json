@@ -1,0 +1,11 @@
+{
+  "body": {
+    "customerEmail": "ops@example.test",
+    "subject": "Production API outage",
+    "message": "The production API is down for one region. Requests are failing but checkout is still available.",
+    "plan": "pro",
+    "receivedAt": "2026-05-27T10:25:00-04:00",
+    "source": "status-page",
+    "accountId": "acct_urgent_001"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "body": {
+    "customerEmail": "morgan@example.test",
+    "subject": "Question about dashboard filters",
+    "message": "Can you explain how saved dashboard filters work for shared reports?",
+    "plan": "free",
+    "receivedAt": "2026-05-27T10:15:00-04:00",
+    "source": "web",
+    "accountId": "acct_general_003"
+  }
+}

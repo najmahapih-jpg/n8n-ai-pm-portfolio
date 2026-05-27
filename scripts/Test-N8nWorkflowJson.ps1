@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$Path
+  [string]$Path,
+  [int]$MinimumNodes = 0
 )
 
 Set-StrictMode -Version Latest
@@ -173,6 +174,8 @@ foreach ($file in $files) {
   }
   if (-not $json.PSObject.Properties["nodes"] -or $null -eq $json.nodes) {
     Add-Failure -Failures $failures -Message "$($file.FullName): missing nodes"
+  } elseif ($MinimumNodes -gt 0 -and @($json.nodes).Count -lt $MinimumNodes) {
+    Add-Failure -Failures $failures -Message "$($file.FullName): expected at least $MinimumNodes nodes, found $(@($json.nodes).Count)"
   }
   if (-not $json.PSObject.Properties["connections"] -or $null -eq $json.connections) {
     Add-Failure -Failures $failures -Message "$($file.FullName): missing connections"

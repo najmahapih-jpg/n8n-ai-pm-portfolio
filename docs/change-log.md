@@ -10,3 +10,8 @@
 - Added `NODES_EXCLUDE` to the local n8n Docker Compose runtime to block command execution and local file read/write nodes.
 - Created and tested `Portfolio - Support Triage API` through official n8n MCP.
 - Exported, scrubbed, validated, and released the first canonical workflow JSON.
+- Upgraded `Portfolio - Support Triage API` to a 21-node SupportOps incident triage workflow.
+- Added multi-path fixtures for enterprise incident, urgent incident, billing, account alias, bug, general, invalid-date, and missing-field scenarios.
+- Added tracked workflow SDK source for reviewable official MCP updates.
+- Added API draft export and minimum-node JSON validation so enhanced draft snapshots cannot regress to the old 4-node export unnoticed.
+- Added source-to-artifact SDK sync automation and an 8-case official MCP regression suite covering account, bug, urgent, alias, invalid-date, and audit-redaction behavior.

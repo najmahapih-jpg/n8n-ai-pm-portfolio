@@ -829,7 +829,7 @@ $tmp = Join-Path $env:TEMP "n8n-scrub-test.json"
       "type": "n8n-nodes-base.httpRequest",
       "parameters": {
         "headers": {
-          "Authorization": "Bearer fake-secret-token-value"
+          "Authorization": "__SCRUBBED__"
         }
       },
       "credentials": {

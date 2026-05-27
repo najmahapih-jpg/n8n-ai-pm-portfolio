@@ -6,7 +6,7 @@ Portfolio - Support Triage API
 
 ## Business Outcome
 
-Receive support tickets through a webhook, classify urgency, normalize fields, return a structured response, and record enough metadata for later storage integration.
+Receive support tickets through a webhook, normalize payload variants, validate required fields, classify ticket category, score urgency, route to the owning team, compute SLA policy, branch escalation, create a redacted audit event, and return a structured response.
 
 ## Trigger
 
@@ -19,26 +19,43 @@ HTTP POST webhook at `/portfolio/support-triage`.
 - `message`
 - `plan`
 - `receivedAt`
+- `source`
+- `accountId`
 
 ## Outputs
 
 - `ticketId`
 - `urgency`
 - `summary`
+- `category`
+- `urgencyScore`
 - `routingTeam`
 - `slaHours`
+- `dueAt`
+- `escalationRequired`
+- `handlingPath`
+- `auditEventId`
 
 ## External Services
 
-None in MVP. Use deterministic logic first. Add LLM classification in a later workflow version after credential handling is documented.
+None in v0.2.0. The workflow uses deterministic local policy logic first; add LLM classification in a later workflow version after credential handling is documented.
 
 ## Credentials Required
 
-None in MVP.
+None in v0.2.0.
 
 ## Test Data
 
-Use `fixtures/pin-data/support-triage-input.json`.
+Use:
+
+- `fixtures/pin-data/support-triage-enterprise-incident.json`
+- `fixtures/pin-data/support-triage-urgent-incident.json`
+- `fixtures/pin-data/support-triage-billing.json`
+- `fixtures/pin-data/support-triage-account-alias.json`
+- `fixtures/pin-data/support-triage-bug.json`
+- `fixtures/pin-data/support-triage-general.json`
+- `fixtures/pin-data/support-triage-invalid-date.json`
+- `fixtures/pin-data/support-triage-missing-field.json`
 
 ## Error Handling
 
@@ -52,5 +69,6 @@ Do not store full customer messages in Git fixtures beyond synthetic examples.
 
 - Draft workflow exists in local n8n.
 - Official MCP validation passes.
-- Pin-data test passes.
+- Pin-data tests pass for enterprise incident, urgent incident, billing, account alias, bug, general, invalid-date, and missing-field paths.
 - Exported workflow is scrubbed and saved in `workflows/canonical`.
+- Release snapshot exists as `workflows/releases/support-triage-v0.2.0.json`.
