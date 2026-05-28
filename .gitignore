@@ -22,6 +22,9 @@ artifacts/validation/*
 *.tmp
 *.bak
 
+# Node dependency install output
+node_modules/
+
 # OS/editor
 Thumbs.db
 .DS_Store

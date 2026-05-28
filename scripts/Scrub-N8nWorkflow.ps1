@@ -8,6 +8,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$secretRules = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot "lib\Secret-Patterns.psd1")
+$sensitiveNames = [string[]]$secretRules.SensitiveNames
+$rawSecretPatterns = [string[]]$secretRules.RawSecretPatterns
 
 function Exit-WithCode {
   param(
@@ -43,21 +46,7 @@ function Get-NormalizedName {
 function Test-SensitiveName {
   param([string]$Name)
   $normalized = Get-NormalizedName -Name $Name
-  $sensitive = @(
-    "authorization",
-    "cookie",
-    "xapikey",
-    "apikey",
-    "accesstoken",
-    "refreshtoken",
-    "clientsecret",
-    "clientsecret",
-    "password",
-    "token",
-    "secret",
-    "sessiontoken"
-  )
-  return $sensitive -contains $normalized
+  return $sensitiveNames -contains $normalized
 }
 
 function Scrub-Object {
@@ -100,15 +89,7 @@ function Scrub-Object {
 function Test-SuspiciousSecret {
   param([string]$Raw)
 
-  $patterns = @(
-    'sk-[A-Za-z0-9_\-]{20,}',
-    'Bearer\s+[A-Za-z0-9_\.\-/+=]{20,}',
-    '(?i)"(authorization|cookie|x-api-key|apiKey|accessToken|refreshToken|clientSecret|client_secret|password|token|secret|sessionToken)"\s*:\s*"(?!__SCRUBBED__")',
-    '[A-Za-z]:\\Users\\',
-    '"\s*:\s*"/(Users|home|etc|var|tmp)/'
-  )
-
-  foreach ($pattern in $patterns) {
+  foreach ($pattern in $rawSecretPatterns) {
     if ($Raw -match $pattern) {
       return $pattern
     }
@@ -142,7 +123,22 @@ foreach ($file in $files) {
   try {
     $workflow = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -Depth 100
 
-    foreach ($name in @("id", "versionId", "shared", "usedCredentials", "staticData", "versionMetadata", "ownedBy", "homeProject")) {
+    foreach ($name in @(
+      "id",
+      "versionId",
+      "shared",
+      "usedCredentials",
+      "staticData",
+      "versionMetadata",
+      "ownedBy",
+      "homeProject",
+      "updatedAt",
+      "createdAt",
+      "activeVersionId",
+      "activeVersion",
+      "versionCounter",
+      "triggerCount"
+    )) {
       Remove-PropertyIfExists -Object $workflow -Name $name
     }
 
@@ -151,8 +147,20 @@ foreach ($file in $files) {
     }
 
     if ($workflow.PSObject.Properties["nodes"]) {
+      $stickyIndex = 1
       foreach ($node in $workflow.nodes) {
+        Remove-PropertyIfExists -Object $node -Name "id"
+        Remove-PropertyIfExists -Object $node -Name "webhookId"
         Remove-PropertyIfExists -Object $node -Name "credentials"
+        if (
+          $node.PSObject.Properties["type"] -and
+          [string]$node.type -eq "n8n-nodes-base.stickyNote" -and
+          $node.PSObject.Properties["name"] -and
+          [string]$node.name -match '^Sticky Note '
+        ) {
+          $node.name = "Sticky Note $stickyIndex"
+          $stickyIndex += 1
+        }
         Scrub-Object -Value $node.parameters
       }
     }

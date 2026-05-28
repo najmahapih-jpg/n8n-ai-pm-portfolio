@@ -12,6 +12,14 @@ This project supports outbound Feishu group notifications from the local n8n con
 
 Inbound Feishu event callbacks, card button callbacks, and bidirectional chat require Feishu to reach your n8n webhook. That needs public deployment or a tunnel such as cloudflared, ngrok, or frp. This project does not enable that path.
 
+## Best No-Deployment Options
+
+1. Outbound-only custom bot alerts. This is the recommended path for this portfolio project. Keep n8n local, send escalation cards to Feishu with HTTP Request, and validate the whole workflow through pin-data tests. No public URL is required because the network call starts from your machine.
+2. Manual live-send validation. Put a real custom bot webhook in your local Docker environment, run one escalation fixture, verify the message appears in a private test group, then remove or rotate the webhook if needed. This proves real integration without deploying the n8n instance.
+3. Temporary tunnel only for callbacks. If you later need slash commands, bot mentions, card buttons, or event subscriptions, use a short-lived cloudflared/ngrok/frp tunnel while testing. Treat that as callback validation, not as production deployment.
+
+For now, avoid path 3 unless the project requirement changes. The current workflow is intentionally one-way because it is simpler, safer, and enough to demonstrate a real business integration.
+
 ## Feishu Bot Configuration
 
 1. Open the target Feishu group.
@@ -63,6 +71,19 @@ pwsh -NoProfile -File .\scripts\Test-FeishuWorkflowJson.ps1
 ```
 
 Expected result: escalation cases report `feishuDelivery.status=skipped` when no webhook is configured. After a real webhook is configured, those same escalation cases will attempt live sends.
+
+For a no-deployment live-send smoke test:
+
+1. Create a private Feishu test group and add a custom bot.
+2. Add only the webhook and optional signing secret to your local Docker environment.
+3. Recreate the local n8n containers.
+4. Run one escalation case with the explicit send assertion:
+
+```powershell
+pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1 -CaseName enterprise-incident -FeishuMode sent
+```
+
+5. Confirm one Feishu card appears in the private test group.
 
 ## Operational Notes
 

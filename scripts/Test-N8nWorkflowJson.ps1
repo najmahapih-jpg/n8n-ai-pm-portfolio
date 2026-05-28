@@ -6,6 +6,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$secretRules = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot "lib\Secret-Patterns.psd1")
+$sensitiveNames = [string[]]$secretRules.SensitiveNames
+$rawSecretPatterns = [string[]]$secretRules.RawSecretPatterns
 
 function Add-Failure {
   param(
@@ -56,20 +59,7 @@ function Get-NormalizedName {
 function Test-SensitiveName {
   param([string]$Name)
   $normalized = Get-NormalizedName -Name $Name
-  $sensitive = @(
-    "authorization",
-    "cookie",
-    "xapikey",
-    "apikey",
-    "accesstoken",
-    "refreshtoken",
-    "clientsecret",
-    "password",
-    "token",
-    "secret",
-    "sessiontoken"
-  )
-  return $sensitive -contains $normalized
+  return $sensitiveNames -contains $normalized
 }
 
 function Test-ValueIsScrubbedOrEmpty {
@@ -150,16 +140,6 @@ if ($files.Count -eq 0) {
 }
 
 $failures = New-Object System.Collections.Generic.List[string]
-$secretPatterns = @(
-  '"credentials"\s*:',
-  '"usedCredentials"\s*:',
-  'sk-[A-Za-z0-9_\-]{20,}',
-  'Bearer\s+[A-Za-z0-9_\.\-/+=]{20,}',
-  '(?i)"(authorization|cookie|x-api-key|apiKey|accessToken|refreshToken|clientSecret|client_secret|password|token|secret|sessionToken)"\s*:\s*"(?!__SCRUBBED__")',
-  '[A-Za-z]:\\Users\\',
-  '"\s*:\s*"/(Users|home|etc|var|tmp)/'
-)
-
 foreach ($file in $files) {
   $raw = Get-Content -LiteralPath $file.FullName -Raw
   try {
@@ -206,7 +186,7 @@ foreach ($file in $files) {
 
   Test-StructuredSecrets -Value $json -FileName $file.FullName -Failures $failures
 
-  foreach ($pattern in $secretPatterns) {
+  foreach ($pattern in $rawSecretPatterns) {
     if ($raw -match $pattern) {
       Add-Failure -Failures $failures -Message "$($file.FullName): matched forbidden pattern '$pattern'"
     }

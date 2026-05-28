@@ -2,7 +2,10 @@ param(
   [string]$WorkflowId = "RPkw9jGJ93lqs7jO",
   [string]$PinDataDirectory = ".\fixtures\pin-data",
   [string]$McpUrl = "http://localhost:5678/mcp-server/http",
-  [string]$McpToken = $env:N8N_MCP_TOKEN
+  [string]$McpToken = $env:N8N_MCP_TOKEN,
+  [ValidateSet("skipped", "sent", "any")]
+  [string]$FeishuMode = "skipped",
+  [string[]]$CaseName = @()
 )
 
 Set-StrictMode -Version Latest
@@ -216,6 +219,18 @@ $cases = @(
   }
 )
 
+if ($CaseName.Count -gt 0) {
+  $requestedCases = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($name in $CaseName) {
+    $requestedCases.Add($name) | Out-Null
+  }
+
+  $cases = @($cases | Where-Object { $requestedCases.Contains([string]$_.Name) })
+  if ($cases.Count -eq 0) {
+    Exit-WithCode -Code 2 -Message "No matching cases found for -CaseName: $($CaseName -join ', ')"
+  }
+}
+
 $rows = foreach ($case in $cases) {
   $fixturePath = Join-Path $PinDataDirectory $case.File
   if (-not (Test-Path -LiteralPath $fixturePath)) {
@@ -258,7 +273,12 @@ $rows = foreach ($case in $cases) {
     Assert-Equal -Actual $response.escalationRequired -Expected $expected.EscalationRequired -Label "$($case.Name) escalationRequired"
     Assert-Equal -Actual $response.policyVersion -Expected $expected.PolicyVersion -Label "$($case.Name) policyVersion"
     if ($expected.ContainsKey("FeishuStatus")) {
-      Assert-Equal -Actual $response.feishuDelivery.status -Expected $expected.FeishuStatus -Label "$($case.Name) feishuDelivery.status"
+      if ($FeishuMode -ne "any") {
+        Assert-Equal -Actual $response.feishuDelivery.status -Expected $FeishuMode -Label "$($case.Name) feishuDelivery.status"
+      }
+      if ($FeishuMode -eq "sent") {
+        Assert-Equal -Actual $response.feishuDelivery.configured -Expected $true -Label "$($case.Name) feishuDelivery.configured"
+      }
     }
 
     if ($expected.DueAtParseable) {

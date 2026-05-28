@@ -17,4 +17,20 @@
 
 ## Dated Decision Notes
 
-No failover or maintenance-profile decisions recorded yet.
+### 2026-05-28: Official MCP Owns Writes
+
+Use official n8n MCP as the normal workflow writer because it consumes the Workflow SDK source path used by this repository and keeps create/update/test operations on one authoritative surface.
+
+Rejected: community n8n-mcp as a simultaneous writer | it is excellent for node/template research, but two writable MCPs against the same local instance create avoidable race and ownership risk.
+
+### 2026-05-28: Git Stores Scrubbed Artifacts Only
+
+Commit Workflow SDK source, canonical scrubbed JSON, and release snapshots. Do not commit raw exports, execution payloads, credential references, private webhook URLs, or local `.env` files.
+
+Rejected: commit direct n8n exports as the source of truth | raw exports are noisy, include instance metadata, and are harder to review than SDK source.
+
+### 2026-05-28: Local Feishu Is Outbound-Only
+
+Keep Feishu integration as local outbound custom bot notifications until a requirement needs inbound callbacks. This avoids deployment, public webhook exposure, and app-level callback verification work while still proving a real integration path.
+
+Rejected: bidirectional Feishu bot in this project phase | event subscriptions and card callbacks require a public callback URL or tunnel and add operational scope beyond the portfolio workflow.

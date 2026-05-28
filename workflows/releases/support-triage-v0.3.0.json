@@ -1,14 +1,11 @@
 {
-  "updatedAt": "2026-05-28T03:39:34.555Z",
-  "createdAt": "2026-05-27T11:25:29.64Z",
   "name": "Portfolio - Support Triage API",
   "description": "Local Feishu SupportOps triage: validate tickets, classify/score/route/SLA, escalate, create redacted audit events, optionally notify Feishu, respond.",
   "active": false,
   "isArchived": false,
   "nodes": [
     {
-      "id": "f1d9940d-cb20-44d8-99e1-60cf4f00a4a0",
-      "name": "Sticky Note 8e377bcb",
+      "name": "Sticky Note 1",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -23,7 +20,6 @@
       }
     },
     {
-      "id": "ddc9ae7b-ffb0-450e-a1e9-25468a4733c4",
       "name": "Receive Support Ticket",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -39,11 +35,9 @@
         "options": {
           "allowedOrigins": "*"
         }
-      },
-      "webhookId": "dcd357ac-12ea-4725-9ea8-0a8916c86a74"
+      }
     },
     {
-      "id": "38d9a074-e9ba-4625-83ff-654871c0c338",
       "name": "Normalize Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -58,7 +52,6 @@
       }
     },
     {
-      "id": "1b5fec29-4817-48ca-b2d8-15a315391fe5",
       "name": "Validate Required Fields",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -91,7 +84,6 @@
       }
     },
     {
-      "id": "8e9b892a-252d-4b2e-97a7-2cc729a890e0",
       "name": "Generate Ticket Metadata",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -106,7 +98,6 @@
       }
     },
     {
-      "id": "04f239b2-c959-45b0-84cb-0dbcf3f4918e",
       "name": "Redact Customer PII",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -121,7 +112,6 @@
       }
     },
     {
-      "id": "84fc779e-c003-40f6-9cb6-2c64194cf1c3",
       "name": "Classify Ticket Category",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -136,7 +126,6 @@
       }
     },
     {
-      "id": "15886440-ef16-485d-b657-55d259e2bfe9",
       "name": "Score Urgency",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -151,7 +140,6 @@
       }
     },
     {
-      "id": "3fadcfe9-0924-4815-8328-1c6d70da58d9",
       "name": "Route Owning Team",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -166,7 +154,6 @@
       }
     },
     {
-      "id": "af360f38-14f9-496f-8bbd-aaa757536e5b",
       "name": "Build SLA Policy",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -181,7 +168,6 @@
       }
     },
     {
-      "id": "951f58a7-c381-40ac-9515-049299d095dc",
       "name": "Escalation Needed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -214,7 +200,6 @@
       }
     },
     {
-      "id": "e8a76c41-7ee5-4b4b-b538-53b122f9bbb7",
       "name": "Build Escalation Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -229,7 +214,6 @@
       }
     },
     {
-      "id": "0e5ab8cb-c0cc-49ed-9e87-b005b5df74d0",
       "name": "Create Escalation Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -244,7 +228,6 @@
       }
     },
     {
-      "id": "be23143a-9c39-4a3f-82bd-df2edeeec2c8",
       "name": "Load Feishu Runtime Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -274,7 +257,6 @@
       }
     },
     {
-      "id": "a759bcaa-b9c3-4c7d-a24b-c07ebd4c2dec",
       "name": "Build Feishu Alert Card",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -289,7 +271,6 @@
       }
     },
     {
-      "id": "a3f8ca91-7b90-4119-b6b0-e64601f41f46",
       "name": "Feishu Enabled?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -322,7 +303,6 @@
       }
     },
     {
-      "id": "70048307-d606-4a6c-b9a7-8382aab279d0",
       "name": "Send Feishu Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -361,7 +341,6 @@
       }
     },
     {
-      "id": "db1dfd43-82b1-4a8f-b903-578a5bc3b6dd",
       "name": "Record Feishu Sent",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -376,7 +355,6 @@
       }
     },
     {
-      "id": "470b44b9-51ff-4bce-a6c6-f789c525e3b9",
       "name": "Build Escalation Customer Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -391,7 +369,6 @@
       }
     },
     {
-      "id": "4d6b338f-53a9-4ce0-8ace-34417ca73bb2",
       "name": "Return Escalation Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -416,7 +393,6 @@
       }
     },
     {
-      "id": "ad333c75-51ba-48a7-b4b6-8a0a686bf5b9",
       "name": "Record Feishu Skipped",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -431,7 +407,6 @@
       }
     },
     {
-      "id": "5e3b7f3d-410b-472a-be0a-f916b4aceb3f",
       "name": "Build Standard Handling Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -446,7 +421,6 @@
       }
     },
     {
-      "id": "f0cda936-4d9b-4d48-9c40-e39af56c03bd",
       "name": "Create Standard Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -461,7 +435,6 @@
       }
     },
     {
-      "id": "f65d496e-063e-45df-8cb9-80fefa7c0476",
       "name": "Build Standard Customer Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -476,7 +449,6 @@
       }
     },
     {
-      "id": "9dc2683c-8f05-4540-b514-c5c877bde7be",
       "name": "Return Standard Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -501,7 +473,6 @@
       }
     },
     {
-      "id": "a1554df4-a4ee-460f-a7df-52d3e5099942",
       "name": "Build Validation Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -516,7 +487,6 @@
       }
     },
     {
-      "id": "0a8c7f0b-3ef6-4f20-be02-3b1e34f2c753",
       "name": "Return Validation Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -826,9 +796,5 @@
     "aiBuilderAssisted": true,
     "builderVariant": "mcp"
   },
-  "activeVersionId": null,
-  "versionCounter": 10,
-  "triggerCount": 0,
-  "tags": [],
-  "activeVersion": null
+  "tags": []
 }

@@ -7,6 +7,7 @@ Local Workflow-as-Code project for building n8n automations with Codex or Claude
 - AI-assisted workflow design with template-first research.
 - Official n8n MCP workflow creation, validation, and test execution.
 - Safe Git versioning for scrubbed workflow JSON.
+- Deterministic canonical/release snapshots without volatile n8n instance IDs.
 - Docker CLI export for broad backups plus API export for exact draft workflow snapshots.
 - Secret scanning and credential scrubbing before commit.
 
@@ -17,12 +18,15 @@ docs/                     Architecture, MCP policy, lifecycle, demo notes
 fixtures/                 Synthetic requests and pin data
 prompts/                  Codex/Claude workflow-building prompts
 scripts/                  PowerShell automation for checks, export, scrub, validation
+.github/workflows/        CI for offline validation and repository secret checks
+.githooks/                Optional local Git hooks backed by the same static checks
 workflows/raw/            Raw exports, ignored by Git
 workflows/generated/      Timestamped export batches, ignored except .gitkeep
 workflows/sdk/            Reviewable n8n Workflow SDK source of truth
 workflows/canonical/      Scrubbed workflow JSON tracked in Git
 workflows/releases/       Versioned release snapshots
 artifacts/validation/     Local validation reports, ignored by Git
+package.json              Locked Workflow SDK dependency and verification scripts
 ```
 
 ## MCP Split
@@ -37,19 +41,33 @@ The normal agent session should configure community `n8n-mcp` without `N8N_API_U
 ## Setup
 
 1. Start Docker Desktop and the local n8n stack.
-2. Set `N8N_API_KEY` and `N8N_MCP_TOKEN` in your shell environment.
-3. Keep community `n8n-mcp` in docs/design mode by omitting `N8N_API_URL` and `N8N_API_KEY` from its normal Codex/Claude profile.
-4. Run the preflight:
+2. Install the locked JavaScript dependency used by Workflow SDK source files:
+
+```powershell
+npm ci
+```
+
+3. Set `N8N_API_KEY` and `N8N_MCP_TOKEN` in your shell environment.
+4. Keep community `n8n-mcp` in docs/design mode by omitting `N8N_API_URL` and `N8N_API_KEY` from its normal Codex/Claude profile.
+5. Install the optional local pre-commit hook:
+
+```powershell
+npm run hooks:install
+```
+
+6. Run the preflight:
 
 ```powershell
 pwsh -NoProfile -File .\scripts\Test-N8nConnection.ps1
 ```
 
-5. Build or update workflows through official n8n MCP, then export and scrub before committing.
+7. Build or update workflows through official n8n MCP, then export and scrub before committing.
 
 ## Quick Commands
 
 ```powershell
+npm run verify:static
+npm run verify:live
 pwsh -NoProfile -File .\scripts\Test-N8nConnection.ps1
 pwsh -NoProfile -File .\scripts\Sync-N8nWorkflowFromSdk.ps1
 pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1
@@ -58,6 +76,12 @@ pwsh -NoProfile -File .\scripts\Export-N8nWorkflows.ps1 -OutputDirectory .\workf
 pwsh -NoProfile -File .\scripts\Export-N8nWorkflowApi.ps1 -WorkflowId RPkw9jGJ93lqs7jO -OutputDirectory .\workflows\generated
 pwsh -NoProfile -File .\scripts\Scrub-N8nWorkflow.ps1 -InputPath .\workflows\generated\<timestamp> -OutputDirectory .\workflows\canonical
 pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canonical -MinimumNodes 27
+```
+
+Use this one-case smoke test only after a real Feishu webhook is configured in the local n8n Docker environment:
+
+```powershell
+pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1 -CaseName enterprise-incident -FeishuMode sent
 ```
 
 ## Local n8n Runtime Checklist
@@ -104,6 +128,8 @@ Current workflow scale:
 
 This project supports one-way local n8n to Feishu group notifications. See `docs/feishu-local-setup.md`.
 
+Best no-deployment path: use Feishu custom bot webhooks for outbound alerts only. n8n stays local and calls Feishu directly. If you later need Feishu to call back into n8n, use a temporary tunnel for validation or deploy a small public webhook endpoint; the current project intentionally avoids that path.
+
 Set these only in your local Docker environment, not in Git:
 
 ```text
@@ -119,6 +145,7 @@ Built a local n8n Workflow-as-Code platform using Codex/Claude, official n8n MCP
 
 - Planning complete.
 - Project skeleton created.
+- Package metadata, Apache-2.0 license, CI, and optional local pre-commit checks added.
 - Local n8n runtime verified.
 - Official MCP created and upgraded `Portfolio - Support Triage API` as a 27-node local Feishu draft workflow.
 - Official MCP multi-path pin-data tests passed for enterprise incident, urgent incident, billing, account alias, bug, general, invalid-date, and missing-field requests.
