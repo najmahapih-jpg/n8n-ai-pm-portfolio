@@ -170,43 +170,43 @@ $cases = @(
     Name = "enterprise-incident"
     File = "support-triage-enterprise-incident.json"
     Node = "Build Escalation Customer Response"
-    Expected = @{ StatusCode = 200; Ok = $true; Category = "incident"; Urgency = "critical"; RoutingTeam = "platform-support"; SlaHours = 1; HandlingPath = "escalated"; EscalationRequired = $true; PolicyVersion = "supportops-triage-v0.2.0"; AuditRedacted = $true; DueAtParseable = $true }
+    Expected = @{ StatusCode = 200; Ok = $true; Category = "incident"; Urgency = "critical"; RoutingTeam = "platform-support"; SlaHours = 1; HandlingPath = "escalated"; EscalationRequired = $true; PolicyVersion = "supportops-triage-v0.3.0-local-feishu"; FeishuStatus = "skipped"; AuditRedacted = $true; DueAtParseable = $true }
   },
   @{
     Name = "urgent-incident"
     File = "support-triage-urgent-incident.json"
     Node = "Build Escalation Customer Response"
-    Expected = @{ StatusCode = 200; Ok = $true; Category = "incident"; Urgency = "urgent"; RoutingTeam = "platform-support"; SlaHours = 2; HandlingPath = "escalated"; EscalationRequired = $true; PolicyVersion = "supportops-triage-v0.2.0"; AuditRedacted = $true; DueAtParseable = $true }
+    Expected = @{ StatusCode = 200; Ok = $true; Category = "incident"; Urgency = "urgent"; RoutingTeam = "platform-support"; SlaHours = 2; HandlingPath = "escalated"; EscalationRequired = $true; PolicyVersion = "supportops-triage-v0.3.0-local-feishu"; FeishuStatus = "skipped"; AuditRedacted = $true; DueAtParseable = $true }
   },
   @{
     Name = "billing"
     File = "support-triage-billing.json"
     Node = "Build Standard Customer Response"
-    Expected = @{ StatusCode = 200; Ok = $true; Category = "billing"; Urgency = "high"; RoutingTeam = "billing-support"; SlaHours = 8; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.2.0"; AuditRedacted = $true; DueAtParseable = $true }
+    Expected = @{ StatusCode = 200; Ok = $true; Category = "billing"; Urgency = "high"; RoutingTeam = "billing-support"; SlaHours = 8; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.3.0-local-feishu"; AuditRedacted = $true; DueAtParseable = $true }
   },
   @{
     Name = "account-alias"
     File = "support-triage-account-alias.json"
     Node = "Build Standard Customer Response"
-    Expected = @{ StatusCode = 200; Ok = $true; Category = "account"; Urgency = "normal"; RoutingTeam = "account-success"; SlaHours = 24; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.2.0"; AuditRedacted = $true; DueAtParseable = $true }
+    Expected = @{ StatusCode = 200; Ok = $true; Category = "account"; Urgency = "normal"; RoutingTeam = "account-success"; SlaHours = 24; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.3.0-local-feishu"; AuditRedacted = $true; DueAtParseable = $true }
   },
   @{
     Name = "bug"
     File = "support-triage-bug.json"
     Node = "Build Standard Customer Response"
-    Expected = @{ StatusCode = 200; Ok = $true; Category = "bug"; Urgency = "normal"; RoutingTeam = "product-engineering"; SlaHours = 24; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.2.0"; AuditRedacted = $true; DueAtParseable = $true }
+    Expected = @{ StatusCode = 200; Ok = $true; Category = "bug"; Urgency = "normal"; RoutingTeam = "product-engineering"; SlaHours = 24; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.3.0-local-feishu"; AuditRedacted = $true; DueAtParseable = $true }
   },
   @{
     Name = "general"
     File = "support-triage-general.json"
     Node = "Build Standard Customer Response"
-    Expected = @{ StatusCode = 200; Ok = $true; Category = "general"; Urgency = "normal"; RoutingTeam = "general-support"; SlaHours = 24; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.2.0"; AuditRedacted = $true; DueAtParseable = $true }
+    Expected = @{ StatusCode = 200; Ok = $true; Category = "general"; Urgency = "normal"; RoutingTeam = "general-support"; SlaHours = 24; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.3.0-local-feishu"; AuditRedacted = $true; DueAtParseable = $true }
   },
   @{
     Name = "invalid-date"
     File = "support-triage-invalid-date.json"
     Node = "Build Standard Customer Response"
-    Expected = @{ StatusCode = 200; Ok = $true; Category = "general"; Urgency = "normal"; RoutingTeam = "general-support"; SlaHours = 24; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.2.0"; AuditRedacted = $true; DueAtParseable = $true }
+    Expected = @{ StatusCode = 200; Ok = $true; Category = "general"; Urgency = "normal"; RoutingTeam = "general-support"; SlaHours = 24; HandlingPath = "standard"; EscalationRequired = $false; PolicyVersion = "supportops-triage-v0.3.0-local-feishu"; AuditRedacted = $true; DueAtParseable = $true }
   },
   @{
     Name = "missing-field"
@@ -257,6 +257,9 @@ $rows = foreach ($case in $cases) {
     Assert-Equal -Actual $response.handlingPath -Expected $expected.HandlingPath -Label "$($case.Name) handlingPath"
     Assert-Equal -Actual $response.escalationRequired -Expected $expected.EscalationRequired -Label "$($case.Name) escalationRequired"
     Assert-Equal -Actual $response.policyVersion -Expected $expected.PolicyVersion -Label "$($case.Name) policyVersion"
+    if ($expected.ContainsKey("FeishuStatus")) {
+      Assert-Equal -Actual $response.feishuDelivery.status -Expected $expected.FeishuStatus -Label "$($case.Name) feishuDelivery.status"
+    }
 
     if ($expected.DueAtParseable) {
       Assert-ParseableDate -Value $response.dueAt -Label "$($case.Name) dueAt"
@@ -281,6 +284,7 @@ $rows = foreach ($case in $cases) {
     RoutingTeam = Get-OptionalProperty -Object $response -Name "routingTeam"
     SlaHours = Get-OptionalProperty -Object $response -Name "slaHours"
     HandlingPath = Get-OptionalProperty -Object $response -Name "handlingPath"
+    FeishuStatus = (Get-OptionalProperty -Object (Get-OptionalProperty -Object $response -Name "feishuDelivery") -Name "status")
   }
 }
 

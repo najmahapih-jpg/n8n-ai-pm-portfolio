@@ -185,7 +185,7 @@ return [{
     ...input,
     ticketId,
     status: 'triaged',
-    policyVersion: 'supportops-triage-v0.2.0',
+    policyVersion: 'supportops-triage-v0.3.0-local-feishu',
     generatedAt: new Date().toISOString()
   }
 }];`
@@ -194,7 +194,7 @@ return [{
   output: [{
     ticketId: 'TKT-1A2B3C4D',
     status: 'triaged',
-    policyVersion: 'supportops-triage-v0.2.0'
+    policyVersion: 'supportops-triage-v0.3.0-local-feishu'
   }]
 });
 
@@ -490,12 +490,273 @@ return [{
   }]
 });
 
+const loadFeishuRuntimeConfig = node({
+  type: 'n8n-nodes-base.set',
+  version: 3.4,
+  config: {
+    name: 'Load Feishu Runtime Config',
+    position: [4040, 120],
+    parameters: {
+      mode: 'manual',
+      includeOtherFields: true,
+      assignments: {
+        assignments: [
+          {
+            id: 'feishu-webhook-url',
+            name: 'feishuWebhookUrl',
+            value: expr('{{ $env.FEISHU_BOT_WEBHOOK_URL || "" }}'),
+            type: 'string'
+          },
+          {
+            id: 'feishu-signing-secret',
+            name: 'feishuSigningSecret',
+            value: expr('{{ $env.FEISHU_BOT_SIGNING_SECRET || "" }}'),
+            type: 'string'
+          }
+        ]
+      }
+    }
+  },
+  output: [{
+    feishuWebhookUrl: '',
+    feishuSigningSecret: ''
+  }]
+});
+
+const buildFeishuAlertCard = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Build Feishu Alert Card',
+    position: [4360, 120],
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `const input = items[0].json;
+const webhookUrl = String(input.feishuWebhookUrl ?? '').trim();
+const signingSecret = String(input.feishuSigningSecret ?? '').trim();
+const { feishuWebhookUrl, feishuSigningSecret, ...safeInput } = input;
+const timestamp = Math.floor(Date.now() / 1000).toString();
+let sign = '';
+if (signingSecret) {
+  const crypto = require('crypto');
+  const stringToSign = timestamp + '\\n' + signingSecret;
+  sign = crypto.createHmac('sha256', Buffer.from(stringToSign, 'utf8')).update(Buffer.alloc(0)).digest('base64');
+}
+
+const severityTemplate = input.urgency === 'critical' ? 'red' : 'orange';
+const summary = input.subject + ' - ' + input.messagePreview;
+const payload = {
+  msg_type: 'interactive',
+  card: {
+    config: { wide_screen_mode: true },
+    header: {
+      template: severityTemplate,
+      title: {
+        tag: 'plain_text',
+        content: '[SupportOps] ' + input.urgency.toUpperCase() + ' escalation'
+      }
+    },
+    elements: [
+      {
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: '**Ticket**: ' + input.ticketId +
+            '\\n**Category**: ' + input.category +
+            '\\n**Urgency**: ' + input.urgency + ' (' + input.urgencyScore + ')' +
+            '\\n**Team**: ' + input.routingTeam +
+            '\\n**SLA**: ' + input.slaHours + 'h, due ' + input.dueAt +
+            '\\n**Summary**: ' + summary
+        }
+      },
+      {
+        tag: 'note',
+        elements: [
+          {
+            tag: 'plain_text',
+            content: 'traceId=' + input.traceId + ' auditEventId=' + input.auditEventId
+          }
+        ]
+      }
+    ]
+  }
+};
+if (signingSecret) {
+  payload.timestamp = timestamp;
+  payload.sign = sign;
+}
+
+return [{
+  json: {
+    ...safeInput,
+    feishuDelivery: {
+      configured: webhookUrl.length > 0,
+      webhookUrl,
+      signed: signingSecret.length > 0,
+      status: webhookUrl.length > 0 ? 'ready' : 'skipped',
+      reason: webhookUrl.length > 0 ? 'configured' : 'FEISHU_BOT_WEBHOOK_URL is not set',
+      payload
+    }
+  }
+}];`
+    }
+  },
+  output: [{
+    feishuDelivery: {
+      configured: false,
+      signed: false,
+      status: 'skipped',
+      reason: 'FEISHU_BOT_WEBHOOK_URL is not set'
+    }
+  }]
+});
+
+const feishuEnabled = ifElse({
+  version: 2.3,
+  config: {
+    name: 'Feishu Enabled?',
+    position: [4680, 120],
+    parameters: {
+      conditions: {
+        options: {
+          caseSensitive: true,
+          leftValue: '',
+          typeValidation: 'strict',
+          version: 2
+        },
+        conditions: [{
+          id: 'feishu-configured',
+          leftValue: expr('{{ $json.feishuDelivery.configured }}'),
+          operator: {
+            type: 'boolean',
+            operation: 'true',
+            singleValue: true
+          },
+          rightValue: true
+        }],
+        combinator: 'and'
+      }
+    }
+  }
+});
+
+const sendFeishuAlert = node({
+  type: 'n8n-nodes-base.httpRequest',
+  version: 4.4,
+  config: {
+    name: 'Send Feishu Alert',
+    position: [5000, 20],
+    parameters: {
+      method: 'POST',
+      url: expr('{{ $json.feishuDelivery.webhookUrl }}'),
+      authentication: 'none',
+      sendHeaders: true,
+      specifyHeaders: 'keypair',
+      headerParameters: {
+        parameters: [
+          { name: 'Content-Type', value: 'application/json' }
+        ]
+      },
+      sendBody: true,
+      contentType: 'json',
+      specifyBody: 'json',
+      jsonBody: expr('{{ $json.feishuDelivery.payload }}'),
+      options: {
+        response: {
+          response: {
+            fullResponse: true,
+            neverError: true,
+            responseFormat: 'json'
+          }
+        },
+        timeout: 10000
+      }
+    }
+  },
+  output: [{
+    statusCode: 200,
+    body: {
+      code: 0,
+      msg: 'success'
+    }
+  }]
+});
+
+const recordFeishuSent = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Record Feishu Sent',
+    position: [5320, 20],
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `const source = $('Build Feishu Alert Card').first().json;
+const deliveryResponse = items[0]?.json ?? {};
+const statusCode = Number(deliveryResponse.statusCode ?? deliveryResponse.code ?? 0);
+const ok = statusCode >= 200 && statusCode < 300;
+return [{
+  json: {
+    ...source,
+    feishuDelivery: {
+      configured: source.feishuDelivery.configured,
+      signed: source.feishuDelivery.signed,
+      status: ok ? 'sent' : 'failed',
+      statusCode,
+      responseCode: deliveryResponse.body?.code ?? deliveryResponse.code ?? null,
+      responseMessage: deliveryResponse.body?.msg ?? deliveryResponse.msg ?? null
+    }
+  }
+}];`
+    }
+  },
+  output: [{
+    feishuDelivery: {
+      configured: true,
+      status: 'sent',
+      statusCode: 200
+    }
+  }]
+});
+
+const recordFeishuSkipped = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Record Feishu Skipped',
+    position: [5000, 220],
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `const input = items[0].json;
+return [{
+  json: {
+    ...input,
+    feishuDelivery: {
+      configured: false,
+      signed: input.feishuDelivery.signed,
+      status: 'skipped',
+      reason: input.feishuDelivery.reason
+    }
+  }
+}];`
+    }
+  },
+  output: [{
+    feishuDelivery: {
+      configured: false,
+      status: 'skipped'
+    }
+  }]
+});
+
 const buildEscalationResponse = node({
   type: 'n8n-nodes-base.code',
   version: 2,
   config: {
     name: 'Build Escalation Customer Response',
-    position: [4040, 120],
+    position: [5640, 120],
     parameters: {
       mode: 'runOnceForAllItems',
       language: 'javaScript',
@@ -514,7 +775,14 @@ const response = {
   handlingPath: input.handlingPath,
   summary: input.subject + ' - ' + input.messagePreview,
   auditEventId: input.auditEventId,
-  policyVersion: input.policyVersion
+  policyVersion: input.policyVersion,
+  feishuDelivery: {
+    configured: input.feishuDelivery?.configured ?? false,
+    signed: input.feishuDelivery?.signed ?? false,
+    status: input.feishuDelivery?.status ?? 'unknown',
+    statusCode: input.feishuDelivery?.statusCode ?? null,
+    reason: input.feishuDelivery?.reason ?? null
+  }
 };
 return [{ json: { statusCode: 200, response, auditEvent: input.auditEvent } }];`
     }
@@ -527,7 +795,11 @@ return [{ json: { statusCode: 200, response, auditEvent: input.auditEvent } }];`
       urgency: 'critical',
       routingTeam: 'platform-support',
       slaHours: 1,
-      escalationRequired: true
+      escalationRequired: true,
+      feishuDelivery: {
+        configured: false,
+        status: 'skipped'
+      }
     }
   }]
 });
@@ -537,7 +809,7 @@ const returnEscalationResponse = node({
   version: 1.5,
   config: {
     name: 'Return Escalation Response',
-    position: [4360, 120],
+    position: [5960, 120],
     parameters: {
       respondWith: 'json',
       responseBody: expr('{{ $json.response }}'),
@@ -669,8 +941,8 @@ const returnStandardResponse = node({
 });
 
 const overview = sticky(
-  '## SupportOps Incident Triage v0.2.0\\nEngineering-grade workflow: normalize, validate, classify, score urgency, route team, compute SLA, branch escalation, create audit event, and respond. No external credentials required.',
-  [receiveTicket, normalizePayload, validateRequiredFields, generateTicketMetadata, buildSlaPolicy, escalationNeeded],
+  '## SupportOps Incident Triage v0.3.0-local-feishu\\nEngineering-grade workflow: normalize, validate, classify, score urgency, route team, compute SLA, branch escalation, create audit event, optionally notify Feishu, and respond. Feishu uses local environment variables and never stores webhook secrets in Git.',
+  [receiveTicket, normalizePayload, validateRequiredFields, generateTicketMetadata, buildSlaPolicy, escalationNeeded, loadFeishuRuntimeConfig, buildFeishuAlertCard, feishuEnabled],
   { color: 4 }
 );
 
@@ -690,8 +962,21 @@ export default workflow('portfolio-support-triage-api', 'Portfolio - Support Tri
           .onTrue(
             buildEscalationPayload
               .to(createEscalationAuditEvent)
-              .to(buildEscalationResponse)
-              .to(returnEscalationResponse)
+              .to(loadFeishuRuntimeConfig)
+              .to(buildFeishuAlertCard)
+              .to(feishuEnabled
+                .onTrue(
+                  sendFeishuAlert
+                    .to(recordFeishuSent)
+                    .to(buildEscalationResponse)
+                    .to(returnEscalationResponse)
+                )
+                .onFalse(
+                  recordFeishuSkipped
+                    .to(buildEscalationResponse)
+                    .to(returnEscalationResponse)
+                )
+              )
           )
           .onFalse(
             buildStandardPayload

@@ -7,6 +7,7 @@ Portfolio - Support Triage API
 ## Business Outcome
 
 Receive support tickets through a webhook, normalize payload variants, validate required fields, classify ticket category, score urgency, route to the owning team, compute SLA policy, branch escalation, create a redacted audit event, and return a structured response.
+For escalated tickets, optionally send a Feishu group bot alert when local Feishu environment variables are configured.
 
 ## Trigger
 
@@ -35,14 +36,15 @@ HTTP POST webhook at `/portfolio/support-triage`.
 - `escalationRequired`
 - `handlingPath`
 - `auditEventId`
+- `feishuDelivery`
 
 ## External Services
 
-None in v0.2.0. The workflow uses deterministic local policy logic first; add LLM classification in a later workflow version after credential handling is documented.
+Optional Feishu custom bot webhook for local outbound group notifications.
 
 ## Credentials Required
 
-None in v0.2.0.
+No n8n credential is required for default tests. Live Feishu sends require local `FEISHU_BOT_WEBHOOK_URL` and optionally `FEISHU_BOT_SIGNING_SECRET`.
 
 ## Test Data
 
@@ -71,4 +73,4 @@ Do not store full customer messages in Git fixtures beyond synthetic examples.
 - Official MCP validation passes.
 - Pin-data tests pass for enterprise incident, urgent incident, billing, account alias, bug, general, invalid-date, and missing-field paths.
 - Exported workflow is scrubbed and saved in `workflows/canonical`.
-- Release snapshot exists as `workflows/releases/support-triage-v0.2.0.json`.
+- Release snapshot exists as `workflows/releases/support-triage-v0.3.0.json`.

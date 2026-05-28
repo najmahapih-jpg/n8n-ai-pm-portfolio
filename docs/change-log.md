@@ -15,3 +15,4 @@
 - Added tracked workflow SDK source for reviewable official MCP updates.
 - Added API draft export and minimum-node JSON validation so enhanced draft snapshots cannot regress to the old 4-node export unnoticed.
 - Added source-to-artifact SDK sync automation and an 8-case official MCP regression suite covering account, bug, urgent, alias, invalid-date, and audit-redaction behavior.
+- Added `v0.3.0-local-feishu` with an optional Feishu group bot notification branch, runtime env-var loading, skipped-send behavior for local tests, and static Feishu workflow validation.

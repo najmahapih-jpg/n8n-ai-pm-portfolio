@@ -53,10 +53,11 @@ pwsh -NoProfile -File .\scripts\Test-N8nConnection.ps1
 pwsh -NoProfile -File .\scripts\Test-N8nConnection.ps1
 pwsh -NoProfile -File .\scripts\Sync-N8nWorkflowFromSdk.ps1
 pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1
+pwsh -NoProfile -File .\scripts\Test-FeishuWorkflowJson.ps1
 pwsh -NoProfile -File .\scripts\Export-N8nWorkflows.ps1 -OutputDirectory .\workflows\generated
 pwsh -NoProfile -File .\scripts\Export-N8nWorkflowApi.ps1 -WorkflowId RPkw9jGJ93lqs7jO -OutputDirectory .\workflows\generated
 pwsh -NoProfile -File .\scripts\Scrub-N8nWorkflow.ps1 -InputPath .\workflows\generated\<timestamp> -OutputDirectory .\workflows\canonical
-pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canonical -MinimumNodes 21
+pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canonical -MinimumNodes 27
 ```
 
 ## Local n8n Runtime Checklist
@@ -68,6 +69,7 @@ pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canon
 | Fixed encryption key configured | pass | env var present, value not recorded |
 | Task runner sidecar present | pass | `n8n-runners` container running |
 | Dangerous nodes excluded | pass | `NODES_EXCLUDE` blocks `executeCommand` and `readWriteFile` |
+| Environment-backed Feishu config | pass | `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` for this local stack; dangerous nodes remain excluded |
 | API key works | pass | `Test-N8nConnection.ps1` passed |
 | Official MCP works | pass | `validate_workflow`, `create_workflow_from_code`, and `test_workflow` passed |
 | Community n8n-mcp docs profile works | configured | Codex config no longer passes n8n API credentials to community n8n-mcp; restart Codex to reload |
@@ -76,15 +78,16 @@ pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canon
 
 The portfolio workflow is `Portfolio - Support Triage API`.
 
-It receives a support ticket through a webhook, normalizes payload variants, validates required fields, classifies category, scores urgency, routes the owning team, computes SLA, branches escalation, creates a redacted audit event, and returns a structured response. The workflow intentionally avoids third-party credentials so the orchestration, testing, export, scrub, and release lifecycle can be demonstrated reliably.
+It receives a support ticket through a webhook, normalizes payload variants, validates required fields, classifies category, scores urgency, routes the owning team, computes SLA, branches escalation, creates a redacted audit event, optionally sends a Feishu group bot alert, and returns a structured response.
 
 Current workflow scale:
 
-- 21 n8n nodes.
+- 27 n8n nodes.
 - 8 official MCP pin-data test paths.
 - 5 category outcomes: `incident`, `billing`, `account`, `bug`, `general`.
 - 4 urgency tiers: `critical`, `urgent`, `high`, `normal`.
 - 2 handling paths: `escalated`, `standard`.
+- 1 local-only Feishu custom bot notification path, skipped automatically when no webhook is configured.
 
 ## Lifecycle
 
@@ -93,8 +96,20 @@ Current workflow scale:
 3. Treat `workflows/sdk/portfolio-support-triage-api.workflow.js` as the source of truth.
 4. Run `Sync-N8nWorkflowFromSdk.ps1` to validate SDK code through official MCP, update the local draft, export via API, scrub canonical JSON, and copy the release snapshot.
 5. Run `Test-SupportTriageWorkflow.ps1` to prove all current pin-data branches.
-6. Use `Export-N8nWorkflows.ps1` for broad Docker backup exports when needed.
-7. Commit only docs, fixtures, scripts, SDK source, canonical JSON, and release snapshots.
+6. Run `Test-FeishuWorkflowJson.ps1` to prove Feishu nodes and secret-free placeholders are present.
+7. Use `Export-N8nWorkflows.ps1` for broad Docker backup exports when needed.
+8. Commit only docs, fixtures, scripts, SDK source, canonical JSON, and release snapshots.
+
+## Local Feishu Setup
+
+This project supports one-way local n8n to Feishu group notifications. See `docs/feishu-local-setup.md`.
+
+Set these only in your local Docker environment, not in Git:
+
+```text
+FEISHU_BOT_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/<your-hook-id>
+FEISHU_BOT_SIGNING_SECRET=<optional-signing-secret>
+```
 
 ## Resume Bullet
 
@@ -105,9 +120,9 @@ Built a local n8n Workflow-as-Code platform using Codex/Claude, official n8n MCP
 - Planning complete.
 - Project skeleton created.
 - Local n8n runtime verified.
-- Official MCP created and upgraded `Portfolio - Support Triage API` as a 21-node draft workflow.
+- Official MCP created and upgraded `Portfolio - Support Triage API` as a 27-node local Feishu draft workflow.
 - Official MCP multi-path pin-data tests passed for enterprise incident, urgent incident, billing, account alias, bug, general, invalid-date, and missing-field requests.
-- Canonical workflow JSON and `v0.2.0` release snapshot contain the enhanced 21-node workflow.
+- Canonical workflow JSON and `v0.3.0` release snapshot contain the enhanced 27-node workflow.
 
 ## Verification
 
@@ -121,8 +136,9 @@ Built a local n8n Workflow-as-Code platform using Codex/Claude, official n8n MCP
 - official MCP workflow creation: pass.
 - official MCP workflow test: pass.
 - official MCP multi-path tests: pass for 8 payloads.
+- Feishu workflow JSON validation: pass.
 - SDK sync script: pass.
 - export scripts: pass.
 - API draft export script: pass.
-- canonical JSON validation with 21-node floor: pass.
-- release JSON validation with 21-node floor: pass.
+- canonical JSON validation with 27-node floor: pass.
+- release JSON validation with 27-node floor: pass.
