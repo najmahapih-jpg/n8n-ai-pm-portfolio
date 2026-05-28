@@ -9,11 +9,13 @@
 7. Validate the workflow through official n8n MCP before create/update.
 8. Create or update the local n8n draft through official n8n MCP.
 9. Prepare pin data and run `test_workflow`.
-10. Export workflows through the n8n Docker server CLI into an ignored raw/generated timestamp directory.
+10. Export workflows through the n8n Docker server CLI or API path into an ignored raw/generated timestamp directory.
 11. Scrub exported JSON into `workflows/canonical`.
-12. Run static JSON validation.
-13. Commit only scrubbed canonical JSON, fixtures, prompts, scripts, and docs.
-14. Create a release snapshot after successful demo verification.
+12. Maintain `workflows/sdk/<slug>.meta.json`.
+13. Generate `docs/registry/workflow-registry.md` and `docs/registry/index.json`.
+14. Run static JSON validation, registry freshness checks, and smoke tests.
+15. Commit only scrubbed canonical JSON, release snapshots, metadata, fixtures, prompts, scripts, and docs.
+16. Create a release snapshot after successful demo verification.
 
 ## Dated Decision Notes
 
@@ -34,3 +36,9 @@ Rejected: commit direct n8n exports as the source of truth | raw exports are noi
 Keep Feishu integration as local outbound custom bot notifications until a requirement needs inbound callbacks. This avoids deployment, public webhook exposure, and app-level callback verification work while still proving a real integration path.
 
 Rejected: bidirectional Feishu bot in this project phase | event subscriptions and card callbacks require a public callback URL or tunnel and add operational scope beyond the portfolio workflow.
+
+### 2026-05-28: Registry Is Generated
+
+Use per-workflow metadata plus canonical JSON to generate both the human registry and the machine-readable index. This keeps docs, CI checks, and future agent search grounded in the same data.
+
+Rejected: maintain registry rows by hand | manual rows drift when node counts, releases, fixtures, or workflow status change.

@@ -24,19 +24,22 @@ For the portfolio workflow, use the reproducible source-to-artifact chain:
 
 ```powershell
 npm run verify:static
+pwsh -NoProfile -File .\scripts\Build-WorkflowIndex.ps1
 pwsh -NoProfile -File .\scripts\Sync-N8nWorkflowFromSdk.ps1
 pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1
 ```
 
-Expected result: official MCP validates the SDK source, updates the draft, API export captures the current draft, scrubbed canonical and release files match, both satisfy the 27-node floor, all 8 pin-data regression cases pass, and Feishu static validation passes.
+Expected result: official MCP validates the SDK source, updates the draft, API export captures the current draft, scrubbed canonical and release files match, generated registry files are current, both workflow JSON outputs satisfy the 27-node floor, all 8 pin-data regression cases pass, and Feishu static validation passes.
 
-If a real Feishu custom bot webhook is configured only in the local Docker environment, run a one-case live smoke test:
+## Smoke Test
+
+Run the smoke test before touching Feishu configuration:
 
 ```powershell
-pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1 -CaseName enterprise-incident -FeishuMode sent
+npm run smoke
 ```
 
-Expected result: the case passes, `feishuDelivery.status` is `sent`, and one card appears in the private Feishu test group.
+Expected result: offline static validation passes, local n8n connection passes, and the `enterprise-incident` case returns `feishuDelivery.status=skipped`.
 
 ## Export and Git Validation
 
@@ -50,3 +53,13 @@ pwsh -NoProfile -File .\scripts\Test-RepositorySecrets.ps1
 ```
 
 Expected result: only scrubbed canonical JSON is tracked, volatile n8n instance fields are removed, and no real secret values are present.
+
+## Final Feishu Send Check
+
+Only after all non-Feishu checks pass, configure a real Feishu custom bot webhook in the local Docker environment and run a one-case live send smoke test:
+
+```powershell
+pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1 -CaseName enterprise-incident -FeishuMode sent
+```
+
+Expected result: the case passes, `feishuDelivery.status` is `sent`, and one card appears in the private Feishu test group.

@@ -7,10 +7,11 @@
 - Official n8n MCP: authoritative writer for local workflow create, update, validate, test, execute, publish, and unpublish operations.
 - Community n8n-mcp: design-time assistant for templates, node documentation, node configuration examples, node validation, and workflow pre-validation.
 - PowerShell scripts: repeatable local connection checks, export, scrub, and static validation.
+- Workflow metadata and registry: per-workflow `.meta.json` files plus generated Markdown/JSON indexes for human review and agent search.
 
 ## Data Flow
 
-Requirement markdown -> template/node research -> workflow draft -> community validation -> official MCP validation -> local n8n draft -> pin-data test -> CLI export -> scrub -> canonical JSON -> release snapshot.
+Requirement markdown -> template/node research -> workflow SDK source + metadata -> community validation -> official MCP validation -> local n8n draft -> pin-data test -> API/CLI export -> scrub -> canonical JSON -> release snapshot -> generated registry/index -> smoke test.
 
 ## Runtime Boundary
 

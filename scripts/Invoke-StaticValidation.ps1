@@ -49,9 +49,13 @@ Invoke-ValidationStep -Name "Pin-data JSON parse check" -Action {
 }
 
 if (-not $SkipRepositorySecretScan) {
-  Invoke-ValidationStep -Name "Repository secret scan" -Action {
+Invoke-ValidationStep -Name "Repository secret scan" -Action {
     & (Join-Path $repoRoot "scripts\Test-RepositorySecrets.ps1")
   }
+}
+
+Invoke-ValidationStep -Name "Workflow registry freshness" -Action {
+  & (Join-Path $repoRoot "scripts\Build-WorkflowIndex.ps1") -Check
 }
 
 Invoke-ValidationStep -Name "Feishu workflow JSON guard" -Action {

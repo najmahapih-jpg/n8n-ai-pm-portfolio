@@ -15,6 +15,7 @@ Local Workflow-as-Code project for building n8n automations with Codex or Claude
 
 ```text
 docs/                     Architecture, MCP policy, lifecycle, demo notes
+docs/registry/            Generated workflow registry markdown and machine index
 fixtures/                 Synthetic requests and pin data
 prompts/                  Codex/Claude workflow-building prompts
 scripts/                  PowerShell automation for checks, export, scrub, validation
@@ -23,6 +24,7 @@ scripts/                  PowerShell automation for checks, export, scrub, valid
 workflows/raw/            Raw exports, ignored by Git
 workflows/generated/      Timestamped export batches, ignored except .gitkeep
 workflows/sdk/            Reviewable n8n Workflow SDK source of truth
+workflows/sdk/*.meta.json Per-workflow metadata used to generate the registry
 workflows/canonical/      Scrubbed workflow JSON tracked in Git
 workflows/releases/       Versioned release snapshots
 artifacts/validation/     Local validation reports, ignored by Git
@@ -67,6 +69,8 @@ pwsh -NoProfile -File .\scripts\Test-N8nConnection.ps1
 
 ```powershell
 npm run verify:static
+npm run smoke
+npm run registry:build
 npm run verify:live
 pwsh -NoProfile -File .\scripts\Test-N8nConnection.ps1
 pwsh -NoProfile -File .\scripts\Sync-N8nWorkflowFromSdk.ps1
@@ -78,10 +82,10 @@ pwsh -NoProfile -File .\scripts\Scrub-N8nWorkflow.ps1 -InputPath .\workflows\gen
 pwsh -NoProfile -File .\scripts\Test-N8nWorkflowJson.ps1 -Path .\workflows\canonical -MinimumNodes 27
 ```
 
-Use this one-case smoke test only after a real Feishu webhook is configured in the local n8n Docker environment:
+Create a new workflow skeleton with:
 
 ```powershell
-pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1 -CaseName enterprise-incident -FeishuMode sent
+pwsh -NoProfile -File .\scripts\New-N8nWorkflowScaffold.ps1 -Slug customer-health-digest -Title "Customer Health Digest" -Description "Summarize account health signals into a local webhook response."
 ```
 
 ## Local n8n Runtime Checklist
@@ -118,24 +122,13 @@ Current workflow scale:
 1. Capture the requirement under `fixtures/requests`.
 2. Use community n8n-mcp for template and node research.
 3. Treat `workflows/sdk/portfolio-support-triage-api.workflow.js` as the source of truth.
-4. Run `Sync-N8nWorkflowFromSdk.ps1` to validate SDK code through official MCP, update the local draft, export via API, scrub canonical JSON, and copy the release snapshot.
-5. Run `Test-SupportTriageWorkflow.ps1` to prove all current pin-data branches.
-6. Run `Test-FeishuWorkflowJson.ps1` to prove Feishu nodes and secret-free placeholders are present.
-7. Use `Export-N8nWorkflows.ps1` for broad Docker backup exports when needed.
-8. Commit only docs, fixtures, scripts, SDK source, canonical JSON, and release snapshots.
-
-## Local Feishu Setup
-
-This project supports one-way local n8n to Feishu group notifications. See `docs/feishu-local-setup.md`.
-
-Best no-deployment path: use Feishu custom bot webhooks for outbound alerts only. n8n stays local and calls Feishu directly. If you later need Feishu to call back into n8n, use a temporary tunnel for validation or deploy a small public webhook endpoint; the current project intentionally avoids that path.
-
-Set these only in your local Docker environment, not in Git:
-
-```text
-FEISHU_BOT_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/<your-hook-id>
-FEISHU_BOT_SIGNING_SECRET=<optional-signing-secret>
-```
+4. Maintain `workflows/sdk/<slug>.meta.json` for registry metadata.
+5. Run `Sync-N8nWorkflowFromSdk.ps1` to validate SDK code through official MCP, update the local draft, export via API, scrub canonical JSON, and copy the release snapshot.
+6. Run `Build-WorkflowIndex.ps1` after canonical or metadata changes.
+7. Run `Test-SupportTriageWorkflow.ps1` to prove all current pin-data branches.
+8. Run `Test-FeishuWorkflowJson.ps1` to prove Feishu nodes and secret-free placeholders are present.
+9. Use `Export-N8nWorkflows.ps1` for broad Docker backup exports when needed.
+10. Commit only docs, fixtures, scripts, SDK source, metadata, canonical JSON, and release snapshots.
 
 ## Resume Bullet
 
@@ -146,6 +139,7 @@ Built a local n8n Workflow-as-Code platform using Codex/Claude, official n8n MCP
 - Planning complete.
 - Project skeleton created.
 - Package metadata, Apache-2.0 license, CI, and optional local pre-commit checks added.
+- Per-workflow metadata, generated registry/index, scaffold script, and smoke-test command added.
 - Local n8n runtime verified.
 - Official MCP created and upgraded `Portfolio - Support Triage API` as a 27-node local Feishu draft workflow.
 - Official MCP multi-path pin-data tests passed for enterprise incident, urgent incident, billing, account alias, bug, general, invalid-date, and missing-field requests.
@@ -164,8 +158,29 @@ Built a local n8n Workflow-as-Code platform using Codex/Claude, official n8n MCP
 - official MCP workflow test: pass.
 - official MCP multi-path tests: pass for 8 payloads.
 - Feishu workflow JSON validation: pass.
+- workflow registry freshness check: pass.
+- smoke test: pass for `enterprise-incident` in no-send mode.
 - SDK sync script: pass.
 - export scripts: pass.
 - API draft export script: pass.
 - canonical JSON validation with 27-node floor: pass.
 - release JSON validation with 27-node floor: pass.
+
+## Final Optional Feishu Setup
+
+This project supports one-way local n8n to Feishu group notifications. See `docs/feishu-local-setup.md`.
+
+Best no-deployment path: use Feishu custom bot webhooks for outbound alerts only. n8n stays local and calls Feishu directly. If you later need Feishu to call back into n8n, use a temporary tunnel for validation or deploy a small public webhook endpoint; the current project intentionally avoids that path.
+
+Set these only in your local Docker environment, not in Git:
+
+```text
+FEISHU_BOT_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/<your-hook-id>
+FEISHU_BOT_SIGNING_SECRET=<optional-signing-secret>
+```
+
+Use this one-case Feishu send smoke test only after a real Feishu webhook is configured in the local n8n Docker environment:
+
+```powershell
+pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1 -CaseName enterprise-incident -FeishuMode sent
+```

@@ -1,5 +1,7 @@
 # Workflow Registry
 
-| Workflow Name | n8n ID | Project/Folder | Last Writer | Status | Release |
-| --- | --- | --- | --- | --- | --- |
-| Portfolio - Support Triage API | `RPkw9jGJ93lqs7jO` | Personal project / local draft | official n8n MCP | draft, tested, 27 nodes, local Feishu optional | `support-triage-v0.3.0.json` |
+Generated from canonical workflow JSON and per-workflow metadata. Do not edit table rows by hand; run pwsh -NoProfile -File .\scripts\Build-WorkflowIndex.ps1.
+
+| Workflow | Version | Status | Trigger | Nodes | Complexity | Integrations | Release | Smoke |
+| --- | --- | --- | --- | ---: | --- | --- | --- | --- |
+| Portfolio - Support Triage API | 0.3.0 | draft-tested | webhook | 27 | advanced | n8n Webhook, Feishu custom bot | `workflows\releases\support-triage-v0.3.0.json` | `enterprise-incident` |

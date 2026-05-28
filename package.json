@@ -7,6 +7,8 @@
   "type": "module",
   "scripts": {
     "hooks:install": "pwsh -NoProfile -File ./scripts/Install-GitHooks.ps1",
+    "registry:build": "pwsh -NoProfile -File ./scripts/Build-WorkflowIndex.ps1",
+    "smoke": "pwsh -NoProfile -File ./scripts/Invoke-SmokeTest.ps1",
     "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
     "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 27 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0",
     "verify:feishu": "pwsh -NoProfile -File ./scripts/Test-FeishuWorkflowJson.ps1",
