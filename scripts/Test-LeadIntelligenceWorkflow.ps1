@@ -164,6 +164,12 @@ function Get-OptionalProperty {
   return $null
 }
 
+function Get-FixtureCompanyName {
+  param([object]$Fixture)
+
+  return Get-RawField -Fixture $Fixture -Names @("companyName", "company", "accountName")
+}
+
 function Assert-NoRawPiiLeak {
   param(
     [object]$NodeJson,
@@ -321,7 +327,7 @@ $rows = foreach ($case in $cases) {
   }
 
   $fixture = Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json -Depth 100
-  $pinData = @{ "Receive Lead Intake" = @(@{ json = $fixture }) }
+  $pinData = @{ "Run Demo Lead From n8n UI" = @(@{ json = $fixture }) }
   $test = Invoke-N8nMcpTool -Name "test_workflow" -Arguments @{ workflowId = $WorkflowId; pinData = $pinData }
   Assert-Equal -Actual $test.status -Expected "success" -Label "$($case.Name) execution status"
 
@@ -340,7 +346,21 @@ $rows = foreach ($case in $cases) {
   }
 
   $runs = @($runProperty.Value)
-  $nodeJson = $runs[$runs.Count - 1].data.main[0][0].json
+  $candidateNodeJson = @($runs | ForEach-Object { $_.data.main[0][0].json })
+  $fixtureCompanyName = Get-FixtureCompanyName -Fixture $fixture
+  $nodeJson = $null
+  if (-not [string]::IsNullOrWhiteSpace($fixtureCompanyName)) {
+    $nodeJson = @($candidateNodeJson | Where-Object {
+      $_.PSObject.Properties["response"] -and
+      $_.response.PSObject.Properties["companyName"] -and
+      [string]$_.response.companyName -eq $fixtureCompanyName
+    } | Select-Object -Last 1)
+  }
+  if ($null -eq $nodeJson -or @($nodeJson).Count -eq 0) {
+    $nodeJson = $candidateNodeJson[$candidateNodeJson.Count - 1]
+  } else {
+    $nodeJson = @($nodeJson)[0]
+  }
   $response = $nodeJson.response
   $expected = $case.Expected
 

@@ -1,5 +1,57 @@
 import { workflow, node, trigger, sticky, ifElse, expr } from '@n8n/workflow-sdk';
 
+const runDemoFromUi = trigger({
+  type: 'n8n-nodes-base.manualTrigger',
+  version: 1,
+  config: {
+    name: 'Run Demo Lead From n8n UI',
+    position: [160, 40]
+  },
+  output: [{}]
+});
+
+const buildDemoLeadPayload = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Build Demo Lead Payload',
+    position: [480, 40],
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `const input = items[0]?.json ?? {};
+if (Object.keys(input).length > 0) {
+  return [{ json: { ...input, manualExecution: true } }];
+}
+return [{
+  json: {
+    manualExecution: true,
+    email: 'buyer@finops.example',
+    fullName: 'Avery Chen',
+    title: 'VP Platform Operations',
+    companyName: 'FinOps Cloud',
+    companyDomain: 'finops.example',
+    source: 'referral',
+    industry: 'fintech',
+    country: 'us',
+    employeeCount: 2500,
+    annualRevenue: 420000000,
+    requestedProduct: 'Enterprise AI Workflow',
+    message: 'We need a demo, pricing, implementation plan, and security review for a migration project. The buying committee wants an urgent shortlist this week.',
+    intentSignals: ['security review', 'migration'],
+    plan: 'enterprise',
+    receivedAt: '2026-05-29T14:00:00.000Z'
+  }
+}];`
+    }
+  },
+  output: [{
+    manualExecution: true,
+    email: 'buyer@finops.example',
+    companyName: 'FinOps Cloud'
+  }]
+});
+
 const receiveLead = trigger({
   type: 'n8n-nodes-base.webhook',
   version: 2.1,
@@ -29,6 +81,7 @@ const normalizeLead = node({
       language: 'javaScript',
       jsCode: `const source = items[0]?.json ?? {};
 const body = source.body ?? source;
+const entrypoint = source.manualExecution === true || body.manualExecution === true ? 'manual' : 'webhook';
 const text = (value) => String(value ?? '').trim();
 const lower = (value) => text(value).toLowerCase();
 const number = (value) => {
@@ -77,6 +130,9 @@ return [{
     validation: {
       requiredFieldsPresent: missingFields.length === 0,
       missingFields
+    },
+    runtime: {
+      entrypoint
     },
     sourcePayloadKeys: Object.keys(body)
   }
@@ -137,6 +193,7 @@ const buildRequiredError = node({
 return [{
   json: {
     statusCode: 400,
+    runtime: input.runtime,
     response: {
       ok: false,
       error: 'Missing required lead fields',
@@ -149,12 +206,42 @@ return [{
   }
 });
 
+const manualUiRequiredError = ifElse({
+  version: 2.3,
+  config: {
+    name: 'Manual UI Required Error?',
+    position: [1440, 640],
+    parameters: {
+      conditions: {
+        options: {
+          caseSensitive: true,
+          leftValue: '',
+          typeValidation: 'strict',
+          version: 2
+        },
+        conditions: [{
+          id: 'manual-ui-required-error',
+          leftValue: expr('{{ $json.runtime.entrypoint === "manual" }}'),
+          operator: {
+            type: 'boolean',
+            operation: 'true',
+            singleValue: true
+          },
+          rightValue: true
+        }],
+        combinator: 'and'
+      },
+      options: {}
+    }
+  }
+});
+
 const returnRequiredError = node({
   type: 'n8n-nodes-base.respondToWebhook',
   version: 1.5,
   config: {
     name: 'Return Required Field Error',
-    position: [1440, 640],
+    position: [1760, 760],
     parameters: {
       respondWith: 'json',
       responseBody: '={{ $json.response }}',
@@ -208,6 +295,7 @@ const buildEmailError = node({
 return [{
   json: {
     statusCode: 422,
+    runtime: input.runtime,
     response: {
       ok: false,
       error: 'Invalid email syntax',
@@ -220,12 +308,42 @@ return [{
   }
 });
 
+const manualUiEmailError = ifElse({
+  version: 2.3,
+  config: {
+    name: 'Manual UI Email Error?',
+    position: [1760, 460],
+    parameters: {
+      conditions: {
+        options: {
+          caseSensitive: true,
+          leftValue: '',
+          typeValidation: 'strict',
+          version: 2
+        },
+        conditions: [{
+          id: 'manual-ui-email-error',
+          leftValue: expr('{{ $json.runtime.entrypoint === "manual" }}'),
+          operator: {
+            type: 'boolean',
+            operation: 'true',
+            singleValue: true
+          },
+          rightValue: true
+        }],
+        combinator: 'and'
+      },
+      options: {}
+    }
+  }
+});
+
 const returnEmailError = node({
   type: 'n8n-nodes-base.respondToWebhook',
   version: 1.5,
   config: {
     name: 'Return Email Syntax Error',
-    position: [1760, 460],
+    position: [2080, 580],
     parameters: {
       respondWith: 'json',
       responseBody: '={{ $json.response }}',
@@ -367,6 +485,7 @@ const buildDuplicateResponse = node({
 return [{
   json: {
     statusCode: 200,
+    runtime: input.runtime,
     response: {
       ok: true,
       duplicate: true,
@@ -382,12 +501,42 @@ return [{
   }
 });
 
+const manualUiDuplicateResponse = ifElse({
+  version: 2.3,
+  config: {
+    name: 'Manual UI Duplicate Response?',
+    position: [3040, 360],
+    parameters: {
+      conditions: {
+        options: {
+          caseSensitive: true,
+          leftValue: '',
+          typeValidation: 'strict',
+          version: 2
+        },
+        conditions: [{
+          id: 'manual-ui-duplicate-response',
+          leftValue: expr('{{ $json.runtime.entrypoint === "manual" }}'),
+          operator: {
+            type: 'boolean',
+            operation: 'true',
+            singleValue: true
+          },
+          rightValue: true
+        }],
+        combinator: 'and'
+      },
+      options: {}
+    }
+  }
+});
+
 const returnDuplicateResponse = node({
   type: 'n8n-nodes-base.respondToWebhook',
   version: 1.5,
   config: {
     name: 'Return Duplicate Lead Response',
-    position: [3040, 360],
+    position: [3360, 480],
     parameters: {
       respondWith: 'json',
       responseBody: '={{ $json.response }}',
@@ -852,6 +1001,7 @@ const buildLeadResponse = node({
 return [{
   json: {
     statusCode: 200,
+    runtime: input.runtime,
     response: {
       ok: true,
       duplicate: false,
@@ -894,12 +1044,76 @@ return [{
   }]
 });
 
+const manualUiExecution = ifElse({
+  version: 2.3,
+  config: {
+    name: 'Manual UI Execution?',
+    position: [7520, 40],
+    parameters: {
+      conditions: {
+        options: {
+          caseSensitive: true,
+          leftValue: '',
+          typeValidation: 'strict',
+          version: 2
+        },
+        conditions: [{
+          id: 'manual-ui-execution',
+          leftValue: expr('{{ $json.runtime.entrypoint === "manual" }}'),
+          operator: {
+            type: 'boolean',
+            operation: 'true',
+            singleValue: true
+          },
+          rightValue: true
+        }],
+        combinator: 'and'
+      },
+      options: {}
+    }
+  }
+});
+
+const showUiExecutionResult = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Show UI Execution Result',
+    position: [7840, -120],
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `const input = items[0].json;
+return [{
+  json: {
+    ok: true,
+    executionMode: 'manual-ui',
+    statusCode: input.statusCode,
+    response: input.response,
+    auditEvent: input.auditEvent,
+    note: 'This node is the terminal result for n8n editor Execute Workflow. Webhook executions use Return Lead Intelligence Response instead.'
+  }
+}];`
+    }
+  },
+  output: [{
+    ok: true,
+    executionMode: 'manual-ui',
+    response: {
+      grade: 'A',
+      route: {
+        ownerQueue: 'enterprise-ae'
+      }
+    }
+  }]
+});
+
 const returnLeadResponse = node({
   type: 'n8n-nodes-base.respondToWebhook',
   version: 1.5,
   config: {
     name: 'Return Lead Intelligence Response',
-    position: [7520, 40],
+    position: [7840, 160],
     parameters: {
       respondWith: 'json',
       responseBody: '={{ $json.response }}',
@@ -911,14 +1125,15 @@ const returnLeadResponse = node({
 });
 
 const overview = sticky(
-  '## Lead Intelligence v0.1.0\\nLocal B2B lead scoring workflow: normalize, validate, dedupe, enrich with deterministic local rules, score ICP and intent, route owner, build CRM-ready payload, create redacted audit event, and respond. External CRM and Feishu adapters are intentionally deferred.',
-  [receiveLead, normalizeLead, validateRequiredFields, validateEmailSyntax, duplicateLead, hotLead],
+  '## Lead Intelligence v0.1.1\\nLocal B2B lead scoring workflow: supports n8n editor Execute Workflow through a manual demo trigger, plus webhook intake for API calls. It normalizes, validates, dedupes, enriches with deterministic local rules, scores ICP and intent, routes owner, builds CRM-ready payload, creates a redacted audit event, and responds. External CRM and Feishu adapters are intentionally deferred.',
+  [runDemoFromUi, buildDemoLeadPayload, receiveLead, normalizeLead, validateRequiredFields, validateEmailSyntax, duplicateLead, hotLead, manualUiRequiredError, manualUiEmailError, manualUiDuplicateResponse, manualUiExecution],
   { color: 4 }
 );
 
 export default workflow('lead-intelligence', 'Portfolio - Lead Intelligence API')
   .add(overview)
-  .add(receiveLead)
+  .add(runDemoFromUi)
+  .to(buildDemoLeadPayload)
   .to(normalizeLead)
   .to(validateRequiredFields
     .onTrue(
@@ -929,8 +1144,15 @@ export default workflow('lead-intelligence', 'Portfolio - Lead Intelligence API'
             .to(checkDuplicateCandidate)
             .to(duplicateLead
               .onTrue(
-                buildDuplicateResponse
-                  .to(returnDuplicateResponse)
+              buildDuplicateResponse
+                  .to(manualUiDuplicateResponse
+                    .onTrue(
+                      showUiExecutionResult
+                    )
+                    .onFalse(
+                      returnDuplicateResponse
+                    )
+                  )
               )
               .onFalse(
                 mockCompanyEnrichment
@@ -949,13 +1171,27 @@ export default workflow('lead-intelligence', 'Portfolio - Lead Intelligence API'
                         .to(buildCrmPayload)
                         .to(createAuditEvent)
                         .to(buildLeadResponse)
-                        .to(returnLeadResponse)
+                        .to(manualUiExecution
+                          .onTrue(
+                            showUiExecutionResult
+                          )
+                          .onFalse(
+                            returnLeadResponse
+                          )
+                        )
                     )
                     .onFalse(
                       buildCrmPayload
                         .to(createAuditEvent)
                         .to(buildLeadResponse)
-                        .to(returnLeadResponse)
+                        .to(manualUiExecution
+                          .onTrue(
+                            showUiExecutionResult
+                          )
+                          .onFalse(
+                            returnLeadResponse
+                          )
+                        )
                     )
                   )
               )
@@ -963,11 +1199,27 @@ export default workflow('lead-intelligence', 'Portfolio - Lead Intelligence API'
         )
         .onFalse(
           buildEmailError
-            .to(returnEmailError)
+            .to(manualUiEmailError
+              .onTrue(
+                showUiExecutionResult
+              )
+              .onFalse(
+                returnEmailError
+              )
+            )
         )
     )
     .onFalse(
       buildRequiredError
-        .to(returnRequiredError)
+        .to(manualUiRequiredError
+          .onTrue(
+            showUiExecutionResult
+          )
+          .onFalse(
+            returnRequiredError
+          )
+        )
     )
-  );
+  )
+  .add(receiveLead)
+  .to(normalizeLead);

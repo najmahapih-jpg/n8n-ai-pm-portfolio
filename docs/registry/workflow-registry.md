@@ -4,4 +4,4 @@ Generated from canonical workflow JSON and per-workflow metadata. Do not edit ta
 
 | Workflow | Version | Status | Trigger | Nodes | Complexity | Integrations | Release | Smoke |
 | --- | --- | --- | --- | ---: | --- | --- | --- | --- |
-| Portfolio - Lead Intelligence API | 0.1.0 | draft-tested | webhook | 31 | advanced | n8n Webhook, Local scoring rules, CRM-ready payload | `workflows\releases\lead-intelligence-v0.1.0.json` | `hot-enterprise-lead` |
+| Portfolio - Lead Intelligence API | 0.1.1 | draft-tested | manual + webhook | 38 | advanced | n8n Manual Trigger, n8n Webhook, Local scoring rules, CRM-ready payload | `workflows\releases\lead-intelligence-v0.1.1.json` | `hot-enterprise-lead` |

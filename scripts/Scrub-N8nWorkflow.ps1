@@ -161,7 +161,9 @@ foreach ($file in $files) {
           $node.name = "Sticky Note $stickyIndex"
           $stickyIndex += 1
         }
-        Scrub-Object -Value $node.parameters
+        if ($node.PSObject.Properties["parameters"]) {
+          Scrub-Object -Value $node.parameters
+        }
       }
     }
 

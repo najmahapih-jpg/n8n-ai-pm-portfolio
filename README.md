@@ -6,6 +6,8 @@ The workflow is `Portfolio - Lead Intelligence API`.
 
 Current local n8n workflow ID: `xhZ0XMNvi4LeVWzk`
 
+You can now open the workflow in n8n and click `Execute Workflow` directly. The manual branch starts at `Run Demo Lead From n8n UI`, builds a demo enterprise lead, and ends at `Show UI Execution Result` instead of waiting for the webhook Test URL.
+
 ## What It Does
 
 The workflow receives a lead intake request, normalizes payload aliases, validates required fields, rejects malformed email, detects duplicates, enriches locally with deterministic company and intent rules, scores ICP fit and buyer intent, assigns a lead grade, routes the owner queue, builds a CRM-ready payload, emits a redacted audit event, and returns a structured response.
@@ -17,14 +19,15 @@ External CRM and Feishu/Lark delivery are intentionally placed last. The current
 - Source of truth: `workflows/sdk/lead-intelligence.workflow.js`
 - Metadata: `workflows/sdk/lead-intelligence.meta.json`
 - Canonical JSON: `workflows/canonical/lead-intelligence.canonical.json`
-- Release snapshot: `workflows/releases/lead-intelligence-v0.1.0.json`
+- Release snapshot: `workflows/releases/lead-intelligence-v0.1.1.json`
 - Regression fixtures: `fixtures/pin-data/*.json`
 - Request spec: `fixtures/requests/lead-intelligence.md`
 - Registry: `docs/registry/workflow-registry.md` and `docs/registry/index.json`
 
 ## Node-Level Coverage
 
-- 31 workflow nodes.
+- 38 workflow nodes.
+- 1 n8n editor manual execution branch for direct `Execute Workflow` demos.
 - 11 safe pin-data fixtures.
 - Validation branches: missing required field and invalid email.
 - Deduplication branches: explicit existing ID and deterministic duplicate domain.
@@ -70,6 +73,12 @@ npm run smoke
 
 # Run full live regression suite.
 npm run verify:live
+```
+
+Manual editor execution check:
+
+```powershell
+pwsh -NoProfile -File .\scripts\Test-LeadUiExecution.ps1
 ```
 
 ## Useful Cases

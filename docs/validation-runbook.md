@@ -8,6 +8,7 @@ npm run smoke
 ```
 
 Expected result: offline static validation passes, local n8n connection passes, and `hot-enterprise-lead` returns grade `A`, `enterprise-ae`, `slaHours=2`, and `notification.status=skipped`.
+The smoke run also verifies the n8n editor `Execute Workflow` path by checking that the manual branch reaches `Show UI Execution Result`.
 
 ## Full Local Verification
 
@@ -21,7 +22,7 @@ npm run verify:static
 npm run verify:live
 ```
 
-Expected result: official MCP validates the SDK, creates or updates the local draft, API export captures the current draft, scrubbed canonical and release files match, registry files are current, JSON guards pass the 31-node floor, and all pin-data cases pass.
+Expected result: official MCP validates the SDK, creates or updates the local draft, API export captures the current draft, scrubbed canonical and release files match, registry files are current, JSON guards pass the 38-node floor, the manual UI execution check passes, and all pin-data cases pass.
 
 ## Manual Case Runs
 

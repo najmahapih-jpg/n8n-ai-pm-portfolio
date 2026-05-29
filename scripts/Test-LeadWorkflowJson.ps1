@@ -1,7 +1,7 @@
 param(
   [string]$CanonicalPath = ".\workflows\canonical\lead-intelligence.canonical.json",
-  [string]$ReleasePath = ".\workflows\releases\lead-intelligence-v0.1.0.json",
-  [int]$MinimumNodes = 31
+  [string]$ReleasePath = ".\workflows\releases\lead-intelligence-v0.1.1.json",
+  [int]$MinimumNodes = 38
 )
 
 Set-StrictMode -Version Latest
@@ -69,7 +69,7 @@ function Test-Workflow {
   if ($raw -notmatch "portfolio/lead-intelligence") {
     Add-Failure -Failures $Failures -Message "$Label missing lead intake webhook path"
   }
-  if ($raw -notmatch "Lead Intelligence v0\.1\.0") {
+  if ($raw -notmatch "Lead Intelligence v0\.1\.1") {
     Add-Failure -Failures $Failures -Message "$Label missing sticky-note release marker"
   }
   if ($raw -match "https://open\.(feishu|larksuite)\.com/open-apis/bot/v2/hook/[A-Za-z0-9_\-]+") {

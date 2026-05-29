@@ -36,5 +36,9 @@ Invoke-SmokeStep -Name "Lead intelligence workflow smoke case '$CaseName'" -Acti
   & (Join-Path $repoRoot "scripts\Test-LeadIntelligenceWorkflow.ps1") -WorkflowId $WorkflowId -CaseName $CaseName
 }
 
+Invoke-SmokeStep -Name "n8n editor Execute Workflow manual branch" -Action {
+  & (Join-Path $repoRoot "scripts\Test-LeadUiExecution.ps1") -WorkflowId $WorkflowId
+}
+
 Write-Host "Smoke test passed."
 exit 0
