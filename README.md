@@ -34,6 +34,14 @@ External CRM and Feishu/Lark delivery are intentionally placed last. The current
 - Lead outcomes: A hot enterprise, B commercial, C high-intent low-fit, D nurture, competitor disqualification, manual override.
 - Audit guard: tests assert raw email, full name, and message do not leak into response or audit event.
 
+## Evaluation & Decision Records
+
+- [docs/eval-methodology.md](docs/eval-methodology.md) — frames the 11 fixtures as a behavioral eval: a five-type assertion taxonomy (exact-match, numeric-range band, format, structural-absence, masking/relational), a coverage matrix, and regression semantics.
+- [docs/adr/0001-deterministic-scoring-over-llm.md](docs/adr/0001-deterministic-scoring-over-llm.md) — why scoring is deterministic and explainable, and when an LLM intent sub-score would earn its place.
+
+> Validation is two-tier: CI runs the **offline static gate** only; the **behavioral eval**
+> (`Test-LeadIntelligenceWorkflow.ps1`) is a local step requiring live n8n.
+
 ## Setup
 
 ```powershell
