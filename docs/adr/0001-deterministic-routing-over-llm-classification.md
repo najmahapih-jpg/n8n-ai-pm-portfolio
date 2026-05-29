@@ -69,8 +69,9 @@ When the input is **open-ended free text whose useful labels are not a small fix
 example, clustering product feedback into *emergent* themes — recall of novel themes matters
 more than reproducibility, and no deterministic rule set can enumerate the label space.
 
-That is precisely the next project: the **Product Feedback Intelligence API**, which will
-revisit this ADR and choose an **LLM classifier with a deterministic rule fallback and a
+That is precisely the next project — **now built (2026-05-29)**; see the
+`n8n-product-feedback-intelligence` repo (10-case pin-data eval green against local n8n). The
+**Product Feedback Intelligence API** revisited this ADR and chose an **LLM classifier with a deterministic rule fallback and a
 confidence threshold**, evaluated with schema / value-range / graceful-degradation assertions
 rather than exact-match. The deterministic fallback is what preserves the reproducible, offline
 eval guaranteed here — the LLM is added where it earns its cost, not everywhere.
