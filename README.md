@@ -42,6 +42,10 @@ External CRM and Feishu/Lark delivery are intentionally placed last. The current
 > Validation is two-tier: CI runs the **offline static gate** only; the **behavioral eval**
 > (`Test-LeadIntelligenceWorkflow.ps1`) is a local step requiring live n8n.
 
+## Agent integration (MCP tool)
+
+- [docs/lead-scoring-mcp-tool.md](docs/lead-scoring-mcp-tool.md) — exposes this workflow as an agent-callable **MCP tool** (n8n MCP Server Trigger → Call n8n Workflow Tool, live id `wLyTjQRtlpUKgX5d`), reusing the 11-fixture behavioral eval as the correctness backstop. Documents the round-trip and the unauthenticated-SSE exposure boundary.
+
 ## Setup
 
 ```powershell
