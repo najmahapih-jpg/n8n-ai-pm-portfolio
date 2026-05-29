@@ -72,6 +72,8 @@ added without silently changing v0.1 behavior.
 A model earns its place where **semantic intent extraction from free text beats keyword rules**
 (e.g., scoring nuanced `message`/`intentSignals` content) — but only as an **intent sub-score
 with a deterministic floor**, so the grade stays explainable and the eval stays reproducible.
-The sibling **Product Feedback Intelligence API** demonstrates exactly this LLM-with-fallback
-discipline; if adopted here later, it would follow the same pattern under a new policy version
-and an expanded fixture matrix.
+The sibling **Product Feedback Intelligence API** (**now built (2026-05-29)** — see the
+`n8n-product-feedback-intelligence` repo, 10-case pin-data eval green) demonstrates exactly this
+LLM-with-fallback discipline; if adopted here later, it would follow the same pattern under a new
+policy version and an expanded fixture matrix. The same repo also exposes this lead workflow as an
+MCP tool — see `docs/lead-scoring-mcp-tool.md`.
