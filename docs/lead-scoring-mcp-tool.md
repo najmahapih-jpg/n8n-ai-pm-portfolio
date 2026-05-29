@@ -33,26 +33,47 @@ Two layers, deliberately decoupled:
   behavioral eval (`scripts/Test-LeadIntelligenceWorkflow.ps1`) as the regression backstop. This
   MCP layer adds no new business logic, so that eval still covers correctness of the scoring.
 
-## Round-trip test (how to verify)
+## Round-trip test — verified
 
-The MCP Server Trigger serves an SSE endpoint at `/<mcp-base>/lead-scoring`. To exercise the
-round trip:
+Exercised end-to-end (2026-05-29) with a raw MCP client (PowerShell JSON-RPC over the
+Streamable-HTTP endpoint). Both the MCP-server workflow (`wLyTjQRtlpUKgX5d`) and the lead
+sub-workflow (`xhZ0XMNvi4LeVWzk`) must be **active/published** first.
 
-1. Point an MCP client at the endpoint (the official n8n MCP / an `mcpClient` node / Claude).
-2. List tools → expect `score_lead` with the documented input description.
-3. Call `score_lead` with a lead object (e.g. the `lead-hot-enterprise` fixture payload).
-4. Expect a structured result with `grade`, `priorityScore`, `route.ownerQueue`, `followUp.slaHours`,
-   `auditEventId`, and `policyVersion = lead-intel-v0.1.0`.
+| Step | Endpoint / method | Result |
+| --- | --- | --- |
+| publish | `publish_workflow` (both workflows) | active |
+| `initialize` | `POST /mcp/lead-scoring` | 200, session id, `serverInfo: Lead_Scoring_MCP_Server` |
+| `tools/list` | same session | `score_lead` exposed (input schema `{ input: string }`, `additionalProperties: true`) |
+| `tools/call score_lead` | same session | full chain executes; sub-workflow returns a structured JSON response back through MCP |
 
-Because the tool delegates to `xhZ0XMNvi4LeVWzk`, the expected scoring for any fixture matches the
-behavioral eval's golden table for that fixture — the eval *is* the oracle for the tool's output.
+**Verified:** the MCP transport, tool discovery, and the delegation chain (MCP client → MCP
+Server Trigger → `score_lead` → Lead Intelligence API → structured response → back to client)
+work end-to-end. A `tools/call` traverses the entire chain and returns the workflow's own JSON.
+
+**Open finding (input mapping) — the value of running the test.** The tool currently exposes a
+generic `input` string, and the lead workflow's entries are manual + webhook triggers (no
+*Execute Workflow Trigger* declaring typed inputs), so structured lead fields are not yet mapped
+into the sub-workflow. A call therefore lands on the **validation branch** and returns a clean
+`400 Missing required lead fields` — which in turn confirms the validation path works over MCP.
+Two concrete lessons the test surfaced:
+
+1. **Both** the MCP-server workflow and the called sub-workflow must be active, or the tool call
+   fails with *"Workflow is not active and cannot be executed."*
+2. To return a graded result, add an `n8n-nodes-base.executeWorkflowTrigger` to the lead workflow
+   with declared inputs (email, companyName, …) wired to `Normalize Lead Payload`; the
+   Call-Workflow Tool then auto-exposes those typed inputs on `score_lead` for the agent to fill.
+
+Once inputs map through, the expected scoring for any payload matches the behavioral eval's
+golden table — the eval *is* the oracle for the tool's output.
 
 ## Honest scoping (read this)
 
-- **The agent round-trip is a manual/live MCP-client demo**, not part of the offline pin-data
-  suite. What is machine-verified here: the SDK **validates** (`validate_workflow`) and the
-  workflow was **created** live. What the existing eval verifies: the **scoring logic** the tool
-  delegates to. The MCP layer adds no logic to grade.
+- **The MCP round-trip is verified at the transport / discovery / delegation level** (see the
+  table above): the SDK validates, the workflow is created + published, and a live `tools/call`
+  traverses the full chain and returns a structured response. **Returning a graded result
+  end-to-end is gated on the input-mapping fix (Execute Workflow Trigger).** The scoring logic
+  itself stays covered by the lead workflow's 11-fixture behavioral eval; the MCP layer adds no
+  logic to grade.
 - **The SSE endpoint is unauthenticated (`authentication: none`)** for local use. This is fine
   on a local-only box; **add bearer/header auth before any network exposure** — an open MCP
   trigger is a real exposure boundary, not a detail to gloss over.
