@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Secrets / local env — never commit real values
+.env
+.env.*
+!.env.example
+
+# Validation artifacts (generated locally)
+artifacts/validation/*
+!artifacts/validation/.gitkeep
+
+# Harness / session state (not project content)
+.omc/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+*.log

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/Build-WorkflowIndex.ps1",
+  "workflowCount": 1,
+  "workflows": [
+    {
+      "slug": "product-feedback-intelligence",
+      "title": "Portfolio - Product Feedback Intelligence API",
+      "description": "Local product feedback intelligence workflow: validates feedback intake, classifies theme/sentiment/urgency via an LLM-in-the-loop classifier with a deterministic fallback and confidence gate, derives urgency, scores priority, gates churn-risk/critical items for human review, and emits a redacted audit event.",
+      "owner": "portfolio",
+      "department": "Product",
+      "version": "0.1.0",
+      "status": "draft-tested",
+      "project": "n8n-product-feedback-intelligence",
+      "lastWriter": "official n8n MCP",
+      "n8nWorkflowId": "6Gc3wmri0tJre07B",
+      "source": "workflows\\sdk\\product-feedback-intelligence.workflow.js",
+      "canonical": "workflows\\canonical\\product-feedback-intelligence.canonical.json",
+      "release": "workflows\\releases\\product-feedback-intelligence-v0.1.0.json",
+      "request": "fixtures\\requests\\product-feedback-intelligence.md",
+      "trigger": "manual + webhook",
+      "integrations": [
+        "n8n Manual Trigger",
+        "n8n Webhook",
+        "Local stub classifier (Ollama-ready)",
+        "Redacted audit"
+      ],
+      "tags": [
+        "product-feedback",
+        "classification",
+        "llm-in-the-loop",
+        "human-in-the-loop",
+        "workflow-as-code"
+      ],
+      "fixtures": [
+        "feedback-bug-negative.json",
+        "feedback-feature-request.json",
+        "feedback-praise.json",
+        "feedback-churn-risk.json",
+        "feedback-performance.json",
+        "feedback-pricing.json",
+        "feedback-usability.json",
+        "feedback-low-confidence-fallback.json",
+        "feedback-prompt-injection.json",
+        "feedback-missing-text.json"
+      ],
+      "smokeCases": [
+        "feedback-bug-negative"
+      ],
+      "localOnly": true,
+      "nodeCount": 25,
+      "nodeTypes": [
+        "n8n-nodes-base.code",
+        "n8n-nodes-base.if",
+        "n8n-nodes-base.manualTrigger",
+        "n8n-nodes-base.respondToWebhook",
+        "n8n-nodes-base.stickyNote",
+        "n8n-nodes-base.webhook"
+      ],
+      "complexity": "advanced",
+      "notes": "The LLM (Ollama) classifier path is env-switchable and demonstrated manually; CI and the behavioral eval run the deterministic stub so the suite is offline and reproducible. n8nWorkflowId is populated by the first Sync-N8nWorkflowFromSdk run."
+    }
+  ]
+}
