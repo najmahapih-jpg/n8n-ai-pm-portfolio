@@ -1,0 +1,15 @@
+{
+  "email": "ops@known-account.example",
+  "fullName": "Dana Lee",
+  "title": "Head of Operations",
+  "companyName": "Known Account",
+  "companyDomain": "known-account.example",
+  "source": "partner",
+  "industry": "logistics",
+  "country": "uk",
+  "employeeCount": 900,
+  "requestedProduct": "Enterprise AI Workflow",
+  "message": "We want a demo and pricing for the operations automation expansion.",
+  "existingLeadId": "lead_existing_20260529",
+  "receivedAt": "2026-05-29T14:25:00.000Z"
+}

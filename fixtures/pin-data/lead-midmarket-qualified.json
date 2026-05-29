@@ -1,0 +1,14 @@
+{
+  "workEmail": "ops@northstar-saas.example",
+  "name": "Morgan Patel",
+  "jobTitle": "Director of Revenue Operations",
+  "company": "Northstar SaaS",
+  "domain": "northstar-saas.example",
+  "channel": "webinar",
+  "industry": "saas",
+  "region": "canada",
+  "employees": 350,
+  "interest": "Workflow Automation",
+  "notes": "We are comparing workflow tools for sales handoffs and lifecycle automation across marketing operations and account management.",
+  "receivedAt": "2026-05-29T14:05:00.000Z"
+}

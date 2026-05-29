@@ -1,0 +1,32 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# n8n sensitive exports and runtime data
+workflows/raw/*
+!workflows/raw/.gitkeep
+workflows/generated/*
+!workflows/generated/.gitkeep
+workflows/exports/
+credentials/
+executions/
+logs/
+
+# Validation artifacts
+artifacts/validation/*
+!artifacts/validation/.gitkeep
+
+# PowerShell and local scratch
+*.log
+*.tmp
+*.bak
+
+# Node dependency install output
+node_modules/
+
+# OS/editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,14 @@
+{
+  "email": "admin@acme.test",
+  "fullName": "Casey Zhang",
+  "title": "Automation Lead",
+  "companyName": "Acme Test",
+  "companyDomain": "acme.test",
+  "source": "web",
+  "industry": "saas",
+  "country": "us",
+  "employeeCount": 500,
+  "requestedProduct": "Workflow Automation",
+  "message": "We need a demo for a new workflow automation evaluation.",
+  "receivedAt": "2026-05-29T14:30:00.000Z"
+}
