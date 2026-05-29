@@ -130,6 +130,17 @@ Current workflow scale:
 9. Use `Export-N8nWorkflows.ps1` for broad Docker backup exports when needed.
 10. Commit only docs, fixtures, scripts, SDK source, metadata, canonical JSON, and release snapshots.
 
+## Evaluation & Decision Records
+
+The pin-data suite is documented as a behavioral **eval**, with an explicit
+static-vs-behavioral validation split and a decision log for the deterministic-vs-LLM choice:
+
+- [docs/eval-methodology.md](docs/eval-methodology.md) — assertion taxonomy, coverage matrix, regression semantics, and the production metrics this eval stands in for.
+- [docs/adr/0001-deterministic-routing-over-llm-classification.md](docs/adr/0001-deterministic-routing-over-llm-classification.md) — why routing is deterministic, and the conditions under which an LLM is the right call.
+
+> Validation is two-tier: CI runs the **offline static gate** only; the **behavioral pin-data
+> eval** (`Test-SupportTriageWorkflow.ps1`) is a local step that requires a live n8n instance.
+
 ## Resume Bullet
 
 Built a local n8n Workflow-as-Code platform using Codex/Claude, official n8n MCP, community n8n-mcp, Docker, and PowerShell to generate, validate, test, export, scrub, and version automation workflows with a Git-backed release process.
