@@ -12,16 +12,23 @@ This is the **fourth** workflow on the shared "Workflow-as-Code" harness and the
 the **meta level** — it does not do an end-user task, it **measures AI quality**, the single
 highest-signal AI-PM portfolio artifact.
 
-> **Status: v0.3.0 — live & verified.** The harness is deployed on local n8n (workflow id
-> `IhmmthDFMKdDbgvp`, **26 nodes**, active) and now grades a **deployed sibling workflow** as a
-> black-box subject-under-test: `sutMode:"workflow"` POSTs each golden case to the live
-> **product-feedback** API (`6Gc3wmri0tJre07B`) over its real webhook and grades `response.theme`
-> (exact-match), with graceful non-fatal failure when the sibling is down (see
-> [ADR-0003](docs/adr/0003-grade-deployed-sibling-as-blackbox-sut.md)). The v0.2.0 **live local Ollama
-> LLM-as-judge** (`llama3.2:3b`, behind a deterministic fallback) and the **judge–human calibration**
-> (agreement → `judgeTrust`) are unchanged. The stub SUT **and** stub judge remain the defaults so the
-> Layer-2 behavioral suite (`verify:live`) stays offline and reproducible; the live judge runs under
-> `verify:judge` (needs Ollama) and the live connected eval under `verify:connected` (needs the sibling).
+> **Status: v0.4.0 — live & verified (multi-model bench).** The harness is deployed on local n8n
+> (workflow id `IhmmthDFMKdDbgvp`, **30 nodes**, active) and is now a **multi-model eval bench**: every
+> scored row carries a `modelId` (key `caseId∷modelId`) and **Aggregate groups by `modelId`** into
+> `perModel` (pass-rate + per-rubric mean + `meanLatencyMs` + `totalTokens` + `estCostUsd` + `costBasis`)
+> plus a ranked `bench` — the **cost–quality–latency triangle** per model. `sutMode:"model"` fans out
+> **cases × `sutModels`** and calls local **Ollama** (`/api/chat`, `temperature:0`) per `(case, model)`,
+> running two lanes by default — the deterministic **`stub`** lane (the reproducible comparison baseline)
+> **and** the live **`llama3.2:3b`** lane — with graceful non-fatal failure (`sutSource:"error"`,
+> `passed=false`) on an unreachable model. Cost is **honest**: local Ollama is `estCostUsd:0` /
+> `costBasis:"local-free"` (tokens + latency are the signal); a `$` estimate is only ever produced for
+> **known cloud ids** in an explicit `priceTable` (none used now) — a local cost is never fabricated
+> (see [ADR-0004](docs/adr/0004-multi-model-bench-cost-latency-regression.md)). v0.3.0's `sutMode:"workflow"`
+> black-box SUT, the v0.2.0 **live Ollama judge** + **judge–human calibration** are unchanged. The stub SUT
+> **and** stub judge remain the defaults so the Layer-2 behavioral suite (`verify:live`) stays offline and
+> reproducible; the live bench runs under **`verify:bench`** (needs Ollama), the live judge under
+> `verify:judge`, and the live connected eval under `verify:connected`. **Deferred to v0.5.0:**
+> regression-vs-baseline delta (`regressionDelta` stays `null`).
 
 ## Why this project (AI-PM framing)
 
@@ -49,32 +56,47 @@ Layer 2 proves mechanics and graceful degradation — **not** that the live judg
 Judge accuracy is a separate, manual, honestly-labeled calibration. See
 [docs/eval-plan.md](docs/eval-plan.md) for exactly what is and isn't proven.
 
-## Node graph (v0.3.0 — built; SUT *model* fan-out & regression delta deferred)
+## Node graph (v0.4.0 — built; regression delta deferred to v0.5.0)
 
-Built in v0.3.0: the webhook entrypoint, validation, a **gated subject-under-test** (stub default /
-live `workflow` per request — a visual IF gate `SUT Mode = Workflow?` fans out each case to the
-deployed **product-feedback** webhook and extracts `response.theme` as the actual output, with
-`onError:continueRegularOutput` making an unreachable sibling a non-fatal `passed=false`), the 5-type
-deterministic assertions, the **gated LLM-as-judge** (stub default / live Ollama per request) with
-schema-validation + deterministic fallback, the **judge-drift guard** (judge vs. human-labeled slice →
-`judgeTrust`), and the redacted audit + JSON response. The two SUT branches fan in to the deterministic
-assertions, so the judge → aggregate → audit → response tail is defined once. Still deferred: live
-**SUT `model`** fan-out (Ollama/cloud), the schedule trigger, regression-delta vs. previous run, and
+Built in v0.4.0 (**30 nodes**): the webhook entrypoint, validation, a **3-way gated subject-under-test**
+routed by **two nested IFs** (`SUT Mode = Workflow?` → `SUT Mode = Model?`), all three SUT branches
+fanning in to the deterministic assertions:
+
+- **stub** (default) — deterministic echo SUT; keeps `verify:live` offline + reproducible.
+- **`workflow`** — fans out each case to the deployed **product-feedback** webhook and grades
+  `response.theme` (exact-match), `onError:continueRegularOutput` → unreachable sibling = `passed=false`.
+- **`model`** (v0.4.0) — fans out **cases × `sutModels`** and calls **Ollama** `/api/chat`
+  (`temperature:0`) per `(case, model)` via three nodes (`Fan Out Model Cases` → `Call Model SUT (Ollama)`
+  → `Parse Model SUT (Ollama)`), extracting the model text as the actual output + `eval_count` +
+  `prompt_eval_count` tokens + `total_duration` latency. `sutModels` defaults to `["stub","llama3.2:3b"]`
+  (the deterministic stub lane **and** the live model lane); an unreachable model → `sutSource:"error"`,
+  `passed=false`.
+
+Every scored row carries a `modelId` (key `caseId∷modelId`); the 5-type deterministic assertions and the
+**gated LLM-as-judge** (stub default / live Ollama per request, schema-validation + deterministic
+fallback) operate **per row**, and **Aggregate groups by `modelId`** into `perModel`
+(`{modelId, total, passRate, perRubricMean, meanLatencyMs, totalTokens, estCostUsd, costBasis}`) + a
+ranked `bench`. Cost is honest: local Ollama is `estCostUsd:0` / `costBasis:"local-free"`; cloud ids are
+priced only from an explicit `priceTable`. The **judge-drift guard** (judge vs. human-labeled slice →
+`judgeTrust`) and the redacted audit + JSON response are unchanged. Still deferred to **v0.5.0**:
+regression-delta vs. a committed baseline (`regressionDelta` stays `null`), the schedule trigger, and
 optional Markdown/Feishu reporting.
 
 ```
-trigger (webhook: one eval run  |  schedule: batch)
+trigger (webhook: one eval run  |  manual: editor demo)
   -> load golden dataset (+ validate: tasks present)
-  -> for each task:
-       -> run subject-under-test  (mode: stub | model[ollama|cloud] | workflow[product-feedback])
+  -> route SUT  (two nested IFs: workflow? -> model? -> stub) -- fan in to assertions
+  -> for each (case, model):                                  [modelId on every row; key caseId∷modelId]
+       -> run subject-under-test  (stub | workflow[product-feedback] | model[ollama: cases × sutModels])
        -> deterministic assertions (5-type taxonomy)  [FIRST — owns checkable facts]
-       -> LLM-as-judge (stub | live)  -> {groundedness, relevance, helpfulness, safety} 1..5 + rationale
+       -> LLM-as-judge (stub | live Ollama)  -> {groundedness, relevance, helpfulness, safety} 1..5
        -> validate judge output (schema)  -> fallback if invalid (passed=false)
-  -> aggregate (per-SUT pass-rate, per-rubric mean, cost, latency)
+  -> aggregate: GROUP BY modelId -> perModel {passRate, perRubricMean, meanLatencyMs, totalTokens,
+                                              estCostUsd, costBasis} + ranked bench  (cost–quality–latency)
   -> judge-drift guard (judge vs. human-labeled slice -> judgeTrust high|low)
-  -> regression delta vs. previous run
+  -> regression delta vs. committed baseline  [DEFERRED to v0.5.0 -> null]
   -> redacted audit event
-  -> structured report (JSON; optional Markdown / Feishu)
+  -> structured report (JSON)
 ```
 
 ## Docs & artifacts
@@ -84,6 +106,7 @@ trigger (webhook: one eval run  |  schedule: batch)
 - [docs/adr/0001-hybrid-deterministic-and-llm-judge-scoring.md](docs/adr/0001-hybrid-deterministic-and-llm-judge-scoring.md) — the hybrid-scoring + calibrated-stub-judge decision.
 - [docs/adr/0002-deploy-via-rest-api-without-mcp.md](docs/adr/0002-deploy-via-rest-api-without-mcp.md) — compile the SDK standalone and deploy via the n8n public REST API (no MCP).
 - [docs/adr/0003-grade-deployed-sibling-as-blackbox-sut.md](docs/adr/0003-grade-deployed-sibling-as-blackbox-sut.md) — grade the deployed product-feedback sibling as a black-box subject-under-test (v0.3.0).
+- [docs/adr/0004-multi-model-bench-cost-latency-regression.md](docs/adr/0004-multi-model-bench-cost-latency-regression.md) — multi-model SUT fan-out + per-model cost–latency–quality bench (v0.4.0); regression-vs-baseline deferred to v0.5.0.
 
 ## Portfolio roadmap (chosen direction: build A first, keep B/C/D)
 
@@ -104,22 +127,27 @@ three be graded as subjects-under-test.
 
 ```powershell
 npm run verify:static     # offline gate: parse + secret scan + node floor + registry freshness
-npm run verify:json       # n8n workflow JSON shape + node floor (canonical >= 26, releases)
-npm run verify:live       # connection check -> SDK sync -> 30-assertion behavioral suite (STUB SUT + STUB judge)
+npm run verify:json       # n8n workflow JSON shape + node floor (canonical >= 30, releases)
+npm run verify:live       # connection check -> SDK sync -> 38-assertion behavioral suite (STUB SUT + STUB judge; asserts aggregate.perModel)
 npm run verify:judge      # LIVE Ollama judge + judge-human calibration over the slice (needs Ollama; NOT in CI)
 npm run verify:connected  # LIVE connected eval: activates product-feedback, grades it as a black-box SUT (sutMode:workflow); needs the sibling; NOT in CI
+npm run verify:bench      # LIVE multi-model bench: sutMode:model fan-out (stub + llama3.2:3b lanes, stub judge); prints the per-model triangle; needs Ollama; NOT in CI
 ```
 
 `verify:live` exercises the **stub** SUT + **stub** judge only, so it is deterministic and offline (the
-eval-plan's Layer-2 discipline). `verify:judge` is a **separate, Layer-1** activity: it deploys the
-workflow, runs the live `llama3.2:3b` judge over `fixtures/calibration/calibration-slice.json`, and
+eval-plan's Layer-2 discipline); it now also asserts the `aggregate.perModel` surface exists (the
+degenerate single-`"stub"`-model entry). `verify:judge` is a **separate, Layer-1** activity: it deploys
+the workflow, runs the live `llama3.2:3b` judge over `fixtures/calibration/calibration-slice.json`, and
 prints the raw Ollama JSON, the per-case judge-vs-human comparison, the **agreement** number, and the
-resulting `judgeTrust`. `verify:connected` is the other **Layer-1** activity: it activates the deployed
-**product-feedback** sibling (`6Gc3wmri0tJre07B`), POSTs `fixtures/golden/connected-product-feedback.json`
-with `sutMode:"workflow"`, and prints one verbatim raw product-feedback response plus the per-case
-**theme (actual) vs expected** table and the pass-rate — honestly, even when the live themes do not all
-match. Both Layer-1 drivers report real numbers (a low agreement or a sub-1.0 pass-rate is a correct,
-surfaced result, not a hidden failure).
+resulting `judgeTrust`. `verify:connected` activates the deployed **product-feedback** sibling
+(`6Gc3wmri0tJre07B`), POSTs `fixtures/golden/connected-product-feedback.json` with `sutMode:"workflow"`,
+and prints the per-case **theme (actual) vs expected** table and pass-rate. `verify:bench` (v0.4.0) is the
+other **Layer-1** activity: it runs the **live `sutMode:"model"` fan-out** over
+`fixtures/golden/bench-model-slice.json` with the **stub judge** (a fixed judge, varying SUT model, to
+avoid confounding the model comparison with judge variance) and prints the **per-model cost–quality–latency
+triangle** + the ranked `bench` + the raw response JSON — the deterministic `stub` lane next to the live
+`llama3.2:3b` lane. All Layer-1 drivers report real numbers (a low agreement or a sub-1.0 lane pass-rate is
+a correct, surfaced result, not a hidden failure).
 
 ## Current Status
 
@@ -153,6 +181,37 @@ surfaced result, not a hidden failure).
 - [x] Version bump to 0.3.0: `meta.json`, `workflows/releases/llm-eval-harness-v0.3.0.json`, regenerated registry + canonical snapshot.
 - [x] Deployed live (id `IhmmthDFMKdDbgvp`, **26 nodes**, active); `verify:static`/`json`/`live` green; `verify:judge` green; `verify:connected` passRate 1.0 (all 6 live themes matched).
 
-**Deferred (roadmap)**
-- [ ] SUT **model** fan-out (`sutMode:"model"` — Ollama/cloud as the subject-under-test).
-- [ ] Regression delta vs. the previous run (run store).
+**v0.4.0 (done — this release: multi-model bench)**
+- [x] **`modelId` on every scored row** (key `caseId∷modelId`): the deterministic assertions + judge
+      operate per row, and **Aggregate groups by `modelId`** into `perModel`
+      (`{modelId, total, passRate, perRubricMean, meanLatencyMs, totalTokens, estCostUsd, costBasis}`) +
+      a ranked `bench`. Stub/workflow stay the degenerate single-`"model"` case (`perModel` length 1; the
+      existing `aggregate.passRate`/`perRubricMean`/`judgeTrust`/`calibration` are unchanged).
+- [x] **`sutMode:"model"`** fans out **cases × `sutModels`** and calls **Ollama** `/api/chat`
+      (`host.docker.internal:11434`, `temperature:0`) per `(case, model)` via three nodes
+      (`Fan Out Model Cases` → `Call Model SUT (Ollama)` → `Parse Model SUT (Ollama)`); extracts the model
+      text as the actual output + `eval_count` + `prompt_eval_count` tokens + `total_duration` latency.
+      `onError:continueRegularOutput` → an unreachable model is `sutSource:"error"`, `passed=false`.
+- [x] **Two real lanes**: `sutModels` defaults to `["stub","llama3.2:3b"]` (the deterministic stub lane +
+      the live `llama3.2:3b` lane — only `llama3.2:3b` is pulled locally; no new models pulled), with a
+      per-request override list (the stub lane is always forced in).
+- [x] **Honest cost**: local Ollama is `estCostUsd:0` / `costBasis:"local-free"` (tokens + latency
+      reported); a `$` estimate is only ever produced for **known cloud ids** in an explicit `priceTable`
+      (none used now) — a local cost is never fabricated.
+- [x] **3-way SUT routing** via a **second nested IF** (`SUT Mode = Model?` after `SUT Mode = Workflow?`),
+      both fanning in to `Run Deterministic Assertions` (chosen over a Switch to keep every gate a uniform IF).
+- [x] **Reproducible default kept**: stub SUT + stub judge stay the default; `verify:live` stays offline +
+      green (assertions extended for the `perModel` shape). New **`npm run verify:bench`** (non-CI) runs the
+      LIVE `sutMode:"model"` fan-out (stub + `llama3.2:3b` lanes) with the **stub judge** and prints the
+      per-model triangle. Node floor raised **26 → 30** across the toolchain (compile/sync/static/json, meta, README).
+- [x] Version bump to 0.4.0: `meta.json`, `workflows/releases/llm-eval-harness-v0.4.0.json`, regenerated
+      registry + canonical snapshot; implementation note appended to [ADR-0004](docs/adr/0004-multi-model-bench-cost-latency-regression.md).
+- [x] Deployed live (id `IhmmthDFMKdDbgvp`, **30 nodes**, active); `verify:static`/`json`/`live` green
+      (38-assertion stub suite); `verify:judge` agreement 1.0 / `judgeTrust:high`; `verify:connected`
+      passRate 1.0; `verify:bench` ran both lanes — `stub` passRate 0 / `llama3.2:3b` passRate 1 on the
+      bench slice, `estCostUsd:0` / `costBasis:"local-free"` for both, `meanLatencyMs` 1 vs 662.
+
+**Deferred (roadmap → v0.5.0)**
+- [ ] Regression delta vs. a **committed baseline** (`body.baseline` / `fixtures/baseline/`), deterministic
+      in CI via the stub lane (`regressionDelta` stays `null` until then).
+- [ ] Schedule trigger (batch eval runs) + optional Markdown/Feishu reporting.
