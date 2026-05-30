@@ -1,6 +1,6 @@
 # ADR-0004: Multi-model SUT fan-out, cost–latency–quality surfacing, regression-vs-baseline
 
-- **Status:** Accepted (planning → implementation v0.4.0)
+- **Status:** Accepted (planning → implementation v0.4.0 → decision 5 completed v0.5.0)
 - **Date:** 2026-05-30
 - **Workflow:** `Portfolio - LLM Eval Harness API` (`workflows/sdk/llm-eval-harness.workflow.js`)
 - **Related:** [ADR-0001](0001-hybrid-deterministic-and-llm-judge-scoring.md) (hybrid scoring + stub default),
@@ -140,3 +140,93 @@ baseline) is DEFERRED to v0.5.0** — `regressionDelta` stays `null` (honest, as
 "`format` as needed") — a general text SUT must return free-form text, so its raw answer is what the deterministic
 taxonomy grades. (b) `regressionDelta` and the `verify:live` deterministic-baseline assertion of decision 5/6 are
 **deferred to v0.5.0** per the increment scope; `regressionDelta` stays `null`.
+
+## Implementation / verification note (v0.5.0 — decision 5 DONE, built + verified live 2026-05-30)
+
+**Built this increment:** **decision 5 (regression vs. baseline)** + the regression part of decision 6.
+Decisions 1–4 (multi-model bench) are unchanged from v0.4.0. **`regressionDelta` is now COMPUTED** (it was
+the `null` placeholder) — **DECISION 5 is DONE.**
+
+- **Where + how (decision 5).** The compute lives in the **existing `Aggregate Eval Run` node** (it already
+  had `passRate` / `perModel` / `perRubricMean` in scope) — **no new node**, so the node floor **stays 30**.
+  The baseline is an **explicit input** carried in the **request body** (`body.baseline`): a caller supplies it
+  inline (`baselineSource:"request"`) or the offline test driver injects the committed
+  `fixtures/baseline/regression-baseline.json` (`baselineSource:"fixture"`). `Normalize Eval Request` validates
+  + threads it onto `runtime.baseline` / `runtime.baselineSource` / `runtime.regressionTolerance`. Delta =
+  **current − baseline** on overall `passRate`, **per-model** `passRate` (matched by `modelId`), and
+  `perRubricMean` (per dim). `regressed:true` iff **any** overall/per-model `passRate` drops **more than the
+  tolerance band** (`current < baseline − tolerance`, default tolerance `0`). A `modelId` present now but
+  **absent from the baseline** is reported (`passRateDelta:null`, `isNew:true`) and **never** a regression
+  (you cannot regress vs. nothing). **No baseline → `regressionDelta:null`** (honest, exactly as before).
+  Emitted shape:
+
+  ```
+  regressionDelta: {
+    baselineSource: "request" | "fixture",
+    tolerance: <band>,
+    overall: { passRate, baselinePassRate, passRateDelta },
+    perModel: [ { modelId, passRate, baselinePassRate, passRateDelta, isNew } ],
+    perRubricMeanDelta: { groundedness, relevance, helpfulness, safety },
+    regressed: <bool>
+  }
+  ```
+
+- **Deterministic + reproducible (the whole point, decision 6).** The STUB SUT + STUB judge path is
+  deterministic, so the committed `fixtures/baseline/regression-baseline.json` (the captured stub-run aggregate
+  for the 2-case echo slice — overall `passRate 0.5`, `stub` lane `0.5`, `perRubricMean {3.5,3.5,3.5,5}`) yields a
+  **byte-stable** delta. A baseline-equals-current run → `passRateDelta:0`, `regressed:false`.
+
+- **No hidden store as the CI mechanism (decision 5).** The request/fixture baseline is **primary and the only
+  CI mechanism**. The optional `$getWorkflowStaticData("global")` "last run" convenience was **SKIPPED** — it is
+  not needed for any gate and keeping it out guarantees `verify:live` stays reproducible (no dependency on
+  execution history). This is the ADR's preferred resolution ("if in doubt, skip static-data").
+
+- **`verify:live` stays offline + green AND now asserts the deterministic `regressionDelta` (decision 6).**
+  `scripts/Test-EvalHarnessWorkflow.ps1` gained a `regression-baseline` case asserting BOTH: (a) a
+  baseline-equals-current run (inject the fixture as `body.baseline`) → `regressed:false`, every
+  `passRateDelta == 0`, `baselineSource == "fixture"`; (b) a deliberately-higher-pass-rate baseline (the same
+  fixture mutated upward to `passRate 1.0`) → `regressed:true` with a **negative** overall `passRateDelta`. All
+  existing v0.4.0 assertions (`perModel` etc.) stay green. `policyVersion` bumped `v0.4.0 → v0.5.0`. The suite
+  grew **38 → 52 assertions**, all PASS, offline.
+
+**Live verification (2026-05-30, workflow `IhmmthDFMKdDbgvp`, 30 nodes, active; PUT 200 + re-activated):**
+
+- `verify:static` / `verify:json` — green (registry fresh, canonical + `llm-eval-harness-v0.5.0.json` at floor 30, secret scan clean).
+- `verify:live` — green, **52 assertions / 3 cases**, fully offline (stub SUT + stub judge), incl. the two deterministic regression assertions; `policyVersion:eval-harness-v0.5.0`.
+- `verify:judge` — green, live `llama3.2:3b` judge, agreement **1.0**, `judgeTrust:high` (unchanged by v0.5.0).
+- `verify:connected` — green, `sutMode:"workflow"`, passRate **1.0** (unchanged by v0.5.0).
+- `verify:bench` — green, live `sutMode:"model"`, two lanes (`stub` + `llama3.2:3b`); `regressionDelta` is `null` here (no baseline passed to the bench), surfaced honestly.
+
+Two raw `regressionDelta` blocks captured live from `IhmmthDFMKdDbgvp` (v0.5.0), 2-case echo slice, verbatim:
+
+```json
+// (a) baseline EQUALS current (committed fixture) -> regressed:false, all deltas 0
+{
+  "baselineSource": "fixture",
+  "tolerance": 0,
+  "overall": { "passRate": 0.5, "baselinePassRate": 0.5, "passRateDelta": 0 },
+  "perModel": [ { "modelId": "stub", "passRate": 0.5, "baselinePassRate": 0.5, "passRateDelta": 0, "isNew": false } ],
+  "perRubricMeanDelta": { "groundedness": 0, "relevance": 0, "helpfulness": 0, "safety": 0 },
+  "regressed": false
+}
+```
+
+```json
+// (b) deliberately-HIGHER-passRate baseline -> regressed:true, negative passRateDelta (drift guard fires)
+{
+  "baselineSource": "request",
+  "tolerance": 0,
+  "overall": { "passRate": 0.5, "baselinePassRate": 1, "passRateDelta": -0.5 },
+  "perModel": [ { "modelId": "stub", "passRate": 0.5, "baselinePassRate": 1, "passRateDelta": -0.5, "isNew": false } ],
+  "perRubricMeanDelta": { "groundedness": -1.5, "relevance": -1.5, "helpfulness": -1.5, "safety": 0 },
+  "regressed": true
+}
+```
+
+**Honest deviations from the ADR-as-planned (v0.5.0):** (a) **No new node** — the ADR did not mandate one;
+the regression compute fits the existing `Aggregate` node, so the node floor stays 30 (no toolchain churn).
+(b) The optional `$getWorkflowStaticData` "last run" convenience was **skipped entirely** (the ADR permitted
+this: "if in doubt, skip static-data and keep only the explicit baseline"). (c) `perRubricMeanDelta` is an
+informational drift signal and is **not** part of the `regressed` gate — the **pass-rate** is the headline
+regression metric (mirroring the eval-plan's band semantics); a rubric-mean drift surfaces in the delta but
+does not by itself flip `regressed`.
