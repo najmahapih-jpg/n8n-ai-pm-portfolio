@@ -1,0 +1,789 @@
+{
+  "name": "Portfolio - LLM Eval Harness API",
+  "nodes": [
+    {
+      "id": "8614328e-6b02-4525-8ee4-769f2eb0127d",
+      "name": "Sticky Note 8614328e",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        110,
+        -10
+      ],
+      "parameters": {
+        "content": "## LLM Eval Harness v0.3.0\\nLocal eval-harness API: receives an eval run with inline golden cases, runs a GATED subject-under-test, scores each output with the 5-type deterministic assertion taxonomy (schema/range/format/absence/masking) FIRST, then grades the residual subjective dims (1..5 groundedness/relevance/helpfulness/safety) with a GATED judge. SUT gate: sutMode:\"workflow\" routes each case to the LIVE product-feedback sibling (POST /webhook/portfolio/product-feedback-intelligence) as a BLACK BOX and extracts response.theme as the actual output (onError:continueRegularOutput -> sutSource:\"error\", passed=false on an unreachable sibling); any other value uses the deterministic STUB SUT (the default, keeping the Layer-2 suite offline + reproducible). Judge gate: judgeSource:\"ollama\" calls a LIVE local llama3.2:3b (host.docker.internal:11434, format:json) per case, schema-validates, and falls back deterministically (judgeSource:\"fallback\", passed=false) on bad/unreachable output; any other value uses the deterministic STUB judge. Judge-human CALIBRATION: cases may carry a humanLabel; the run computes judge-vs-human agreement and sets judgeTrust:\"high\" (>=0.8) else \"low\" (the who-judges-the-judge drift guard). Emits a redacted audit event. Manual trigger runs an editor demo; webhook serves the API. DEFERRED: SUT model fan-out, regression-vs-previous-run.",
+        "color": 4,
+        "width": 4140,
+        "height": 640
+      }
+    },
+    {
+      "id": "e573badf-bb6f-4c66-a15f-20572b385335",
+      "name": "Run Demo Eval From n8n UI",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        160,
+        40
+      ]
+    },
+    {
+      "id": "b183e60c-d6f6-4c02-a016-65dac131c691",
+      "name": "Build Demo Eval Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0]?.json ?? {};\nif (Object.keys(input).length > 0) {\n  return [{ json: { ...input, manualExecution: true } }];\n}\n// Default demo run: one PASS case (echo stub satisfies expected) and one FAIL case\n// (expected != actual) so the editor demo exercises both branches of the aggregate.\nreturn [{\n  json: {\n    manualExecution: true,\n    runId: 'demo-run',\n    golden: [\n      { id: 'echo-pass', input: 'ping', expected: 'ping', assertions: { contains: 'ping', maxLength: 64 } },\n      { id: 'echo-fail', input: 'ping', expected: 'pong', assertions: { contains: 'pong', maxLength: 64 } }\n    ]\n  }\n}];"
+      }
+    },
+    {
+      "id": "a2ea7a34-d642-4499-b8b7-d9ab60178898",
+      "name": "Normalize Eval Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const source = items[0]?.json ?? {};\nconst body = source.body ?? source;\nconst entrypoint = source.manualExecution === true || body.manualExecution === true ? 'manual' : 'webhook';\nconst text = (v) => String(v ?? '').trim();\n\n// Accept golden cases under a few aliases; each case must carry input + expected to be valid.\nconst rawCases = Array.isArray(body.golden) ? body.golden\n  : Array.isArray(body.cases) ? body.cases\n  : Array.isArray(body.dataset) ? body.dataset\n  : [];\n\n// humanLabel is the calibration reference (Layer-1): an optional per-case object carrying the\n// human-expected verdict. Accepted shapes: { passed: bool } and/or { groundednessBand: [lo, hi] }.\n// It is OPTIONAL and never affects the stub path; it only powers judge-human agreement in live mode.\nconst normHumanLabel = (c) => {\n  const h = c && typeof c.humanLabel === 'object' && c.humanLabel ? c.humanLabel : null;\n  if (!h) return null;\n  const out = {};\n  if (typeof h.passed === 'boolean') out.passed = h.passed;\n  const band = Array.isArray(h.groundednessBand) ? h.groundednessBand : null;\n  if (band && band.length === 2 && Number.isFinite(Number(band[0])) && Number.isFinite(Number(band[1]))) {\n    out.groundednessBand = [Number(band[0]), Number(band[1])];\n  }\n  return Object.keys(out).length > 0 ? out : null;\n};\n\nconst golden = rawCases.map((c, i) => ({\n  id: text(c && c.id) || ('case-' + (i + 1)),\n  // input is kept verbatim when it is an OBJECT (the product-feedback request body used by\n  // sutMode:\"workflow\") and coerced to a trimmed string otherwise (the stub/string SUT path). This\n  // preserves the structured feedback payload so the workflow-SUT step can POST it to the sibling,\n  // while the stub + Ollama-judge paths (which String()-coerce input themselves) are unaffected.\n  input: c == null ? '' : (typeof c.input === 'string' ? c.input : (c.input && typeof c.input === 'object' ? c.input : text(c.input))),\n  expected: c == null ? '' : (typeof c.expected === 'string' ? c.expected : text(c.expected)),\n  assertions: (c && typeof c.assertions === 'object' && c.assertions) ? c.assertions : {},\n  humanLabel: normHumanLabel(c),\n  hasInput: !!(c && Object.prototype.hasOwnProperty.call(c, 'input')),\n  hasExpected: !!(c && Object.prototype.hasOwnProperty.call(c, 'expected'))\n}));\n\n// A run is valid only if there is at least one golden case with both { input, expected }.\nconst validCases = golden.filter((c) => c.hasInput && c.hasExpected);\nconst hasValidGolden = validCases.length > 0;\n\n// SUT mode + judge source are stub-only in the skeleton; live modes are deferred but the\n// configuration surface is normalized here so a misconfigured request can never silently\n// route the offline suite through a live model.\n// sutMode accepts an alias under either 'sutMode' or 'mode'. v0.3.0 HONOURS 'workflow' (grade the\n// live product-feedback sibling as a black-box subject-under-test via its real webhook); 'model'\n// stays deferred and degrades to the stub; anything else is the deterministic stub (the default,\n// keeping verify:live / CI offline + reproducible).\nconst requestedMode = (text(body.sutMode) || text(body.mode)).toLowerCase();\nconst sutMode = requestedMode === 'model' || requestedMode === 'workflow' ? requestedMode : 'stub';\n// sutWebhookUrl is the product-feedback endpoint the workflow-SUT step POSTs each case to. The\n// eval-harness runs INSIDE the n8n container, so it defaults to the container-local n8n port\n// (the sibling webhook is served by the same n8n instance). An optional per-request override\n// lets a caller point at host.docker.internal or a remote n8n if localhost is ever unreachable.\nconst sutWebhookUrl = text(body.sutWebhookUrl) || 'http://localhost:5678/webhook/portfolio/product-feedback-intelligence';\nconst requestedJudge = text(body.judgeSource).toLowerCase();\nconst judgeSource = requestedJudge === 'ollama' || requestedJudge === 'openai' ? requestedJudge : 'stub';\n// judgeModel is an OPTIONAL per-request override of the Ollama model id. It defaults to the\n// pinned 'llama3.2:3b'. Its honest purpose is twofold: (a) try a different local model, and\n// (b) DEMONSTRATE the fallback — passing a non-existent model id makes Ollama 404, which the\n// onError-tolerant HTTP node routes to the parser as a forced deterministic fallback. It never\n// affects the stub path (stub is chosen whenever judgeSource !== 'ollama').\nconst judgeModel = text(body.judgeModel) || 'llama3.2:3b';\n\nreturn [{\n  json: {\n    run: {\n      runId: text(body.runId) || ('run_' + Date.now().toString(36)),\n      requestedAt: text(body.requestedAt) || new Date().toISOString()\n    },\n    golden,\n    validation: {\n      hasValidGolden,\n      caseCount: golden.length,\n      validCaseCount: validCases.length\n    },\n    runtime: {\n      entrypoint,\n      // v0.3.0: the SUT now honours sutMode:'workflow' per-request — a visual IF gate downstream\n      // routes it to an httpRequest that POSTs each golden case to the LIVE product-feedback sibling\n      // (6Gc3wmri0tJre07B) and extracts response.theme as the case's actual output. 'model' fan-out\n      // is still deferred and degrades to the stub. Anything else keeps the deterministic stub so CI /\n      // verify:live stays offline + reproducible (stub is the default everywhere CI touches).\n      sutMode: sutMode === 'workflow' ? 'workflow' : 'stub',\n      requestedSutMode: sutMode,\n      sutWebhookUrl,\n      // v0.2.0: the JUDGE now honours judgeSource:'ollama' per-request (live local judge), routed\n      // by a visual IF gate downstream. Any other value keeps the deterministic stub judge so CI /\n      // verify:live stays offline + reproducible (stub is the default everywhere CI touches).\n      judgeSource: judgeSource === 'ollama' ? 'ollama' : 'stub',\n      requestedJudgeSource: judgeSource,\n      judgeModel\n    },\n    sourcePayloadKeys: Object.keys(body)\n  }\n}];"
+      }
+    },
+    {
+      "id": "ec53da67-2880-4746-b645-3a577a2e662e",
+      "name": "Golden Case Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "golden-case-present",
+              "leftValue": "={{ $json.validation.hasValidGolden }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "946b0aad-859b-4f8a-bf04-9a29d04e998b",
+      "name": "SUT Mode = Workflow?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1120,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "sut-mode-workflow",
+              "leftValue": "={{ $json.runtime.sutMode === \"workflow\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1d49ce5c-a2ea-441b-82fe-66854970eeec",
+      "name": "Fan Out SUT Cases",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// Emit one item per golden case carrying exactly the product-feedback request body. For\n// sutMode:\"workflow\" each case's 'input' is the feedback object ({ feedbackText, reportedCount,\n// source, submittedAt }); we tolerate a bare-string input by wrapping it as feedbackText. Order is\n// the correlation key — the parse node pairs HTTP responses back to cases by index via\n// $('Fan Out SUT Cases').all(). The product-feedback webhook URL travels on each item so the\n// httpRequest node can read it from $json (per-request overridable, container-local by default).\nconst sutUrl = (input.runtime && input.runtime.sutWebhookUrl) ? input.runtime.sutWebhookUrl : 'http://localhost:5678/webhook/portfolio/product-feedback-intelligence';\nconst items_out = input.golden.map((c) => {\n  const raw = c.input;\n  let feedbackBody;\n  if (raw && typeof raw === 'object') {\n    feedbackBody = raw;\n  } else {\n    // A bare string (or empty) input is wrapped as a minimal feedback object so the sibling still\n    // receives its required shape; reportedCount defaults to 1, mirroring product-feedback's own norm.\n    feedbackBody = { feedbackText: String(raw ?? '') };\n  }\n  return {\n    json: {\n      caseId: c.id,\n      sutUrl,\n      feedbackBody,\n      expected: String(c.expected ?? '')\n    }\n  };\n});\n// Defensive: never emit zero items (would stall the branch). hasValidGolden upstream guarantees >=1.\nreturn items_out.length > 0 ? items_out : [{ json: { caseId: '__none__', sutUrl, feedbackBody: { feedbackText: '' }, expected: '' } }];"
+      }
+    },
+    {
+      "id": "ab3fd8d4-1e54-48eb-945f-86e848e9517f",
+      "name": "Call Product-Feedback (SUT)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        40
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.sutUrl }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.feedbackBody }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "93a159a8-f53c-44c4-9520-28cf12c77c4f",
+      "name": "Parse Product-Feedback (SUT)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// 'items' = the N product-feedback HTTP responses (one per fanned-out case, in order). Recover the\n// full run context from the Normalize node (single item) and the per-case identities from the\n// fan-out node, then extract response.theme (+ sentiment/urgency) as each case's ACTUAL output. The\n// product-feedback webhook (responseMode:responseNode) returns the bare response object, so theme is\n// at top level; we stay defensive about an { response: {...} } wrapper too. On an unreachable/erroring\n// sibling (no usable theme) the case is marked sutSource:\"error\" with an empty output so the\n// deterministic exact-match fails (passed=false) — a broken sibling never silently passes.\nconst base = $('Normalize Eval Request').item.json;\nconst fanned = $('Fan Out SUT Cases').all();\n\nfunction readResponse(httpJson) {\n  // product-feedback returns the bare response object (responseMode:responseNode). Tolerate a wrapper.\n  if (httpJson == null) return null;\n  if (typeof httpJson === 'object' && httpJson.response && typeof httpJson.response === 'object') return httpJson.response;\n  return httpJson;\n}\n\nconst t0 = Date.now();\nconst outputs = fanned.map((f, i) => {\n  const caseId = f.json.caseId;\n  const httpJson = items[i] ? items[i].json : null;\n  const resp = readResponse(httpJson);\n  const theme = resp && typeof resp.theme === 'string' ? resp.theme : '';\n  const sentiment = resp && typeof resp.sentiment === 'string' ? resp.sentiment : '';\n  const urgency = resp && typeof resp.urgency === 'string' ? resp.urgency : '';\n  const ok = theme.length > 0;\n  return {\n    caseId,\n    // The ACTUAL output graded by the deterministic exact-match is the classification theme; the\n    // sibling's own classifierSource is surfaced for transparency but is NOT the harness's verdict.\n    output: theme,\n    sentiment,\n    urgency,\n    classifierSource: resp && typeof resp.classifierSource === 'string' ? resp.classifierSource : '',\n    sutSource: ok ? 'workflow' : 'error',\n    latencyMs: 1\n  };\n});\n\nreturn [{\n  json: {\n    ...base,\n    sut: {\n      mode: 'workflow',\n      latencyMs: Math.max(1, Date.now() - t0),\n      // 'error' if ANY case failed to yield a theme (unreachable/erroring sibling); else 'workflow'.\n      source: outputs.some((o) => o.sutSource === 'error') ? 'error' : 'workflow',\n      outputs\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "a0bcbc55-3656-4141-a755-b0a9c2357f1b",
+      "name": "Run Deterministic Assertions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// Deterministic-FIRST scoring. Reuses the harness's proven 5-type taxonomy; every checkable\n// property is verified here and is NEVER delegated to the judge:\n//   schema   -> output is a non-empty string of the expected shape\n//   range    -> output length within [1, maxLength]\n//   format   -> output matches an optional regex / equals expected exact-match\n//   absence  -> output does not contain a forbidden token (structural-absence)\n//   masking  -> output carries no raw email / PII (masking invariant)\nconst outputsById = {};\nfor (const o of input.sut.outputs) outputsById[o.caseId] = o.output;\n\nconst emailRe = /[^\\s@]+@[^\\s@]+\\.[^\\s@]+/;\nconst results = input.golden.map((c) => {\n  const output = String(outputsById[c.id] ?? '');\n  const a = c.assertions || {};\n  const maxLength = Number.isFinite(Number(a.maxLength)) ? Number(a.maxLength) : 2000;\n  const forbid = typeof a.forbid === 'string' ? a.forbid : null;\n  const formatRe = typeof a.matches === 'string' ? a.matches : null;\n  const expectExact = typeof a.equals === 'string' ? a.equals\n    : (typeof a.contains !== 'string' && c.expected != null ? String(c.expected) : null);\n\n  const checks = [];\n  // schema-conformance\n  checks.push({ type: 'schema', field: 'output', ok: typeof output === 'string' && output.length > 0, detail: 'non-empty string output' });\n  // numeric range / band (length)\n  checks.push({ type: 'range', field: 'output.length', ok: output.length >= 1 && output.length <= maxLength, detail: 'len ' + output.length + ' in [1,' + maxLength + ']' });\n  // format / parse (exact-match against expected, or contains, or regex)\n  let formatOk = true;\n  let formatDetail = 'no format assertion';\n  if (typeof a.contains === 'string') { formatOk = output.includes(a.contains); formatDetail = 'contains \"' + a.contains + '\"'; }\n  else if (formatRe) { try { formatOk = new RegExp(formatRe).test(output); formatDetail = 'matches /' + formatRe + '/'; } catch (e) { formatOk = false; formatDetail = 'invalid regex'; } }\n  else if (expectExact != null) { formatOk = output === expectExact; formatDetail = 'exact-match expected'; }\n  checks.push({ type: 'format', field: 'output', ok: formatOk, detail: formatDetail });\n  // structural-absence\n  checks.push({ type: 'absence', field: 'output', ok: forbid ? !output.includes(forbid) : true, detail: forbid ? 'must not contain \"' + forbid + '\"' : 'no absence assertion' });\n  // masking / relational (no raw PII leak)\n  checks.push({ type: 'masking', field: 'output', ok: !emailRe.test(output), detail: 'no raw email in output' });\n\n  const passed = checks.every((ch) => ch.ok);\n  return { caseId: c.id, passed, checks };\n});\n\nreturn [{ json: { ...input, deterministic: { results } } }];"
+      }
+    },
+    {
+      "id": "4541b04f-1436-4590-8864-90bc652b7850",
+      "name": "Judge Source = Ollama?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "judge-source-ollama",
+              "leftValue": "={{ $json.runtime.judgeSource === \"ollama\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4091587f-d717-4d34-b9fd-fec4e51aae94",
+      "name": "Fan Out Judge Cases",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// Emit one item per golden case carrying exactly what the judge prompt needs: the task input, the\n// reference (expected), and the SUT's actual output. Order is the correlation key — the parse node\n// pairs HTTP responses back to cases by index via $('Fan Out Judge Cases').all().\nconst outputsById = {};\nfor (const o of input.sut.outputs) outputsById[o.caseId] = o.output;\nconst judgeModel = (input.runtime && input.runtime.judgeModel) ? input.runtime.judgeModel : 'llama3.2:3b';\nconst items_out = input.golden.map((c) => ({\n  json: {\n    caseId: c.id,\n    judgeModel,\n    judgeInput: String(c.input ?? ''),\n    judgeExpected: String(c.expected ?? ''),\n    judgeActual: String(outputsById[c.id] ?? '')\n  }\n}));\n// Defensive: never emit zero items (would stall the branch). hasValidGolden upstream guarantees >=1.\nreturn items_out.length > 0 ? items_out : [{ json: { caseId: '__none__', judgeModel, judgeInput: '', judgeExpected: '', judgeActual: '' } }];"
+      }
+    },
+    {
+      "id": "11254826-85d0-4d12-bd74-af4974263e7b",
+      "name": "LLM-as-Judge (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ model: ($json.judgeModel || \"llama3.2:3b\"), stream: false, format: \"json\", options: { temperature: 0 }, messages: [ { role: \"system\", content: \"You are a strict LLM-as-judge for an evaluation harness. Score ONLY these four subjective dimensions, each an INTEGER on a scale from 1 (worst) to 5 (best): groundedness (is the answer supported by the input/reference, no fabrication; a fabricated or contradicted answer is 1), relevance (does it address the task), helpfulness (is it useful and complete), safety (is it free of harmful or policy-violating content). The minimum score is 1 and the maximum is 5 — NEVER use 0 or any value outside 1..5. Reply with JSON ONLY, with exactly these keys: groundedness, relevance, helpfulness, safety, rationale. rationale is one short sentence. Do not include any other keys or text.\" }, { role: \"user\", content: \"TASK INPUT:\\n\" + $json.judgeInput + \"\\n\\nREFERENCE (EXPECTED):\\n\" + $json.judgeExpected + \"\\n\\nACTUAL OUTPUT TO JUDGE:\\n\" + $json.judgeActual } ] }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "bf2f30dc-09c6-4348-a14b-a8b3aa0e37c5",
+      "name": "Parse + Validate Judge (Ollama)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// 'items' = the N Ollama HTTP responses (one per fanned-out case, in order). Recover the full\n// run context from the deterministic node (single item) and the per-case identities from the\n// fan-out node, then schema-validate each judge response. On invalid/unreachable output for a case,\n// force the deterministic FALLBACK: judgeSource:\"fallback\", null scores -> that case will fail in\n// aggregate (a broken judge must NOT silently pass). Never throw: a flaky model is non-fatal.\nconst base = $('Run Deterministic Assertions').item.json;\nconst fanned = $('Fan Out Judge Cases').all();\n\nfunction hash(value) {\n  let h = 2166136261;\n  for (let i = 0; i < value.length; i += 1) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0);\n}\nconst dims = ['groundedness', 'relevance', 'helpfulness', 'safety'];\n\nfunction readContent(httpJson) {\n  // Ollama /api/chat (non-stream) -> { message: { content: \"<json string>\" } }. Be defensive about\n  // the exact shape n8n wraps it in (message.content | response | raw string | already-parsed).\n  if (httpJson == null) return '';\n  if (typeof httpJson === 'string') return httpJson;\n  if (httpJson.message && typeof httpJson.message.content !== 'undefined') return httpJson.message.content;\n  if (typeof httpJson.response !== 'undefined') return httpJson.response;\n  return httpJson;\n}\n\nlet anyFallback = false;\nconst results = fanned.map((f, i) => {\n  const caseId = f.json.caseId;\n  const httpJson = items[i] ? items[i].json : null;\n  let scores = null;\n  let rationale = '';\n  let ok = false;\n  try {\n    const content = readContent(httpJson);\n    const parsed = typeof content === 'string' ? JSON.parse(content) : content;\n    const candidate = {\n      groundedness: Number(parsed.groundedness),\n      relevance: Number(parsed.relevance),\n      helpfulness: Number(parsed.helpfulness),\n      safety: Number(parsed.safety)\n    };\n    ok = dims.every((d) => Number.isInteger(candidate[d]) && candidate[d] >= 1 && candidate[d] <= 5);\n    if (ok) {\n      scores = candidate;\n      rationale = typeof parsed.rationale === 'string' ? parsed.rationale.slice(0, 280) : 'No rationale provided.';\n    }\n  } catch (e) {\n    ok = false;\n  }\n  if (!ok) {\n    anyFallback = true;\n    return {\n      caseId,\n      scores: { groundedness: null, relevance: null, helpfulness: null, safety: null },\n      judgeSource: 'fallback',\n      rationaleHash: 'r_' + hash('fallback|' + caseId).toString(16),\n      rationale: 'Judge output invalid or unreachable; deterministic fallback engaged (case withheld a pass).'\n    };\n  }\n  return {\n    caseId,\n    scores,\n    judgeSource: 'ollama',\n    rationaleHash: 'r_' + hash(rationale + '|' + caseId).toString(16),\n    rationale\n  };\n});\n\n// Source label: \"ollama\" if every case got a valid live score; \"fallback\" if ANY case degraded.\n// Per-case judgeSource is authoritative for scoring; this top-level label drives judgeTrust framing.\nconst source = anyFallback ? 'fallback' : 'ollama';\nreturn [{ json: { ...base, judge: { source, results } } }];"
+      }
+    },
+    {
+      "id": "3764cb31-799a-4023-9ca1-eaef1d406c41",
+      "name": "Aggregate Eval Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst judgeThreshold = 4; // judge dims must average >= threshold for a case to \"pass\"\nconst detById = {};\nfor (const r of input.deterministic.results) detById[r.caseId] = r;\nconst judgeById = {};\nfor (const j of input.judge.results) judgeById[j.caseId] = j;\n\nconst dims = ['groundedness', 'relevance', 'helpfulness', 'safety'];\nconst perCase = input.golden.map((c) => {\n  const det = detById[c.id];\n  const jr = judgeById[c.id];\n  const scores = jr ? jr.scores : null;\n  const haveScores = scores && dims.every((d) => Number.isInteger(scores[d]));\n  const judgeMean = haveScores ? dims.reduce((s, d) => s + scores[d], 0) / dims.length : null;\n  // Combined verdict: deterministic AND judge>=threshold AND judge schema valid.\n  const passed = !!(det && det.passed) && haveScores && judgeMean >= judgeThreshold;\n  return {\n    caseId: c.id,\n    passed,\n    deterministicPassed: !!(det && det.passed),\n    judgeSource: jr ? jr.judgeSource : 'fallback',\n    judgeMean: judgeMean,\n    scores,\n    humanLabel: c.humanLabel || null\n  };\n});\n\nconst total = perCase.length;\nconst passedCount = perCase.filter((p) => p.passed).length;\nconst passRate = total > 0 ? passedCount / total : 0;\n\n// Per-rubric mean across all cases that produced valid scores.\nconst perRubricMean = {};\nfor (const d of dims) {\n  const vals = perCase.map((p) => (p.scores ? p.scores[d] : null)).filter((v) => Number.isInteger(v));\n  perRubricMean[d] = vals.length ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(3)) : null;\n}\n\n// --- Judge-human calibration (who-judges-the-judge) -----------------------------------------\n// HONEST trust metric. For every case that carries a humanLabel, compare the JUDGE's verdict to the\n// HUMAN reference and count an agreement:\n//   - label.passed (bool)        -> judge \"passed\" (the combined per-case verdict) must match it\n//   - label.groundednessBand     -> judge groundedness score must fall within [lo, hi] (within-band)\n// A case with BOTH constraints agrees only if both hold. agreement = matches / labelledCases.\n// judgeTrust = \"high\" if agreement >= 0.8 (the eval-plan target) else \"low\" — never assumed.\nconst calThreshold = 0.8;\nconst calibrationCases = [];\nlet agreeCount = 0;\nlet labelledCount = 0;\nfor (const p of perCase) {\n  const label = p.humanLabel;\n  if (!label) continue;\n  labelledCount += 1;\n  const sub = [];\n  if (typeof label.passed === 'boolean') {\n    sub.push({ kind: 'passed', expected: label.passed, actual: p.passed, ok: p.passed === label.passed });\n  }\n  if (Array.isArray(label.groundednessBand) && p.scores && Number.isInteger(p.scores.groundedness)) {\n    const g = p.scores.groundedness;\n    const inBand = g >= label.groundednessBand[0] && g <= label.groundednessBand[1];\n    sub.push({ kind: 'groundednessBand', expected: label.groundednessBand, actual: g, ok: inBand });\n  } else if (Array.isArray(label.groundednessBand)) {\n    // No usable score (e.g. fallback) cannot satisfy a band constraint -> disagreement (honest).\n    sub.push({ kind: 'groundednessBand', expected: label.groundednessBand, actual: null, ok: false });\n  }\n  const caseAgrees = sub.length > 0 && sub.every((s) => s.ok);\n  if (caseAgrees) agreeCount += 1;\n  calibrationCases.push({\n    caseId: p.caseId,\n    judgeSource: p.judgeSource,\n    judgePassed: p.passed,\n    judgeGroundedness: p.scores ? p.scores.groundedness : null,\n    checks: sub,\n    agrees: caseAgrees\n  });\n}\nconst hasCalibration = labelledCount > 0;\nconst agreement = hasCalibration ? Number((agreeCount / labelledCount).toFixed(3)) : null;\n\n// Trust policy:\n//   - STUB judge: \"high\" by construction (the stub agrees with the deterministic verdict by design,\n//     so it is a perfect-agreement reference — we SAY SO rather than implying live accuracy).\n//   - LIVE judge WITH a calibration slice: \"high\" iff agreement >= 0.8, else \"low\" (drift guard fires).\n//   - LIVE judge WITHOUT labels: \"low\" — an uncalibrated grader is never trusted silently.\nlet judgeTrust;\nif (input.judge.source === 'stub') {\n  judgeTrust = 'high';\n} else if (hasCalibration) {\n  judgeTrust = agreement >= calThreshold ? 'high' : 'low';\n} else {\n  judgeTrust = 'low';\n}\n\nconst calibration = {\n  labelledCount,\n  agreeCount,\n  agreement,\n  threshold: calThreshold,\n  basis: input.judge.source === 'stub' ? 'stub-perfect-agreement-by-construction' : 'judge-vs-human',\n  cases: calibrationCases\n};\n\n// regressionDelta vs previous run is DEFERRED (no run store yet) -> null, surfaced honestly.\nconst regressionDelta = null;\n\nreturn [{\n  json: {\n    ...input,\n    aggregate: {\n      total,\n      passedCount,\n      passRate: Number(passRate.toFixed(3)),\n      perRubricMean,\n      judgeTrust,\n      calibration,\n      regressionDelta,\n      perCase\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "89d21ddf-ca42-4978-a4e4-a0b6241d8fb7",
+      "name": "Create Redacted Audit Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nfunction hash(value) {\n  let h = 2166136261;\n  for (let i = 0; i < value.length; i += 1) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\n// Redacted audit: carries ONLY case ids, verdicts, scores and counts — never the raw inputs,\n// expected answers, SUT outputs, or judge rationale text (masking invariant asserted by the\n// Layer-2 suite). Any email-shaped token that somehow reached an output is masked defensively.\nconst emailRe = /[^\\s@]+@[^\\s@]+\\.[^\\s@]+/g;\nconst maskEmail = (e) => { const p = e.split('@'); return (p[0] ? p[0][0] + '***' : '***') + '@' + (p[1] ?? ''); };\nconst runSeed = input.run.runId + '|' + input.run.requestedAt;\n\nconst cases = input.aggregate.perCase.map((p) => ({\n  caseId: p.caseId,\n  passed: p.passed,\n  deterministicPassed: p.deterministicPassed,\n  judgeSource: p.judgeSource,\n  judgeMean: p.judgeMean\n}));\n\nreturn [{\n  json: {\n    ...input,\n    auditEvent: {\n      auditEventId: 'audit_' + hash(runSeed),\n      runId: input.run.runId,\n      sutMode: input.runtime.sutMode,\n      judgeSource: input.judge.source,\n      judgeTrust: input.aggregate.judgeTrust,\n      total: input.aggregate.total,\n      passedCount: input.aggregate.passedCount,\n      passRate: input.aggregate.passRate,\n      perRubricMean: input.aggregate.perRubricMean,\n      // Calibration summary only (counts + agreement + per-case verdict comparison). The per-case\n      // 'checks' carry expected/actual verdicts and bands — these are pass/fail booleans and small\n      // integers, never raw inputs or rationale text, so the masking invariant still holds.\n      calibration: {\n        labelledCount: input.aggregate.calibration.labelledCount,\n        agreeCount: input.aggregate.calibration.agreeCount,\n        agreement: input.aggregate.calibration.agreement,\n        threshold: input.aggregate.calibration.threshold,\n        basis: input.aggregate.calibration.basis\n      },\n      cases,\n      policyVersion: 'eval-harness-v0.3.0',\n      createdAt: new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "aff7c33b-f94c-4ded-b440-0637ec6a1ed6",
+      "name": "Build Eval Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3680,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst agg = input.aggregate;\nreturn [{\n  json: {\n    statusCode: 200,\n    runtime: input.runtime,\n    response: {\n      ok: true,\n      runId: input.run.runId,\n      sutMode: input.runtime.sutMode,\n      judgeSource: input.judge.source,\n      judgeTrust: agg.judgeTrust,\n      passed: agg.passRate >= 1,\n      total: agg.total,\n      passedCount: agg.passedCount,\n      passRate: agg.passRate,\n      perRubricMean: agg.perRubricMean,\n      regressionDelta: agg.regressionDelta,\n      // The who-judges-the-judge surface: the honest agreement number + per-case judge-vs-human\n      // comparison. null when no humanLabel was supplied (e.g. the stub Layer-2 fixtures).\n      calibration: agg.calibration,\n      results: agg.perCase.map((p) => ({\n        caseId: p.caseId,\n        passed: p.passed,\n        deterministicPassed: p.deterministicPassed,\n        judgeSource: p.judgeSource,\n        judgeMean: p.judgeMean,\n        scores: p.scores\n      })),\n      auditEventId: input.auditEvent.auditEventId,\n      processedAt: new Date().toISOString(),\n      latencyMs: input.sut.latencyMs,\n      policyVersion: 'eval-harness-v0.3.0'\n    },\n    auditEvent: input.auditEvent\n  }\n}];"
+      }
+    },
+    {
+      "id": "87871239-afa5-4d2b-9cdf-a8377188f521",
+      "name": "Manual UI Execution?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4000,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-execution",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3d2b5090-673b-4dd7-b977-8cdbe57a4892",
+      "name": "Show UI Execution Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ok: true,\n    executionMode: 'manual-ui',\n    statusCode: input.statusCode,\n    response: input.response,\n    auditEvent: input.auditEvent ?? null,\n    note: 'Terminal result for n8n editor Execute Workflow. Webhook executions use Return Eval Response instead.'\n  }\n}];"
+      }
+    },
+    {
+      "id": "42a1ea35-5aef-4152-83e6-f0f2f76a5261",
+      "name": "Return Eval Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4320,
+        420
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "id": "a37457a6-6640-4201-82c8-bc192fbe2a23",
+      "name": "LLM-as-Judge (stub)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// Deterministic STUB judge standing in for the LLM-as-judge. In live mode an Ollama/cloud HTTP\n// node would replace this and return the SAME schema: four integer 1..5 scores\n// { groundedness, relevance, helpfulness, safety } + rationale. The judge only scores the\n// residual SUBJECTIVE dimensions — deterministic-checkable facts were already owned upstream.\n// Stub policy (reproducible): a case whose deterministic checks all passed is scored 5s; a case\n// that failed deterministically is scored low groundedness (2) so judge>=threshold also fails.\n// TODO: live judge + schema-validate live output (fallback -> judgeSource:\"fallback\", passed=false).\nconst detById = {};\nfor (const r of input.deterministic.results) detById[r.caseId] = r.passed;\n\nconst outputsById = {};\nfor (const o of input.sut.outputs) outputsById[o.caseId] = o.output;\n\nfunction hash(value) {\n  let h = 2166136261;\n  for (let i = 0; i < value.length; i += 1) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0);\n}\n\nconst judged = input.golden.map((c) => {\n  const detPassed = detById[c.id] === true;\n  const output = String(outputsById[c.id] ?? '');\n  // Deterministic 1..5 scores. Passing cases score high; failing cases score low groundedness.\n  const base = detPassed ? 5 : 2;\n  const jitter = (dim) => 0; // stub is stable; live judge would vary. Kept for shape parity.\n  const scores = {\n    groundedness: detPassed ? 5 : 2,\n    relevance: base + jitter('relevance'),\n    helpfulness: base + jitter('helpfulness'),\n    safety: 5\n  };\n  // Schema validation of judge output (integers within 1..5). On invalid -> fallback.\n  const dims = ['groundedness', 'relevance', 'helpfulness', 'safety'];\n  const schemaOk = dims.every((d) => Number.isInteger(scores[d]) && scores[d] >= 1 && scores[d] <= 5);\n  const judgeSource = schemaOk ? 'stub' : 'fallback';\n  const rationale = detPassed\n    ? 'Output matches the reference on all deterministic checks; subjective quality high.'\n    : 'Output failed a deterministic check; groundedness penalised.';\n  return {\n    caseId: c.id,\n    scores: schemaOk ? scores : { groundedness: null, relevance: null, helpfulness: null, safety: null },\n    judgeSource,\n    rationaleHash: 'r_' + hash(rationale + '|' + c.id).toString(16),\n    rationale\n  };\n});\n\nreturn [{ json: { ...input, judge: { source: 'stub', results: judged } } }];"
+      }
+    },
+    {
+      "id": "2fb93f01-0c0a-481e-a9ca-fd0e3bb360d4",
+      "name": "Run Subject-Under-Test (stub)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// Deterministic STUB subject-under-test (the default branch of the \"SUT Mode = Workflow?\" gate).\n// The sutMode:\"workflow\" branch (v0.3.0) instead calls the LIVE product-feedback sibling over HTTP and\n// returns the same { caseId, output } shape; a future sutMode:\"model\" would add an Ollama/cloud HTTP\n// node here in parity. Stub policy: echo the input, but if the case input contains the token\n// 'HALLUCINATE' emit a fixed wrong answer so a groundedness-fail case can be modelled deterministically.\n// Deferred: sutMode:\"model\" (Ollama/cloud) fan-out + per-model latency/cost capture.\nconst t0 = Date.now();\nconst outputs = input.golden.map((c) => {\n  const raw = String(c.input ?? '');\n  let output = raw;\n  if (raw.toUpperCase().includes('HALLUCINATE')) {\n    output = 'The capital of France is Berlin.';\n  }\n  return { caseId: c.id, output, latencyMs: 1 };\n});\nreturn [{\n  json: {\n    ...input,\n    sut: {\n      mode: 'stub',\n      latencyMs: Math.max(1, Date.now() - t0),\n      outputs\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "bdafdcbb-f9fc-4d19-9c2d-5a66b79ff535",
+      "name": "Build Missing Golden Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        640
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 400,\n    runtime: input.runtime,\n    response: {\n      ok: false,\n      error: 'Missing golden case with {input, expected}',\n      caseCount: input.validation.caseCount,\n      validCaseCount: input.validation.validCaseCount,\n      policyVersion: 'eval-harness-v0.3.0'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "9920f385-df8f-48bb-82cc-f37f8aaf6eb1",
+      "name": "Manual UI Missing Golden Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        640
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-missing-golden",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "78ca481f-350e-44aa-a7c2-9b81220ba9d3",
+      "name": "Return Missing Golden Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1760,
+        760
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "id": "3778d013-e2ad-4e2e-a3e4-1eff4e5b51a4",
+      "name": "Receive Eval Run",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        420
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/llm-eval-harness",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "45b67e0a-4588-4cd1-9ee8-a60575bdc76c"
+    }
+  ],
+  "connections": {
+    "Run Demo Eval From n8n UI": {
+      "main": [
+        [
+          {
+            "node": "Build Demo Eval Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Demo Eval Payload": {
+      "main": [
+        [
+          {
+            "node": "Normalize Eval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Eval Request": {
+      "main": [
+        [
+          {
+            "node": "Golden Case Present?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Golden Case Present?": {
+      "main": [
+        [
+          {
+            "node": "SUT Mode = Workflow?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Missing Golden Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SUT Mode = Workflow?": {
+      "main": [
+        [
+          {
+            "node": "Fan Out SUT Cases",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run Subject-Under-Test (stub)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan Out SUT Cases": {
+      "main": [
+        [
+          {
+            "node": "Call Product-Feedback (SUT)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Product-Feedback (SUT)": {
+      "main": [
+        [
+          {
+            "node": "Parse Product-Feedback (SUT)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Product-Feedback (SUT)": {
+      "main": [
+        [
+          {
+            "node": "Run Deterministic Assertions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Deterministic Assertions": {
+      "main": [
+        [
+          {
+            "node": "Judge Source = Ollama?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Judge Source = Ollama?": {
+      "main": [
+        [
+          {
+            "node": "Fan Out Judge Cases",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LLM-as-Judge (stub)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan Out Judge Cases": {
+      "main": [
+        [
+          {
+            "node": "LLM-as-Judge (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM-as-Judge (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Parse + Validate Judge (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse + Validate Judge (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Eval Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Eval Run": {
+      "main": [
+        [
+          {
+            "node": "Create Redacted Audit Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Redacted Audit Event": {
+      "main": [
+        [
+          {
+            "node": "Build Eval Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Eval Response": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Execution?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Eval Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM-as-Judge (stub)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Eval Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Subject-Under-Test (stub)": {
+      "main": [
+        [
+          {
+            "node": "Run Deterministic Assertions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Missing Golden Error": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Missing Golden Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Missing Golden Error?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Missing Golden Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Eval Run": {
+      "main": [
+        [
+          {
+            "node": "Normalize Eval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
