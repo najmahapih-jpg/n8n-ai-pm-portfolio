@@ -1,6 +1,6 @@
 param(
-  [int]$MinimumNodes = 26,
-  [string]$ReleaseFile = "llm-eval-harness-v0.3.0.json",
+  [int]$MinimumNodes = 30,
+  [string]$ReleaseFile = "llm-eval-harness-v0.4.0.json",
   [switch]$SkipRepositorySecretScan
 )
 
