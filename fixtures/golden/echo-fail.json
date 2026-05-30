@@ -1,0 +1,11 @@
+{
+  "runId": "echo-fail",
+  "golden": [
+    {
+      "id": "echo-fail",
+      "input": "ping",
+      "expected": "pong",
+      "assertions": { "contains": "pong", "maxLength": 64 }
+    }
+  ]
+}
