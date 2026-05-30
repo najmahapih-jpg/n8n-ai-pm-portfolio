@@ -9,20 +9,21 @@
       "description": "Local product feedback intelligence workflow: validates feedback intake, classifies theme/sentiment/urgency via an LLM-in-the-loop classifier with a deterministic fallback and confidence gate, derives urgency, scores priority, gates churn-risk/critical items for human review, and emits a redacted audit event.",
       "owner": "portfolio",
       "department": "Product",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "status": "draft-tested",
       "project": "n8n-product-feedback-intelligence",
       "lastWriter": "official n8n MCP",
       "n8nWorkflowId": "6Gc3wmri0tJre07B",
       "source": "workflows\\sdk\\product-feedback-intelligence.workflow.js",
       "canonical": "workflows\\canonical\\product-feedback-intelligence.canonical.json",
-      "release": "workflows\\releases\\product-feedback-intelligence-v0.1.0.json",
+      "release": "workflows\\releases\\product-feedback-intelligence-v0.2.0.json",
       "request": "fixtures\\requests\\product-feedback-intelligence.md",
       "trigger": "manual + webhook",
       "integrations": [
         "n8n Manual Trigger",
         "n8n Webhook",
-        "Local stub classifier (Ollama-ready)",
+        "Deterministic stub classifier (default)",
+        "Live Ollama classifier (llama3.2:3b, per-request)",
         "Redacted audit"
       ],
       "tags": [
@@ -48,9 +49,10 @@
         "feedback-bug-negative"
       ],
       "localOnly": true,
-      "nodeCount": 25,
+      "nodeCount": 28,
       "nodeTypes": [
         "n8n-nodes-base.code",
+        "n8n-nodes-base.httpRequest",
         "n8n-nodes-base.if",
         "n8n-nodes-base.manualTrigger",
         "n8n-nodes-base.respondToWebhook",
@@ -58,7 +60,7 @@
         "n8n-nodes-base.webhook"
       ],
       "complexity": "advanced",
-      "notes": "The LLM (Ollama) classifier path is env-switchable and demonstrated manually; CI and the behavioral eval run the deterministic stub so the suite is offline and reproducible. n8nWorkflowId is populated by the first Sync-N8nWorkflowFromSdk run."
+      "notes": "v0.2.0 wires a live Ollama classifier path (HTTP to host.docker.internal:11434, model llama3.2:3b), selected per request via classifierMode='ollama' and verified end-to-end. The deterministic stub remains the default so CI and the 10-fixture behavioral eval stay offline and reproducible (still 10/10). The confidence gate falls back to the keyword classifier on low-confidence or invalid model output."
     }
   ]
 }

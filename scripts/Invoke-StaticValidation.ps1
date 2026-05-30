@@ -1,5 +1,5 @@
 param(
-  [int]$MinimumNodes = 25,
+  [int]$MinimumNodes = 28,
   [switch]$SkipRepositorySecretScan
 )
 
@@ -67,7 +67,7 @@ Invoke-ValidationStep -Name "Release workflow JSON validation" -Action {
 }
 
 Invoke-ValidationStep -Name "Current release node floor" -Action {
-  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\releases\product-feedback-intelligence-v0.1.0.json") -MinimumNodes $MinimumNodes
+  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\releases\product-feedback-intelligence-v0.2.0.json") -MinimumNodes $MinimumNodes
 }
 
 Write-Host "Static validation passed."

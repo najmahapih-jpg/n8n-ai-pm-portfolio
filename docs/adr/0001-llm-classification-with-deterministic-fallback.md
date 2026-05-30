@@ -2,10 +2,17 @@
 
 - **Status:** Accepted
 - **Date:** 2026-05-29
-- **Workflow:** `Portfolio - Product Feedback Intelligence API` (planned: `workflows/sdk/product-feedback-intelligence.workflow.js`)
+- **Workflow:** `Portfolio - Product Feedback Intelligence API` (`workflows/sdk/product-feedback-intelligence.workflow.js`, v0.2.0)
 - **Related:** [eval-plan.md](../eval-plan.md); the sibling decisions this revisits —
   `n8n-workflow-as-code/docs/adr/0001-deterministic-routing-over-llm-classification.md` and
   `n8n-lead-intelligence-workflow/docs/adr/0001-deterministic-scoring-over-llm.md`.
+
+> **Update (2026-05-30, v0.2.0): implemented + verified live.** The LLM-with-fallback decision below
+> is now built and demonstrated end-to-end — a per-request `classifierMode: "ollama"` routes to a
+> local `llama3.2:3b` via an HTTP node; a real classification flows through the deterministic
+> urgency/scoring/human-in-the-loop/audit steps, and the confidence gate falls back to the keyword
+> classifier on low-confidence or invalid output. The deterministic stub stays the default, so the
+> 10-fixture behavioral eval remains offline and reproducible (10/10).
 
 ## Context
 

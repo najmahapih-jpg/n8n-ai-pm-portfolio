@@ -44,10 +44,16 @@ i.e. schema-conformance, value ranges, branch shape, and graceful degradation. T
 
 ## Classifier modes
 
-- **`stub` (default for CI + eval):** deterministic keyword classifier; reproducible, no network, no model weights.
-- **`ollama` (live demo):** env-switchable local LLM path (`host.docker.internal:11434`). Off the critical path so Windows/Docker host-networking friction never blocks the eval.
+The classifier is selected **per request** via the `classifierMode` field (default `stub`), so the
+eval is always reproducible regardless of what's installed:
 
-## Node graph (25 nodes, live)
+- **`stub` (default for CI + eval):** deterministic keyword classifier; reproducible, no network, no model weights.
+- **`ollama` (live, verified):** real local LLM via an HTTP node to `host.docker.internal:11434`. Send `classifierMode: "ollama"` to use it. **Verified end-to-end** with `llama3.2:3b` — e.g. *"export button crashes on Safari"* → the model returns `{theme: bug, sentiment: negative, confidence: 0.9}`, then the deterministic urgency/scoring/human-in-the-loop/audit steps apply, and the confidence gate falls back to the keyword classifier on low-confidence or invalid JSON.
+
+Local Ollama setup (one-time): install Ollama, `ollama pull llama3.2:3b`, and run it with
+`OLLAMA_HOST=0.0.0.0:11434` so the n8n container can reach it via `host.docker.internal`.
+
+## Node graph (28 nodes, live)
 
 ```
 webhook

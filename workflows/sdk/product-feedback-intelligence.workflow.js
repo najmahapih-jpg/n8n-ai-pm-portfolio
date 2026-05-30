@@ -98,7 +98,7 @@ return [{
       nonEmpty: feedbackText.length > 0,
       missingFields
     },
-    runtime: { entrypoint },
+    runtime: { entrypoint, classifierMode: (String(body.classifierMode ?? '').toLowerCase().trim() === 'ollama' ? 'ollama' : 'stub') },
     sourcePayloadKeys: Object.keys(body)
   }
 }];`
@@ -324,6 +324,86 @@ return [{
       classifierSource: 'stub',
       matchedKeywords: matched.slice(0, 8)
     }
+  }
+}];`
+    }
+  }
+});
+
+const classifierModeGate = ifElse({
+  version: 2.3,
+  config: {
+    name: 'Classifier Mode = Ollama?',
+    position: [1440, 360],
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
+        conditions: [{
+          id: 'classifier-mode-ollama',
+          leftValue: expr('{{ $json.runtime.classifierMode === "ollama" }}'),
+          operator: { type: 'boolean', operation: 'true', singleValue: true },
+          rightValue: true
+        }],
+        combinator: 'and'
+      },
+      options: {}
+    }
+  }
+});
+
+const classifyOllama = node({
+  type: 'n8n-nodes-base.httpRequest',
+  version: 4.2,
+  config: {
+    name: 'Classify Feedback (Ollama)',
+    position: [1760, 480],
+    parameters: {
+      method: 'POST',
+      url: 'http://host.docker.internal:11434/api/chat',
+      sendBody: true,
+      contentType: 'json',
+      specifyBody: 'json',
+      jsonBody: '={{ ({ model: "llama3.2:3b", stream: false, format: "json", options: { temperature: 0 }, messages: [ { role: "system", content: "You are a product feedback classifier. Reply with JSON only, with keys theme, sentiment, confidence. theme is one of bug, feature_request, usability, performance, pricing, praise, churn_risk, other. sentiment is one of positive, neutral, negative. confidence is a number from 0 to 1." }, { role: "user", content: $json.feedback.feedbackText } ] }) }}',
+      options: { timeout: 60000 }
+    }
+  }
+});
+
+const parseOllama = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Parse Ollama Response',
+    position: [2080, 480],
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `const http = items[0].json;
+// The HTTP node replaced the item with Ollama's response; recover the feedback payload
+// from the Normalize node and attach only the classification.
+const base = $('Normalize Feedback Payload').item.json;
+const themes = ['bug', 'feature_request', 'usability', 'performance', 'pricing', 'praise', 'churn_risk', 'other'];
+const sentiments = ['positive', 'neutral', 'negative'];
+let theme = 'other';
+let sentiment = 'neutral';
+let confidence = 0;
+try {
+  const content = http?.message?.content ?? http?.response ?? '';
+  const parsed = typeof content === 'string' ? JSON.parse(content) : content;
+  const validTheme = themes.includes(parsed.theme);
+  theme = validTheme ? parsed.theme : 'other';
+  sentiment = sentiments.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
+  const c = Number(parsed.confidence);
+  confidence = Number.isFinite(c) ? Math.max(0, Math.min(1, c)) : 0.5;
+  // Schema-invalid theme -> force low confidence so the confidence gate uses the deterministic fallback.
+  if (!validTheme) confidence = 0;
+} catch (e) {
+  confidence = 0;
+}
+return [{
+  json: {
+    ...base,
+    classification: { theme, sentiment, confidence, classifierSource: 'ollama' }
   }
 }];`
     }
@@ -654,27 +734,36 @@ export default workflow('product-feedback-intelligence', 'Portfolio - Product Fe
     .onTrue(
       nonEmpty
         .onTrue(
-          classifyStub
-            .to(resolveClassification)
-            .to(deriveUrgency)
-            .to(scorePriority)
-            .to(redactFeedbackPii)
-            .to(buildAuditEvent)
-            .to(humanReviewGate
-              .onTrue(
-                buildApprovalResponse
-                  .to(manualUiExecution
-                    .onTrue(showUiExecutionResult)
-                    .onFalse(returnFeedbackResponse)
+          classifierModeGate
+            .onTrue(
+              classifyOllama
+                .to(parseOllama)
+                .to(resolveClassification)
+            )
+            .onFalse(
+              classifyStub
+                .to(resolveClassification
+                  .to(deriveUrgency)
+                  .to(scorePriority)
+                  .to(redactFeedbackPii)
+                  .to(buildAuditEvent)
+                  .to(humanReviewGate
+                    .onTrue(
+                      buildApprovalResponse
+                        .to(manualUiExecution
+                          .onTrue(showUiExecutionResult)
+                          .onFalse(returnFeedbackResponse)
+                        )
+                    )
+                    .onFalse(
+                      buildClassifiedResponse
+                        .to(manualUiExecution
+                          .onTrue(showUiExecutionResult)
+                          .onFalse(returnFeedbackResponse)
+                        )
+                    )
                   )
-              )
-              .onFalse(
-                buildClassifiedResponse
-                  .to(manualUiExecution
-                    .onTrue(showUiExecutionResult)
-                    .onFalse(returnFeedbackResponse)
-                  )
-              )
+                )
             )
         )
         .onFalse(

@@ -12,7 +12,10 @@ Written **before** the workflow is built. This is the contract the Phase-2 node 
   classifier**, so it is offline and reproducible.
 - **Does NOT prove:** the live LLM's classification *quality*. A stub cannot be prompt-injected and
   does not hallucinate, so the suite measures graceful degradation and input handling, **not** model
-  accuracy or injection resistance. The Ollama path is demonstrated manually and reported separately.
+  accuracy or injection resistance. The Ollama path is now wired and **verified end-to-end** (per
+  request via `classifierMode: "ollama"`; with `llama3.2:3b` a real classification flows through the
+  deterministic urgency/scoring/HITL/audit steps, and the confidence gate falls back to the keyword
+  classifier on low-confidence or invalid output) — see the README.
 
 This honesty is deliberate — see the sibling repos' ADRs, which warned against narrating a
 stub-backed suite as "evals that grade my model."
