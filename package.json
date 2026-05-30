@@ -1,6 +1,6 @@
 {
   "name": "n8n-llm-eval-harness",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Local n8n Workflow-as-Code project: an LLM eval harness that grades AI systems with deterministic-first assertions plus an LLM-as-judge, stub-default for reproducible offline evals, deployed to n8n via the public REST API.",
   "license": "Apache-2.0",
