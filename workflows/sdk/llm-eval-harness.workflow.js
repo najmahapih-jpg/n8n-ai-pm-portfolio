@@ -185,6 +185,48 @@ const judgeSource = requestedJudge === 'ollama' || requestedJudge === 'openai' ?
 // affects the stub path (stub is chosen whenever judgeSource !== 'ollama').
 const judgeModel = text(body.judgeModel) || 'llama3.2:3b';
 
+// --- Regression baseline (ADR-0004 d.5, v0.5.0) ---------------------------------------------
+// The regression delta is computed against an EXPLICIT baseline so it stays DETERMINISTIC in CI
+// (no hidden mutable store in the hot path). The baseline arrives in the REQUEST BODY — either
+// inline by a caller (baselineSource defaults to 'request') or injected by the offline test driver
+// from the committed fixtures/baseline/regression-baseline.json (the driver sets baselineSource:
+// 'fixture'). No baseline -> regressionDelta:null downstream (honest, as before). Accepted shape:
+//   { overall:{passRate}, perModel:[{modelId, passRate}], perRubricMean:{<dim>:<num>} }
+// Only the numeric fields used by the delta are retained; everything else is ignored. The tolerance
+// BAND (default 0) is the allowed pass-rate drop before a row counts as a regression — a benign
+// weight tweak within the band is not flagged; a drop BEYOND it sets regressed:true downstream.
+const rawBaseline = (body.baseline && typeof body.baseline === 'object' && !Array.isArray(body.baseline)) ? body.baseline : null;
+function normBaseline(b) {
+  if (!b) return null;
+  const out = {};
+  const ov = b.overall && typeof b.overall === 'object' ? b.overall : b;
+  if (Number.isFinite(Number(ov.passRate))) out.overall = { passRate: Number(ov.passRate) };
+  const pm = Array.isArray(b.perModel) ? b.perModel : [];
+  out.perModel = pm
+    .filter((m) => m && (typeof m.modelId === 'string') && Number.isFinite(Number(m.passRate)))
+    .map((m) => ({ modelId: String(m.modelId), passRate: Number(m.passRate) }));
+  const dims = ['groundedness', 'relevance', 'helpfulness', 'safety'];
+  const prm = b.perRubricMean && typeof b.perRubricMean === 'object' ? b.perRubricMean : null;
+  if (prm) {
+    const r = {};
+    for (const d of dims) { if (Number.isFinite(Number(prm[d]))) r[d] = Number(prm[d]); }
+    if (Object.keys(r).length > 0) out.perRubricMean = r;
+  }
+  // A baseline must carry at least an overall passRate to be usable; otherwise treat as absent.
+  return (out.overall && Number.isFinite(out.overall.passRate)) ? out : null;
+}
+const baseline = normBaseline(rawBaseline);
+// baselineSource is the honest provenance label: 'fixture' when the offline driver injected the
+// committed fixture, 'request' when a caller supplied it inline, null when no baseline is present.
+const requestedBaselineSource = text(body.baselineSource).toLowerCase();
+const baselineSource = baseline
+  ? (requestedBaselineSource === 'fixture' ? 'fixture' : 'request')
+  : null;
+// regressionTolerance: the allowed pass-rate DROP (>= 0) before a row is a regression. Default 0
+// (any drop is a regression). Clamped to a sane [0,1] band; a non-numeric ask falls back to 0.
+const rawTolerance = Number(body.regressionTolerance);
+const regressionTolerance = Number.isFinite(rawTolerance) && rawTolerance >= 0 ? Math.min(rawTolerance, 1) : 0;
+
 return [{
   json: {
     run: {
@@ -218,7 +260,13 @@ return [{
       // verify:live stays offline + reproducible (stub is the default everywhere CI touches).
       judgeSource: judgeSource === 'ollama' ? 'ollama' : 'stub',
       requestedJudgeSource: judgeSource,
-      judgeModel
+      judgeModel,
+      // v0.5.0 regression-vs-baseline (ADR-0004 d.5): the EXPLICIT baseline travels here so the delta
+      // stays deterministic in CI. null when absent -> regressionDelta:null (honest). baselineSource is
+      // the provenance ('request'|'fixture'); regressionTolerance is the allowed pass-rate drop band.
+      baseline,
+      baselineSource,
+      regressionTolerance
     },
     sourcePayloadKeys: Object.keys(body)
   }
@@ -272,7 +320,7 @@ return [{
       error: 'Missing golden case with {input, expected}',
       caseCount: input.validation.caseCount,
       validCaseCount: input.validation.validCaseCount,
-      policyVersion: 'eval-harness-v0.4.0'
+      policyVersion: 'eval-harness-v0.5.0'
     }
   }
 }];`
@@ -1202,8 +1250,60 @@ const bench = perModel.slice().sort((a, b) => {
   return a.estCostUsd - b.estCostUsd;
 }).map((m, i) => ({ rank: i + 1, modelId: m.modelId, passRate: m.passRate, meanLatencyMs: m.meanLatencyMs, totalTokens: m.totalTokens, estCostUsd: m.estCostUsd, costBasis: m.costBasis }));
 
-// regressionDelta vs a baseline is DEFERRED to v0.5.0 (decision 5) -> null, surfaced honestly.
-const regressionDelta = null;
+// --- Regression vs. baseline (ADR-0004 d.5, v0.5.0) -----------------------------------------
+// regressionDelta is computed ONLY when an EXPLICIT baseline was supplied (runtime.baseline, set by
+// Normalize from body.baseline / the committed fixture) — keeping the delta DETERMINISTIC in CI with
+// no hidden mutable store in the hot path. No baseline -> null (honest, as before). The delta is
+// current - baseline on: overall passRate, PER-MODEL passRate (matched by modelId), and perRubricMean
+// (per dim). regressed:true iff ANY overall/per-model passRate DROPS MORE than the tolerance band
+// (current < baseline - tolerance). A modelId present now but ABSENT from the baseline is reported
+// (passRateDelta:null, isNew:true) and NEVER counts as a regression (you cannot regress vs nothing).
+const baseline = (input.runtime && input.runtime.baseline) ? input.runtime.baseline : null;
+const tolerance = (input.runtime && Number.isFinite(Number(input.runtime.regressionTolerance))) ? Number(input.runtime.regressionTolerance) : 0;
+let regressionDelta = null;
+if (baseline && baseline.overall && Number.isFinite(Number(baseline.overall.passRate))) {
+  const round3 = (n) => Number(Number(n).toFixed(3));
+  let regressed = false;
+  // Overall pass-rate delta (current - baseline). A drop beyond the band is a regression.
+  const baseOverall = Number(baseline.overall.passRate);
+  const overallDelta = round3(passRate - baseOverall);
+  if (passRate < baseOverall - tolerance) regressed = true;
+  // Per-model pass-rate delta, matched by modelId. The baseline list is keyed for O(1) lookup.
+  const baseModelMap = {};
+  if (Array.isArray(baseline.perModel)) {
+    for (const bm of baseline.perModel) {
+      if (bm && typeof bm.modelId === 'string' && Number.isFinite(Number(bm.passRate))) baseModelMap[bm.modelId] = Number(bm.passRate);
+    }
+  }
+  const perModelDelta = perModel.map((m) => {
+    const has = Object.prototype.hasOwnProperty.call(baseModelMap, m.modelId);
+    if (!has) {
+      // New model absent from baseline: reported, never a regression (no prior to regress against).
+      return { modelId: m.modelId, passRate: m.passRate, baselinePassRate: null, passRateDelta: null, isNew: true };
+    }
+    const basePr = baseModelMap[m.modelId];
+    if (m.passRate < basePr - tolerance) regressed = true;
+    return { modelId: m.modelId, passRate: m.passRate, baselinePassRate: basePr, passRateDelta: round3(m.passRate - basePr), isNew: false };
+  });
+  // Per-rubric mean delta (per dim) — informational drift signal; not part of the regressed gate
+  // (the pass-rate is the headline regression metric, mirroring eval-plan's band semantics). A dim
+  // absent from either side yields null for that dim.
+  const baseRubric = baseline.perRubricMean && typeof baseline.perRubricMean === 'object' ? baseline.perRubricMean : {};
+  const perRubricMeanDelta = {};
+  for (const d of dims) {
+    const cur = perRubricMean[d];
+    const bas = baseRubric[d];
+    perRubricMeanDelta[d] = (Number.isFinite(Number(cur)) && Number.isFinite(Number(bas))) ? round3(Number(cur) - Number(bas)) : null;
+  }
+  regressionDelta = {
+    baselineSource: (input.runtime && input.runtime.baselineSource) ? input.runtime.baselineSource : 'request',
+    tolerance,
+    overall: { passRate: Number(passRate.toFixed(3)), baselinePassRate: round3(baseOverall), passRateDelta: overallDelta },
+    perModel: perModelDelta,
+    perRubricMeanDelta,
+    regressed
+  };
+}
 
 return [{
   json: {
@@ -1285,6 +1385,11 @@ return [{
       perRubricMean: input.aggregate.perRubricMean,
       perModel,
       bench: input.aggregate.bench || [],
+      // Regression summary (v0.5.0): the provenance + headline regressed flag + overall pass-rate
+      // delta + per-model deltas. These are small numbers + the regressed boolean + the modelId
+      // label — no raw inputs/outputs/rationale, so the masking invariant still holds. null when no
+      // baseline was supplied (honest, as before).
+      regressionDelta: input.aggregate.regressionDelta || null,
       // Calibration summary only (counts + agreement + per-case verdict comparison). The per-case
       // 'checks' carry expected/actual verdicts and bands — these are pass/fail booleans and small
       // integers, never raw inputs or rationale text, so the masking invariant still holds.
@@ -1296,7 +1401,7 @@ return [{
         basis: input.aggregate.calibration.basis
       },
       cases,
-      policyVersion: 'eval-harness-v0.4.0',
+      policyVersion: 'eval-harness-v0.5.0',
       createdAt: new Date().toISOString()
     }
   }
@@ -1357,7 +1462,7 @@ return [{
       auditEventId: input.auditEvent.auditEventId,
       processedAt: new Date().toISOString(),
       latencyMs: input.sut.latencyMs,
-      policyVersion: 'eval-harness-v0.4.0'
+      policyVersion: 'eval-harness-v0.5.0'
     },
     auditEvent: input.auditEvent
   }
@@ -1431,7 +1536,7 @@ const returnEvalResponse = node({
 });
 
 const overview = sticky(
-  '## LLM Eval Harness v0.4.0 (multi-model bench)\\nLocal eval-harness API: receives an eval run with inline golden cases, runs a GATED subject-under-test, scores each output with the 5-type deterministic assertion taxonomy (schema/range/format/absence/masking) FIRST, then grades the residual subjective dims (1..5 groundedness/relevance/helpfulness/safety) with a GATED judge. Every scored row carries a modelId (key caseId\\u2237modelId); Aggregate GROUPS BY modelId into perModel (total, passRate, perRubricMean, meanLatencyMs, totalTokens, estCostUsd, costBasis) + a ranked bench. SUT routing (two nested IFs): sutMode:"workflow" routes each case to the LIVE product-feedback sibling (POST /webhook/portfolio/product-feedback-intelligence) as a BLACK BOX (response.theme as the actual output, onError -> sutSource:"error", passed=false); sutMode:"model" fans out cases x sutModels and calls Ollama /api/chat (host.docker.internal:11434, temperature:0) per (case,model), extracting the model text as the actual output + eval_count/prompt_eval_count tokens + total_duration latency (the bench ALWAYS includes the deterministic "stub" lane + the live llama3.2:3b lane, an unreachable model -> sutSource:"error", passed=false); any other value uses the deterministic STUB SUT (the default, keeping the Layer-2 suite offline + reproducible). Honest cost: local Ollama is estCostUsd:0 / costBasis:"local-free" (tokens+latency reported); only KNOWN cloud ids in an explicit priceTable get a $ estimate (none used now) — local cost is never fabricated. Judge gate: judgeSource:"ollama" calls a LIVE local llama3.2:3b (format:json) per row, schema-validates, falls back deterministically (judgeSource:"fallback", passed=false) on bad/unreachable output; any other value uses the deterministic STUB judge. Judge-human CALIBRATION: cases may carry a humanLabel; the run computes judge-vs-human agreement and sets judgeTrust:"high" (>=0.8) else "low". Emits a redacted audit event. Manual trigger runs an editor demo; webhook serves the API. DEFERRED to v0.5.0: regression-vs-baseline delta (regressionDelta stays null).',
+  '## LLM Eval Harness v0.5.0 (multi-model bench + regression-vs-baseline)\\nLocal eval-harness API: receives an eval run with inline golden cases, runs a GATED subject-under-test, scores each output with the 5-type deterministic assertion taxonomy (schema/range/format/absence/masking) FIRST, then grades the residual subjective dims (1..5 groundedness/relevance/helpfulness/safety) with a GATED judge. Every scored row carries a modelId (key caseId\\u2237modelId); Aggregate GROUPS BY modelId into perModel (total, passRate, perRubricMean, meanLatencyMs, totalTokens, estCostUsd, costBasis) + a ranked bench. SUT routing (two nested IFs): sutMode:"workflow" routes each case to the LIVE product-feedback sibling (POST /webhook/portfolio/product-feedback-intelligence) as a BLACK BOX (response.theme as the actual output, onError -> sutSource:"error", passed=false); sutMode:"model" fans out cases x sutModels and calls Ollama /api/chat (host.docker.internal:11434, temperature:0) per (case,model), extracting the model text as the actual output + eval_count/prompt_eval_count tokens + total_duration latency (the bench ALWAYS includes the deterministic "stub" lane + the live llama3.2:3b lane, an unreachable model -> sutSource:"error", passed=false); any other value uses the deterministic STUB SUT (the default, keeping the Layer-2 suite offline + reproducible). Honest cost: local Ollama is estCostUsd:0 / costBasis:"local-free" (tokens+latency reported); only KNOWN cloud ids in an explicit priceTable get a $ estimate (none used now) — local cost is never fabricated. Judge gate: judgeSource:"ollama" calls a LIVE local llama3.2:3b (format:json) per row, schema-validates, falls back deterministically (judgeSource:"fallback", passed=false) on bad/unreachable output; any other value uses the deterministic STUB judge. Judge-human CALIBRATION: cases may carry a humanLabel; the run computes judge-vs-human agreement and sets judgeTrust:"high" (>=0.8) else "low". REGRESSION vs. baseline (v0.5.0): when a baseline is supplied (body.baseline inline, or the committed fixtures/baseline/regression-baseline.json injected by the offline driver), Aggregate computes regressionDelta = current - baseline on overall passRate, PER-MODEL passRate (matched by modelId) and perRubricMean (per dim), with regressed:true iff any overall/per-model passRate drops MORE than the tolerance band (default 0); a new modelId absent from the baseline is reported (passRateDelta:null, isNew:true), never a regression. No baseline -> regressionDelta:null (honest). The explicit baseline keeps the delta DETERMINISTIC in CI (no hidden mutable store in the hot path). Emits a redacted audit event. Manual trigger runs an editor demo; webhook serves the API.',
   [runDemoFromUi, buildDemoEvalPayload, receiveEvalRun, normalizeEvalRequest, hasGolden, sutModeGate, fanOutSutCases, callProductFeedback, parseProductFeedback, sutModelGate, fanOutModelCases, callOllamaSut, parseModelSut, runSubjectStub, runDeterministicAssertions, judgeSourceGate, judgeStub, fanOutJudgeCases, judgeOllama, parseJudgeOllama, aggregateRun, buildAuditEvent, buildEvalResponse, manualUiExecution],
   { color: 4 }
 );
