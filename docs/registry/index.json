@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/Build-WorkflowIndex.ps1",
+  "workflowCount": 1,
+  "workflows": [
+    {
+      "slug": "llm-eval-harness",
+      "title": "Portfolio - LLM Eval Harness API",
+      "description": "Local LLM eval harness: receives an eval run with inline golden cases, runs a GATED subject-under-test, scores each output deterministic-first with the 5-type assertion taxonomy (schema/range/format/absence/masking), then grades residual subjective dimensions (1..5 groundedness/relevance/helpfulness/safety) with a GATED LLM-as-judge. SUT gate: sutMode:'workflow' grades the LIVE product-feedback sibling (6Gc3wmri0tJre07B) as a black box over its real webhook (extracts response.theme as the actual output, onError:continueRegularOutput -> sutSource:'error', passed=false on an unreachable sibling); anything else uses the deterministic stub SUT (the default). Judge gate: judgeSource:'ollama' calls a live local llama3.2:3b (format:json) per case with schema-validation + deterministic fallback (judgeSource:'fallback', passed=false) on bad/unreachable output, anything else uses the deterministic stub judge (the default). Computes judge-human agreement over an optional humanLabel calibration slice and sets judgeTrust high (>=0.8) else low. Aggregates pass-rate + per-rubric mean and emits a redacted audit event.",
+      "owner": "portfolio",
+      "department": "Product",
+      "version": "0.3.0",
+      "status": "live-tested",
+      "project": "n8n-llm-eval-harness",
+      "lastWriter": "n8n public REST API",
+      "n8nWorkflowId": "IhmmthDFMKdDbgvp",
+      "source": "workflows\\sdk\\llm-eval-harness.workflow.js",
+      "canonical": "workflows\\canonical\\llm-eval-harness.canonical.json",
+      "release": "workflows\\releases\\llm-eval-harness-v0.3.0.json",
+      "request": "fixtures\\requests\\llm-eval-harness.md",
+      "trigger": "manual + webhook",
+      "integrations": [
+        "n8n Manual Trigger",
+        "n8n Webhook",
+        "Deterministic stub subject-under-test (default)",
+        "Live workflow subject-under-test (sutMode:workflow grades product-feedback 6Gc3wmri0tJre07B as a black box) with graceful non-fatal failure",
+        "Deterministic stub LLM-as-judge (default)",
+        "Live Ollama LLM-as-judge (llama3.2:3b, judgeSource:ollama) with deterministic fallback",
+        "Judge-human calibration / judge-drift guard (judgeTrust)",
+        "Redacted audit"
+      ],
+      "tags": [
+        "llm-eval",
+        "eval-harness",
+        "llm-as-judge",
+        "deterministic-assertions",
+        "ollama",
+        "judge-calibration",
+        "connected-workflow-sut",
+        "workflow-as-code"
+      ],
+      "fixtures": [
+        "echo-pass.json",
+        "echo-fail.json",
+        "calibration/calibration-slice.json",
+        "golden/connected-product-feedback.json"
+      ],
+      "smokeCases": [
+        "echo-pass",
+        "echo-fail"
+      ],
+      "localOnly": true,
+      "nodeCount": 26,
+      "nodeTypes": [
+        "n8n-nodes-base.code",
+        "n8n-nodes-base.httpRequest",
+        "n8n-nodes-base.if",
+        "n8n-nodes-base.manualTrigger",
+        "n8n-nodes-base.respondToWebhook",
+        "n8n-nodes-base.stickyNote",
+        "n8n-nodes-base.webhook"
+      ],
+      "complexity": "advanced",
+      "notes": "v0.3.0: added a GATED subject-under-test. A visual IF gate ('SUT Mode = Workflow?') routes sutMode:'workflow' to a fan-out (one item per golden case) -> httpRequest POSTing each case's feedback object to the LIVE product-feedback sibling (6Gc3wmri0tJre07B) at /webhook/portfolio/product-feedback-intelligence (onError:continueRegularOutput so an unreachable/inactive sibling is non-fatal) -> parse node that extracts response.theme (+ sentiment/urgency) as the case's ACTUAL output and marks sutSource:'error' when no theme comes back (so the deterministic exact-match fails, passed=false — a broken sibling never silently passes). Anything else uses the deterministic stub SUT (the default, keeping verify:live offline + reproducible). The sibling is graded as a BLACK BOX over its real HTTP endpoint (ADR-0003), not by importing its code. Normalize now preserves OBJECT inputs (the feedback payload) so the structured body survives to the SUT step. v0.2.0's gated Ollama judge + judge-human calibration are unchanged. Deployed live (id IhmmthDFMKdDbgvp, 26 nodes, active) and verified 2026-05-30: verify:static/json/live green (30-assertion stub suite, node floor 26); verify:judge green (live Ollama judge, agreement 1.0, judgeTrust:high); verify:connected activates product-feedback and grades it live over a 6-case slice (feedback-bug-negative/feature-request/praise/pricing/performance/usability) returning sutMode:'workflow', passRate 1.0 (all 6 live themes matched expected); an unreachable-sibling run returned HTTP 200 passed:false without crashing. DEFERRED: SUT model fan-out (sutMode:'model'), regression-vs-previous-run."
+    }
+  ]
+}
