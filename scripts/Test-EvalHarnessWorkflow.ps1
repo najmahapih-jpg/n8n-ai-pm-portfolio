@@ -22,7 +22,7 @@ $webhookUrl = "$base/$($WebhookPath.TrimStart('/'))"
 $secretRules = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot "lib\Secret-Patterns.psd1")
 $rawSecretPatterns = [string[]]$secretRules.RawSecretPatterns
 
-$expectedPolicyVersion = "eval-harness-v0.4.0"
+$expectedPolicyVersion = "eval-harness-v0.5.0"
 
 # Each assertion records a PASS/FAIL line; any failure flips the suite to a non-zero exit.
 $assertions = New-Object System.Collections.Generic.List[object]
@@ -216,6 +216,106 @@ foreach ($case in $cases) {
     Assert-Condition -Case $name -Type "schema" -Label "results[0].passed == false" -Condition ($firstPassed -eq $false) -Detail "results[0].passed=$firstPassed"
     Assert-Condition -Case $name -Type "schema" -Label "passed == false" -Condition ($passedVal -eq $false) -Detail "passed=$passedVal"
   }
+}
+
+# --- Regression vs. baseline (v0.5.0, ADR-0004 d.5) ----------------------------------------
+# DETERMINISTIC regression assertions. The committed fixtures/baseline/regression-baseline.json
+# carries the known stub-run aggregate for a 2-case echo slice (passRate 0.5). Because the stub SUT
+# + stub judge path is fully deterministic, this is a reproducible CI anchor:
+#   (a) baseline-EQUALS-current run (inject the fixture as body.baseline, baselineSource:'fixture')
+#       -> regressed:false, overall + per-model passRateDelta == 0 (no drift).
+#   (b) a deliberately-HIGHER-passRate baseline (mutate the fixture pass-rates upward)
+#       -> regressed:true with a NEGATIVE overall passRateDelta (the drift guard fires).
+# This proves the explicit-baseline delta is reproducible OFFLINE (no live model, no hidden store).
+$regressionCase = "regression-baseline"
+$baselineFile = Join-Path $repoRoot "fixtures\baseline\regression-baseline.json"
+if (-not (Test-Path -LiteralPath $baselineFile -PathType Leaf)) {
+  Assert-Condition -Case $regressionCase -Type "schema" -Label "baseline fixture exists" -Condition $false -Detail "missing $baselineFile"
+} else {
+  $equalResp = $null
+  $higherResp = $null
+  $baselineDoc = $null
+  $baselineParsed = $true
+  try { $baselineDoc = Get-Content -LiteralPath $baselineFile -Raw | ConvertFrom-Json -Depth 100 } catch { $baselineParsed = $false }
+  Assert-Condition -Case $regressionCase -Type "schema" -Label "baseline fixture is JSON" -Condition $baselineParsed
+  if ($baselineParsed) {
+    # The golden slice + the captured baseline both travel in the fixture so the run is self-contained.
+    $regGolden = @($baselineDoc.golden)
+    $regBaseline = $baselineDoc.baseline
+
+    # --- (a) baseline EQUALS current -> regressed:false, all passRateDelta == 0 -------------------
+    $equalBody = @{ runId = "regression-equal"; golden = $regGolden; baseline = $regBaseline; baselineSource = "fixture" } | ConvertTo-Json -Depth 100
+    $equalResp = $null
+    try { $equalResp = Invoke-Webhook -Body $equalBody } catch {}
+    if ($null -eq $equalResp) {
+      Assert-Condition -Case $regressionCase -Type "schema" -Label "equal-baseline run reachable" -Condition $false
+    } else {
+      $equalStatus = [int]$equalResp.StatusCode
+      $equalRaw = [string]$equalResp.Content
+      Assert-Condition -Case $regressionCase -Type "schema" -Label "equal-baseline HTTP 200" -Condition ($equalStatus -eq 200) -Detail "status=$equalStatus"
+      $equalJson = $null
+      $equalOk = $true
+      try { $equalJson = $equalRaw | ConvertFrom-Json -Depth 100 } catch { $equalOk = $false }
+      Assert-Condition -Case $regressionCase -Type "schema" -Label "equal-baseline response is JSON" -Condition $equalOk
+      if ($equalOk) {
+        $rd = if ($equalJson.PSObject.Properties["regressionDelta"]) { $equalJson.regressionDelta } else { $null }
+        Assert-Condition -Case $regressionCase -Type "schema" -Label "regressionDelta present (equal)" -Condition ($null -ne $rd) -Detail $(if ($null -eq $rd) { "regressionDelta is null" } else { "" })
+        if ($null -ne $rd) {
+          $src = if ($rd.PSObject.Properties["baselineSource"]) { [string]$rd.baselineSource } else { "" }
+          Assert-Condition -Case $regressionCase -Type "schema" -Label "baselineSource == fixture" -Condition ($src -eq "fixture") -Detail "baselineSource=$src"
+          $regressedVal = if ($rd.PSObject.Properties["regressed"]) { [bool]$rd.regressed } else { $true }
+          Assert-Condition -Case $regressionCase -Type "schema" -Label "regressed == false (no drift)" -Condition ($regressedVal -eq $false) -Detail "regressed=$regressedVal"
+          $overallDelta = if ($rd.overall.PSObject.Properties["passRateDelta"]) { [double]$rd.overall.passRateDelta } else { [double]::NaN }
+          Assert-Condition -Case $regressionCase -Type "range" -Label "overall passRateDelta == 0" -Condition ($overallDelta -eq 0) -Detail "overall.passRateDelta=$overallDelta"
+          # Every per-model passRateDelta must be exactly 0 (deterministic, byte-stable).
+          $allModelZero = $true
+          $modelDetail = ""
+          foreach ($m in @($rd.perModel)) {
+            $md = if ($m.PSObject.Properties["passRateDelta"] -and $null -ne $m.passRateDelta) { [double]$m.passRateDelta } else { [double]::NaN }
+            if ($md -ne 0) { $allModelZero = $false; $modelDetail = "$($m.modelId)=$md" }
+          }
+          Assert-Condition -Case $regressionCase -Type "range" -Label "every perModel passRateDelta == 0" -Condition $allModelZero -Detail $modelDetail
+        }
+      }
+    }
+
+    # --- (b) HIGHER-passRate baseline -> regressed:true, NEGATIVE overall passRateDelta -----------
+    # Mutate the fixture baseline upward (overall + every per-model passRate -> 1.0) so current < baseline.
+    $higherModels = @()
+    foreach ($bm in @($regBaseline.perModel)) {
+      $higherModels += @{ modelId = [string]$bm.modelId; passRate = 1.0 }
+    }
+    $higherBaseline = @{ overall = @{ passRate = 1.0 }; perModel = $higherModels; perRubricMean = $regBaseline.perRubricMean }
+    $higherBody = @{ runId = "regression-higher"; golden = $regGolden; baseline = $higherBaseline; baselineSource = "request" } | ConvertTo-Json -Depth 100
+    $higherResp = $null
+    try { $higherResp = Invoke-Webhook -Body $higherBody } catch {}
+    if ($null -eq $higherResp) {
+      Assert-Condition -Case $regressionCase -Type "schema" -Label "higher-baseline run reachable" -Condition $false
+    } else {
+      $higherStatus = [int]$higherResp.StatusCode
+      $higherRaw = [string]$higherResp.Content
+      Assert-Condition -Case $regressionCase -Type "schema" -Label "higher-baseline HTTP 200" -Condition ($higherStatus -eq 200) -Detail "status=$higherStatus"
+      $higherJson = $null
+      $higherOk = $true
+      try { $higherJson = $higherRaw | ConvertFrom-Json -Depth 100 } catch { $higherOk = $false }
+      Assert-Condition -Case $regressionCase -Type "schema" -Label "higher-baseline response is JSON" -Condition $higherOk
+      if ($higherOk) {
+        $rd2 = if ($higherJson.PSObject.Properties["regressionDelta"]) { $higherJson.regressionDelta } else { $null }
+        Assert-Condition -Case $regressionCase -Type "schema" -Label "regressionDelta present (higher)" -Condition ($null -ne $rd2) -Detail $(if ($null -eq $rd2) { "regressionDelta is null" } else { "" })
+        if ($null -ne $rd2) {
+          $regressedVal2 = if ($rd2.PSObject.Properties["regressed"]) { [bool]$rd2.regressed } else { $false }
+          Assert-Condition -Case $regressionCase -Type "schema" -Label "regressed == true (drift guard fires)" -Condition ($regressedVal2 -eq $true) -Detail "regressed=$regressedVal2"
+          $overallDelta2 = if ($rd2.overall.PSObject.Properties["passRateDelta"]) { [double]$rd2.overall.passRateDelta } else { [double]::NaN }
+          Assert-Condition -Case $regressionCase -Type "range" -Label "overall passRateDelta < 0 (negative drift)" -Condition ($overallDelta2 -lt 0) -Detail "overall.passRateDelta=$overallDelta2"
+        }
+      }
+    }
+  }
+  # masking: neither regression run may leak a raw secret/PII.
+  $regLeak = $null
+  if ($null -ne $equalResp) { $regLeak = Test-NoSecretLeak -Raw ([string]$equalResp.Content) }
+  if ($null -eq $regLeak -and $null -ne $higherResp) { $regLeak = Test-NoSecretLeak -Raw ([string]$higherResp.Content) }
+  Assert-Condition -Case $regressionCase -Type "masking" -Label "no raw secret/PII in regression responses" -Condition ($null -eq $regLeak) -Detail $regLeak
 }
 
 Write-Host ""
