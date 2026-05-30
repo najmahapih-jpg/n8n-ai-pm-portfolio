@@ -4,7 +4,7 @@ param(
   [string]$SdkPath = ".\workflows\sdk\llm-eval-harness.workflow.js",
   [string]$GeneratedPath = ".\workflows\generated\llm-eval-harness.json",
   [string]$MetaPath = ".\workflows\sdk\llm-eval-harness.meta.json",
-  [int]$MinimumNodes = 26,
+  [int]$MinimumNodes = 30,
   [switch]$SkipCompile,
   [switch]$NoActivate
 )
