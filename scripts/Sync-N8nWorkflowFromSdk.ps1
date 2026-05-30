@@ -5,7 +5,7 @@ param(
   [string]$ArtifactName = "lead-intelligence",
   [string]$GeneratedOutputDirectory = ".\workflows\generated",
   [string]$CanonicalOutputDirectory = ".\workflows\canonical",
-  [string]$ReleasePath = ".\workflows\releases\lead-intelligence-v0.1.1.json",
+  [string]$ReleasePath = ".\workflows\releases\lead-intelligence-v0.1.2.json",
   [int]$MinimumNodes = 38,
   [string]$Description = "Local B2B lead intelligence: validate intake, dedupe, enrich with deterministic rules, score ICP and intent, route sales ownership, build CRM-ready payload, redact audit, respond.",
   [string]$McpUrl = "http://localhost:5678/mcp-server/http",

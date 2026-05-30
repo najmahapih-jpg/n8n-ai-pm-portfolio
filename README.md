@@ -26,7 +26,7 @@ External CRM and Feishu/Lark delivery are intentionally placed last. The current
 
 ## Node-Level Coverage
 
-- 38 workflow nodes.
+- 39 workflow nodes (incl. an Execute Workflow Trigger so the workflow is callable as an agent/MCP tool).
 - 1 n8n editor manual execution branch for direct `Execute Workflow` demos.
 - 11 safe pin-data fixtures.
 - Validation branches: missing required field and invalid email.
@@ -44,7 +44,7 @@ External CRM and Feishu/Lark delivery are intentionally placed last. The current
 
 ## Agent integration (MCP tool)
 
-- [docs/lead-scoring-mcp-tool.md](docs/lead-scoring-mcp-tool.md) — exposes this workflow as an agent-callable **MCP tool** (n8n MCP Server Trigger → Call n8n Workflow Tool, live id `wLyTjQRtlpUKgX5d`), reusing the 11-fixture behavioral eval as the correctness backstop. Documents the round-trip and the unauthenticated-SSE exposure boundary.
+- [docs/lead-scoring-mcp-tool.md](docs/lead-scoring-mcp-tool.md) — exposes this workflow as an agent-callable **MCP tool** (MCP Server Trigger → Call n8n Workflow Tool → Execute Workflow Trigger, live id `wLyTjQRtlpUKgX5d`). The round-trip is **verified end-to-end**: a live MCP `tools/call score_lead` returns the same grade/score as the fixtures (hot-enterprise → grade A, priority 97). The 11-fixture eval is the correctness backstop; the doc also covers the unauthenticated-SSE exposure boundary.
 
 ## Setup
 

@@ -43,37 +43,34 @@ sub-workflow (`xhZ0XMNvi4LeVWzk`) must be **active/published** first.
 | --- | --- | --- |
 | publish | `publish_workflow` (both workflows) | active |
 | `initialize` | `POST /mcp/lead-scoring` | 200, session id, `serverInfo: Lead_Scoring_MCP_Server` |
-| `tools/list` | same session | `score_lead` exposed (input schema `{ input: string }`, `additionalProperties: true`) |
-| `tools/call score_lead` | same session | full chain executes; sub-workflow returns a structured JSON response back through MCP |
+| `tools/list` | same session | `score_lead` exposed with **12 typed inputs** (email, companyName, …) via `$fromAI` |
+| `tools/call score_lead` | same session | returns the **graded result** — hot-enterprise → `grade A`, `priorityScore 97`, `route enterprise-ae`, SLA 2h, `redactedEmail b***@finops.example` |
 
-**Verified:** the MCP transport, tool discovery, and the delegation chain (MCP client → MCP
-Server Trigger → `score_lead` → Lead Intelligence API → structured response → back to client)
-work end-to-end. A `tools/call` traverses the entire chain and returns the workflow's own JSON.
+**Verified end-to-end — returns real scoring.** A live `tools/call score_lead` with a lead
+payload traverses the full chain (MCP client → MCP Server Trigger → `score_lead` → **Execute
+Workflow Trigger** → deterministic scoring → structured response → back to client) and returns
+the graded result. The hot-enterprise payload returns `grade A`, `priorityScore 97`, `icpFitScore
+95`, `intentScore 100`, `route enterprise-ae`, SLA 2h, and `redactedEmail b***@finops.example` —
+**identical to the `lead-hot-enterprise` fixture's golden values**, so the behavioral eval is the
+oracle for the live tool's output.
 
-**Open finding (input mapping) — the value of running the test.** The tool currently exposes a
-generic `input` string, and the lead workflow's entries are manual + webhook triggers (no
-*Execute Workflow Trigger* declaring typed inputs), so structured lead fields are not yet mapped
-into the sub-workflow. A call therefore lands on the **validation branch** and returns a clean
-`400 Missing required lead fields` — which in turn confirms the validation path works over MCP.
-Two concrete lessons the test surfaced:
+How it was wired (the fix the first test run pointed to):
 
-1. **Both** the MCP-server workflow and the called sub-workflow must be active, or the tool call
-   fails with *"Workflow is not active and cannot be executed."*
-2. To return a graded result, add an `n8n-nodes-base.executeWorkflowTrigger` to the lead workflow
-   with declared inputs (email, companyName, …) wired to `Normalize Lead Payload`; the
-   Call-Workflow Tool then auto-exposes those typed inputs on `score_lead` for the agent to fill.
-
-Once inputs map through, the expected scoring for any payload matches the behavioral eval's
-golden table — the eval *is* the oracle for the tool's output.
+1. The lead workflow gained an `n8n-nodes-base.executeWorkflowTrigger` with declared typed inputs
+   (email, companyName, …) wired to `Normalize Lead Payload`, so sub-workflow calls route there
+   instead of the manual demo trigger. The 11-fixture eval still passes — the manual/webhook
+   paths are unchanged (the workflow is now 39 nodes, v0.1.2).
+2. `score_lead`'s `workflowInputs` map each field via `$fromAI(...)`, so `tools/list` exposes the
+   12 typed inputs and the agent fills them.
+3. **Both** the MCP-server workflow and the sub-workflow must be **active/published** — an
+   inactive sub-workflow fails with *"Workflow is not active and cannot be executed."*
 
 ## Honest scoping (read this)
 
-- **The MCP round-trip is verified at the transport / discovery / delegation level** (see the
-  table above): the SDK validates, the workflow is created + published, and a live `tools/call`
-  traverses the full chain and returns a structured response. **Returning a graded result
-  end-to-end is gated on the input-mapping fix (Execute Workflow Trigger).** The scoring logic
-  itself stays covered by the lead workflow's 11-fixture behavioral eval; the MCP layer adds no
-  logic to grade.
+- **The MCP round-trip is verified end-to-end and returns a real graded result** (see the table
+  above): the SDK validates, both workflows publish, and a live `tools/call` returns the same
+  grade/score as the fixtures. The scoring logic stays covered by the lead workflow's 11-fixture
+  behavioral eval; the MCP layer adds no logic to grade — it maps inputs and delegates.
 - **The SSE endpoint is unauthenticated (`authentication: none`)** for local use. This is fine
   on a local-only box; **add bearer/header auth before any network exposure** — an open MCP
   trigger is a real exposure boundary, not a detail to gloss over.

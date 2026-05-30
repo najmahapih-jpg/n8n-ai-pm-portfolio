@@ -5,21 +5,22 @@
   "description": "Local B2B lead intelligence workflow that validates lead intake, deduplicates, enriches with deterministic local rules, scores ICP and intent, routes sales ownership, builds a CRM-ready payload, and emits a redacted audit event.",
   "owner": "portfolio",
   "department": "RevOps",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "status": "draft-tested",
   "project": "n8n-lead-intelligence-workflow",
   "lastWriter": "official n8n MCP",
   "n8nWorkflowId": "xhZ0XMNvi4LeVWzk",
   "source": "lead-intelligence.workflow.js",
   "canonical": "lead-intelligence.canonical.json",
-  "release": "lead-intelligence-v0.1.1.json",
+  "release": "lead-intelligence-v0.1.2.json",
   "request": "lead-intelligence.md",
-  "trigger": "manual + webhook",
+  "trigger": "manual + webhook + executeWorkflow (agent/MCP tool)",
   "integrations": [
     "n8n Manual Trigger",
     "n8n Webhook",
     "Local scoring rules",
-    "CRM-ready payload"
+    "CRM-ready payload",
+    "Execute Workflow Trigger (agent/MCP tool entry)"
   ],
   "tags": [
     "lead-intelligence",
@@ -45,6 +46,6 @@
     "hot-enterprise-lead"
   ],
   "localOnly": true,
-  "notes": "External CRM and Feishu adapters are intentionally deferred until the local scoring, routing, audit, registry, and MCP regression loop is stable.",
-  "updatedAt": "2026-05-29T09:29:51.907Z"
+  "notes": "v0.1.2 adds an Execute Workflow Trigger so the workflow can be called as an agent/MCP tool (see docs/lead-scoring-mcp-tool.md and the lead-scoring-mcp-tool workflow); the manual + webhook paths and the 11-fixture eval are unchanged. External CRM and Feishu adapters remain deferred.",
+  "updatedAt": "2026-05-30T03:37:01.986Z"
 }

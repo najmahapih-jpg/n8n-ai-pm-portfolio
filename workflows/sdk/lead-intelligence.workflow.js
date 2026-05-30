@@ -1124,6 +1124,34 @@ const returnLeadResponse = node({
   }
 });
 
+const callableTrigger = trigger({
+  type: 'n8n-nodes-base.executeWorkflowTrigger',
+  version: 1.1,
+  config: {
+    name: 'Called As Tool (Execute Workflow Trigger)',
+    position: [160, 780],
+    parameters: {
+      inputSource: 'workflowInputs',
+      workflowInputs: {
+        values: [
+          { name: 'email', type: 'string' },
+          { name: 'fullName', type: 'string' },
+          { name: 'companyName', type: 'string' },
+          { name: 'companyDomain', type: 'string' },
+          { name: 'requestedProduct', type: 'string' },
+          { name: 'message', type: 'string' },
+          { name: 'intentSignals', type: 'string' },
+          { name: 'employeeCount', type: 'number' },
+          { name: 'industry', type: 'string' },
+          { name: 'country', type: 'string' },
+          { name: 'plan', type: 'string' },
+          { name: 'source', type: 'string' }
+        ]
+      }
+    }
+  }
+});
+
 const overview = sticky(
   '## Lead Intelligence v0.1.1\\nLocal B2B lead scoring workflow: supports n8n editor Execute Workflow through a manual demo trigger, plus webhook intake for API calls. It normalizes, validates, dedupes, enriches with deterministic local rules, scores ICP and intent, routes owner, builds CRM-ready payload, creates a redacted audit event, and responds. External CRM and Feishu adapters are intentionally deferred.',
   [runDemoFromUi, buildDemoLeadPayload, receiveLead, normalizeLead, validateRequiredFields, validateEmailSyntax, duplicateLead, hotLead, manualUiRequiredError, manualUiEmailError, manualUiDuplicateResponse, manualUiExecution],
@@ -1222,4 +1250,6 @@ export default workflow('lead-intelligence', 'Portfolio - Lead Intelligence API'
     )
   )
   .add(receiveLead)
+  .to(normalizeLead)
+  .add(callableTrigger)
   .to(normalizeLead);

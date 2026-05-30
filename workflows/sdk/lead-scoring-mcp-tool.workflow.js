@@ -23,7 +23,37 @@ const scoreLeadTool = tool({
       },
       workflowInputs: {
         mappingMode: 'defineBelow',
-        value: null
+        matchingColumns: [],
+        attemptToConvertTypes: false,
+        convertFieldsToString: false,
+        schema: [
+          { id: 'email', displayName: 'email', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'fullName', displayName: 'fullName', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'companyName', displayName: 'companyName', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'companyDomain', displayName: 'companyDomain', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'requestedProduct', displayName: 'requestedProduct', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'message', displayName: 'message', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'intentSignals', displayName: 'intentSignals', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'employeeCount', displayName: 'employeeCount', type: 'number', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'industry', displayName: 'industry', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'country', displayName: 'country', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'plan', displayName: 'plan', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false },
+          { id: 'source', displayName: 'source', type: 'string', required: false, display: true, defaultMatch: false, canBeUsedToMatch: false, removed: false }
+        ],
+        value: {
+          email: "={{ $fromAI('email', 'lead work email', 'string') }}",
+          fullName: "={{ $fromAI('fullName', 'contact full name', 'string') }}",
+          companyName: "={{ $fromAI('companyName', 'company name', 'string') }}",
+          companyDomain: "={{ $fromAI('companyDomain', 'company email domain', 'string') }}",
+          requestedProduct: "={{ $fromAI('requestedProduct', 'product or service requested', 'string') }}",
+          message: "={{ $fromAI('message', 'free-text message or notes from the lead', 'string') }}",
+          intentSignals: "={{ $fromAI('intentSignals', 'comma-separated buying-intent signals', 'string') }}",
+          employeeCount: "={{ $fromAI('employeeCount', 'company employee count', 'number') }}",
+          industry: "={{ $fromAI('industry', 'company industry', 'string') }}",
+          country: "={{ $fromAI('country', 'two-letter country code such as us', 'string') }}",
+          plan: "={{ $fromAI('plan', 'plan tier such as enterprise', 'string') }}",
+          source: "={{ $fromAI('source', 'lead source channel', 'string') }}"
+        }
       }
     }
   }
