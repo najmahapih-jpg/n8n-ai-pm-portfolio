@@ -1,0 +1,4 @@
+# Normalize line endings. Repo stores LF; PowerShell scripts check out as CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.psd1 text eol=crlf
