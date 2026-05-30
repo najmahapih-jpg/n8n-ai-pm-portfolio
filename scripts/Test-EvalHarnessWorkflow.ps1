@@ -22,7 +22,7 @@ $webhookUrl = "$base/$($WebhookPath.TrimStart('/'))"
 $secretRules = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot "lib\Secret-Patterns.psd1")
 $rawSecretPatterns = [string[]]$secretRules.RawSecretPatterns
 
-$expectedPolicyVersion = "eval-harness-v0.3.0"
+$expectedPolicyVersion = "eval-harness-v0.4.0"
 
 # Each assertion records a PASS/FAIL line; any failure flips the suite to a non-zero exit.
 $assertions = New-Object System.Collections.Generic.List[object]
@@ -139,8 +139,8 @@ foreach ($case in $cases) {
   Assert-Condition -Case $name -Type "schema" -Label "response is JSON" -Condition $parsedOk
   if (-not $parsedOk) { continue }
 
-  # schema: required keys present.
-  $requiredKeys = @("ok", "passRate", "passed", "results", "judgeTrust", "perRubricMean", "policyVersion", "processedAt")
+  # schema: required keys present (v0.4.0 adds the multi-model bench surface perModel + bench).
+  $requiredKeys = @("ok", "passRate", "passed", "results", "judgeTrust", "perRubricMean", "perModel", "bench", "policyVersion", "processedAt")
   $missingKeys = @($requiredKeys | Where-Object { -not $resp.PSObject.Properties[$_] })
   Assert-Condition -Case $name -Type "schema" -Label "required keys present" -Condition ($missingKeys.Count -eq 0) -Detail $(if ($missingKeys.Count -gt 0) { "missing: $($missingKeys -join ', ')" } else { "" })
 
@@ -177,6 +177,23 @@ foreach ($case in $cases) {
 
   $policyVersion = if ($resp.PSObject.Properties["policyVersion"]) { [string]$resp.policyVersion } else { "" }
   Assert-Condition -Case $name -Type "schema" -Label "policyVersion == $expectedPolicyVersion" -Condition ($policyVersion -eq $expectedPolicyVersion) -Detail "policyVersion=$policyVersion"
+
+  # schema: v0.4.0 aggregate.perModel exists and is non-empty (the degenerate single-model 'stub'
+  # entry for the offline stub suite). Each entry carries the cost-quality-latency fields.
+  $perModel = if ($resp.PSObject.Properties["perModel"]) { @($resp.perModel) } else { @() }
+  Assert-Condition -Case $name -Type "schema" -Label "perModel present + non-empty" -Condition ($perModel.Count -ge 1) -Detail "perModel count=$($perModel.Count)"
+  if ($perModel.Count -ge 1) {
+    $firstModel = $perModel[0]
+    $modelId = if ($firstModel.PSObject.Properties["modelId"]) { [string]$firstModel.modelId } else { "" }
+    # The offline stub suite is the degenerate single-model case: modelId is the mode label 'stub'.
+    Assert-Condition -Case $name -Type "schema" -Label "perModel[0].modelId == stub" -Condition ($modelId -eq "stub") -Detail "modelId=$modelId"
+    $modelKeys = @("modelId", "total", "passRate", "perRubricMean", "meanLatencyMs", "totalTokens", "estCostUsd", "costBasis")
+    $missingModelKeys = @($modelKeys | Where-Object { -not $firstModel.PSObject.Properties[$_] })
+    Assert-Condition -Case $name -Type "schema" -Label "perModel[0] has cost/latency/quality keys" -Condition ($missingModelKeys.Count -eq 0) -Detail $(if ($missingModelKeys.Count -gt 0) { "missing: $($missingModelKeys -join ', ')" } else { "" })
+    # honest cost: local stub lane is local-free, $0.
+    $costBasis = if ($firstModel.PSObject.Properties["costBasis"]) { [string]$firstModel.costBasis } else { "" }
+    Assert-Condition -Case $name -Type "schema" -Label "perModel[0].costBasis == local-free" -Condition ($costBasis -eq "local-free") -Detail "costBasis=$costBasis"
+  }
 
   # masking: no raw secret/PII in the response body.
   $leak = Test-NoSecretLeak -Raw $raw
