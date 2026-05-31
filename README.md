@@ -12,8 +12,19 @@ This is the **fourth** workflow on the shared "Workflow-as-Code" harness and the
 the **meta level** — it does not do an end-user task, it **measures AI quality**, the single
 highest-signal AI-PM portfolio artifact.
 
-> **Status: v0.5.0 — live & verified (multi-model bench + regression-vs-baseline).** The harness is
-> deployed on local n8n (workflow id `IhmmthDFMKdDbgvp`, **30 nodes**, active) and is a **multi-model eval bench**: every
+> **Status: v0.6.0 — live & verified (configurable SUT response extraction).** The harness is
+> deployed on local n8n (workflow id `IhmmthDFMKdDbgvp`, **30 nodes**, active). **New in v0.6.0:** the
+> `sutMode:"workflow"` black-box grading is **decoupled from any one sibling's response shape** via a
+> per-request **`sutExtract`** dot-path (default `"response.theme"`) applied to the SUT response to read
+> each row's actual output (see [ADR-0005](docs/adr/0005-configurable-sut-response-extraction.md)). The
+> default keeps **product-feedback** grading byte-for-byte identical (`verify:connected` stays green —
+> backward-compat), while `sutExtract:"abstained"` grades the **RAG knowledge assistant**
+> (`jZ5Xfml8jbKexYqf`), which returns `{ ok, abstained, answer, citations }` with **no `theme`** — closing
+> the "connected projects" story across a **second, differently-shaped** SUT. The extracted value is
+> coerced to a comparable string the same way `expected` is compared (a boolean `abstained:false` →
+> `"false"`); a missing/unextractable path → `sutSource:"error"`, `passed=false` (never a silent pass). The
+> new **`verify:connected-rag`** (live, non-CI) POSTs `fixtures/golden/connected-rag.json` and asserts A
+> grades B's abstention at **passRate 1.0**. The harness is also a **multi-model eval bench**: every
 > scored row carries a `modelId` (key `caseId∷modelId`) and **Aggregate groups by `modelId`** into
 > `perModel` (pass-rate + per-rubric mean + `meanLatencyMs` + `totalTokens` + `estCostUsd` + `costBasis`)
 > plus a ranked `bench` — the **cost–quality–latency triangle** per model. `sutMode:"model"` fans out
@@ -64,15 +75,20 @@ Layer 2 proves mechanics and graceful degradation — **not** that the live judg
 Judge accuracy is a separate, manual, honestly-labeled calibration. See
 [docs/eval-plan.md](docs/eval-plan.md) for exactly what is and isn't proven.
 
-## Node graph (v0.5.0 — built; multi-model bench + regression-vs-baseline)
+## Node graph (v0.6.0 — built; configurable SUT extraction + multi-model bench + regression-vs-baseline)
 
-Built through v0.5.0 (**30 nodes**): the webhook entrypoint, validation, a **3-way gated subject-under-test**
-routed by **two nested IFs** (`SUT Mode = Workflow?` → `SUT Mode = Model?`), all three SUT branches
-fanning in to the deterministic assertions:
+Built through v0.6.0 (**30 nodes** — v0.6.0 renamed the workflow-SUT parse node `Parse Product-Feedback (SUT)`
+→ **`Parse Workflow SUT`** in place, no node added/removed): the webhook entrypoint, validation, a
+**3-way gated subject-under-test** routed by **two nested IFs** (`SUT Mode = Workflow?` →
+`SUT Mode = Model?`), all three SUT branches fanning in to the deterministic assertions:
 
 - **stub** (default) — deterministic echo SUT; keeps `verify:live` offline + reproducible.
-- **`workflow`** — fans out each case to the deployed **product-feedback** webhook and grades
-  `response.theme` (exact-match), `onError:continueRegularOutput` → unreachable sibling = `passed=false`.
+- **`workflow`** — fans out each case to **any** deployed sibling's webhook and reads the actual output by
+  walking the **configurable `sutExtract` dot-path** on the response (v0.6.0, [ADR-0005](docs/adr/0005-configurable-sut-response-extraction.md)):
+  the default `"response.theme"` grades **product-feedback** (exact-match, unchanged), `"abstained"` grades
+  the **RAG assistant**'s top-level abstention flag. The extracted value is coerced to a comparable string
+  the same way `expected` is compared (`false` → `"false"`); `onError:continueRegularOutput` or a missing
+  path → `sutSource:"error"`, `passed=false`.
 - **`model`** (v0.4.0) — fans out **cases × `sutModels`** and calls **Ollama** `/api/chat`
   (`temperature:0`) per `(case, model)` via three nodes (`Fan Out Model Cases` → `Call Model SUT (Ollama)`
   → `Parse Model SUT (Ollama)`), extracting the model text as the actual output + `eval_count` +
@@ -99,7 +115,7 @@ trigger (webhook: one eval run  |  manual: editor demo)
   -> load golden dataset (+ validate: tasks present)
   -> route SUT  (two nested IFs: workflow? -> model? -> stub) -- fan in to assertions
   -> for each (case, model):                                  [modelId on every row; key caseId∷modelId]
-       -> run subject-under-test  (stub | workflow[product-feedback] | model[ollama: cases × sutModels])
+       -> run subject-under-test  (stub | workflow[any sibling; output = sutExtract dot-path on response] | model[ollama: cases × sutModels])
        -> deterministic assertions (5-type taxonomy)  [FIRST — owns checkable facts]
        -> LLM-as-judge (stub | live Ollama)  -> {groundedness, relevance, helpfulness, safety} 1..5
        -> validate judge output (schema)  -> fallback if invalid (passed=false)
@@ -120,6 +136,7 @@ trigger (webhook: one eval run  |  manual: editor demo)
 - [docs/adr/0002-deploy-via-rest-api-without-mcp.md](docs/adr/0002-deploy-via-rest-api-without-mcp.md) — compile the SDK standalone and deploy via the n8n public REST API (no MCP).
 - [docs/adr/0003-grade-deployed-sibling-as-blackbox-sut.md](docs/adr/0003-grade-deployed-sibling-as-blackbox-sut.md) — grade the deployed product-feedback sibling as a black-box subject-under-test (v0.3.0).
 - [docs/adr/0004-multi-model-bench-cost-latency-regression.md](docs/adr/0004-multi-model-bench-cost-latency-regression.md) — multi-model SUT fan-out + per-model cost–latency–quality bench (v0.4.0); regression-vs-baseline deferred to v0.5.0.
+- [docs/adr/0005-configurable-sut-response-extraction.md](docs/adr/0005-configurable-sut-response-extraction.md) — decouple workflow-SUT grading from any one sibling's response shape via a configurable `sutExtract` dot-path (v0.6.0); grades the RAG assistant's `abstained` flag while keeping product-feedback's `response.theme` default identical.
 
 ## Portfolio roadmap (chosen direction: build A first, keep B/C/D)
 
@@ -143,8 +160,9 @@ npm run verify:static     # offline gate: parse + secret scan + node floor + reg
 npm run verify:json       # n8n workflow JSON shape + node floor (canonical >= 30, releases)
 npm run verify:live       # connection check -> SDK sync -> 52-assertion behavioral suite (STUB SUT + STUB judge; asserts aggregate.perModel + deterministic regressionDelta: no-drift + regressed cases)
 npm run verify:judge      # LIVE Ollama judge + judge-human calibration over the slice (needs Ollama; NOT in CI)
-npm run verify:connected  # LIVE connected eval: activates product-feedback, grades it as a black-box SUT (sutMode:workflow); needs the sibling; NOT in CI
-npm run verify:bench      # LIVE multi-model bench: sutMode:model fan-out (stub + llama3.2:3b lanes, stub judge); prints the per-model triangle; needs Ollama; NOT in CI
+npm run verify:connected      # LIVE connected eval: activates product-feedback, grades it as a black-box SUT (sutMode:workflow, DEFAULT sutExtract:response.theme — backward-compat); needs the sibling; NOT in CI
+npm run verify:connected-rag  # LIVE connected eval (v0.6.0): activates the RAG assistant, grades its ABSTENTION as a black-box SUT (sutMode:workflow, sutExtract:abstained); asserts passRate 1.0; needs the sibling; NOT in CI
+npm run verify:bench          # LIVE multi-model bench: sutMode:model fan-out (stub + llama3.2:3b lanes, stub judge); prints the per-model triangle; needs Ollama; NOT in CI
 ```
 
 `verify:live` exercises the **stub** SUT + **stub** judge only, so it is deterministic and offline (the
@@ -156,8 +174,15 @@ must yield `regressed:true` with a negative overall `passRateDelta` (proving the
 the workflow, runs the live `llama3.2:3b` judge over `fixtures/calibration/calibration-slice.json`, and
 prints the raw Ollama JSON, the per-case judge-vs-human comparison, the **agreement** number, and the
 resulting `judgeTrust`. `verify:connected` activates the deployed **product-feedback** sibling
-(`6Gc3wmri0tJre07B`), POSTs `fixtures/golden/connected-product-feedback.json` with `sutMode:"workflow"`,
-and prints the per-case **theme (actual) vs expected** table and pass-rate. `verify:bench` (v0.4.0) is the
+(`6Gc3wmri0tJre07B`), POSTs `fixtures/golden/connected-product-feedback.json` with `sutMode:"workflow"`
+and the **default** `sutExtract:"response.theme"`, and prints the per-case **theme (actual) vs expected**
+table and pass-rate — its passing run is the **backward-compatibility proof** that v0.6.0's configurable
+extraction left product-feedback grading byte-for-byte identical. `verify:connected-rag` (v0.6.0) is the new
+Layer-1 driver: it activates the deployed **RAG knowledge assistant** (`jZ5Xfml8jbKexYqf`), POSTs
+`fixtures/golden/connected-rag.json` with `sutMode:"workflow"` + `sutExtract:"abstained"`, prints the
+per-case **abstained (actual) vs expected** table, and **asserts passRate 1.0** — A grading a second,
+differently-shaped SUT's abstention as a black box (in-corpus → `abstained:false`, out-of-corpus →
+`abstained:true`), reproducible because B's stub default is deterministic. `verify:bench` (v0.4.0) is the
 other **Layer-1** activity: it runs the **live `sutMode:"model"` fan-out** over
 `fixtures/golden/bench-model-slice.json` with the **stub judge** (a fixed judge, varying SUT model, to
 avoid confounding the model comparison with judge variance) and prints the **per-model cost–quality–latency
@@ -249,5 +274,34 @@ a correct, surfaced result, not a hidden failure).
       (52-assertion stub suite incl. the regression assertions); `verify:judge` / `verify:connected` /
       `verify:bench` green (the other 4 workflow ids untouched).
 
+**v0.6.0 (done — this release: configurable SUT response extraction)**
+- [x] **`sutMode:"workflow"` extraction decoupled from any one sibling's response shape** (ADR-0005): the
+      parse node (renamed `Parse Product-Feedback (SUT)` → **`Parse Workflow SUT`** in place) reads each
+      row's actual output by walking the **per-request `sutExtract` dot-path** on the SUT response.
+      `Normalize Eval Request` parses `body.sutExtract` (default `"response.theme"`) and threads it onto
+      `runtime.sutExtract`. **No node added/removed — node floor stays 30.**
+- [x] **Wrapper-tolerant + coerced**: a leading `response.` segment resolves against both a bare `{ theme }`
+      and a `{ response:{theme} }` body (so the **default keeps product-feedback grading byte-for-byte
+      identical**); the extracted value is coerced to a comparable string the same way `expected` is compared
+      (`abstained:false` → `"false"`). A missing/unextractable path → `sutSource:"error"`, `passed=false`
+      (never a silent pass). The workflow-SUT lane label (`sutModels` + row `modelId`) generalized
+      `product-feedback` → `workflow`.
+- [x] **Second connected SUT graded**: `fixtures/golden/connected-rag.json` grades the **RAG assistant**'s
+      abstention as a black box (`rag-in-corpus` → `abstained:false` → `expected:"false"`; `rag-out-of-corpus`
+      → `abstained:true` → `expected:"true"`) with `sutExtract:"abstained"`. New **`npm run verify:connected-rag`**
+      (live, non-CI) POSTs it and **asserts passRate 1.0**.
+- [x] **Backward-compat proven**: `verify:connected` (product-feedback, **default** `sutExtract:"response.theme"`)
+      stayed **passRate 1.0** (6/6 themes matched) — the refactor is a pure generalization. The stub default
+      is untouched, so `verify:live` (52 assertions), `verify:judge`, and `verify:bench` stayed green.
+- [x] Version bump to 0.6.0: `package.json`, `meta.json`, `workflows/releases/llm-eval-harness-v0.6.0.json`,
+      regenerated registry + canonical snapshot, `policyVersion` `eval-harness-v0.6.0` in all node strings +
+      the `verify:live` assertion; new [ADR-0005](docs/adr/0005-configurable-sut-response-extraction.md).
+- [x] Deployed live (id `IhmmthDFMKdDbgvp`, **30 nodes**, active); `verify:static`/`json`/`live` green
+      (52-assertion stub suite); `verify:judge` agreement 1.0 / `judgeTrust:high`; `verify:bench` both lanes;
+      `verify:connected` passRate 1.0 (backward-compat); `verify:connected-rag` passRate 1.0 (A grades B's
+      abstention). The other **5** workflow ids untouched (versionId byte-identical before/after).
+
 **Deferred (roadmap → later)**
 - [ ] Schedule trigger (batch eval runs) + optional Markdown/Feishu reporting.
+- [ ] Richer `sutExtract` than a single dot-path (array length e.g. `citations.length`, multi-field
+      composition, or a transform) — v0.6.0 ships a single dot-path; the boundary is noted in [ADR-0005](docs/adr/0005-configurable-sut-response-extraction.md).
