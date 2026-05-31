@@ -1,0 +1,229 @@
+<#
+.SYNOPSIS
+  Ingest the fixed in-repo corpus into the live Supabase pgvector `documents` table.
+
+.DESCRIPTION
+  Phase 2b (v0.2.0) live-path bootstrap. For each `### chunk:<id>` chunk in fixtures/corpus/*.md:
+    1) embed the chunk text via local Ollama /api/embeddings (model nomic-embed-text-v2-moe, 768-dim,
+       with the "search_document: " task prefix the v2 model expects on the corpus side), then
+    2) upsert it into Supabase `documents` (content = chunk text, metadata = {chunkId, source},
+       embedding = the 768 vector) via the Supabase REST API.
+
+  This is a LOCAL, opt-in, one-time bootstrap (NOT part of CI / verify:live). The stub-default core
+  needs none of this. Embeddings are local + free; Supabase Free tier is free.
+
+  GOTCHA (verified): Supabase `sb_secret_` keys are rejected with HTTP 401
+  "Forbidden use of secret API key in browser" when the request carries a browser-like User-Agent.
+  Every Supabase call here therefore sends `User-Agent: n8n`.
+
+  Idempotent: existing rows for the corpus chunkIds are DELETEd first, then re-inserted, so re-running
+  converges on exactly one row per chunk (the table has no unique constraint on metadata->>chunkId).
+
+.NOTES
+  Secrets: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are read from .env (gitignored) or the environment.
+  The service_role/secret key bypasses RLS; it lives in .env only and is never committed.
+#>
+param(
+  [string]$CorpusDirectory = "",
+  [string]$SupabaseUrl = $env:SUPABASE_URL,
+  [string]$SupabaseKey = $env:SUPABASE_SERVICE_ROLE_KEY,
+  [string]$OllamaUrl = $env:OLLAMA_URL,
+  [string]$EmbedModel = $env:OLLAMA_EMBED_MODEL,
+  [string]$Table = "documents",
+  [int]$ExpectedDimensions = 768
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+
+# --- Resolve config (param > env > .env file > default) ---------------------------------------
+function Get-DotEnvValue {
+  param([string]$Name)
+  $envFile = Join-Path $repoRoot ".env"
+  if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) { return "" }
+  $line = Get-Content -LiteralPath $envFile | Where-Object { $_ -match "^\s*$([regex]::Escape($Name))\s*=" } | Select-Object -First 1
+  if ($null -eq $line) { return "" }
+  return ($line -replace "^\s*$([regex]::Escape($Name))\s*=\s*", "").Trim()
+}
+
+if ([string]::IsNullOrWhiteSpace($SupabaseUrl)) { $SupabaseUrl = Get-DotEnvValue -Name "SUPABASE_URL" }
+if ([string]::IsNullOrWhiteSpace($SupabaseKey)) { $SupabaseKey = Get-DotEnvValue -Name "SUPABASE_SERVICE_ROLE_KEY" }
+if ([string]::IsNullOrWhiteSpace($OllamaUrl)) {
+  $OllamaUrl = Get-DotEnvValue -Name "OLLAMA_URL"
+  if ([string]::IsNullOrWhiteSpace($OllamaUrl)) { $OllamaUrl = "http://localhost:11434" }
+}
+if ([string]::IsNullOrWhiteSpace($EmbedModel)) {
+  $EmbedModel = Get-DotEnvValue -Name "OLLAMA_EMBED_MODEL"
+  if ([string]::IsNullOrWhiteSpace($EmbedModel)) { $EmbedModel = "nomic-embed-text-v2-moe" }
+}
+if ([string]::IsNullOrWhiteSpace($CorpusDirectory)) { $CorpusDirectory = Join-Path $repoRoot "fixtures\corpus" }
+
+$SupabaseUrl = $SupabaseUrl.TrimEnd("/")
+$OllamaUrl = $OllamaUrl.TrimEnd("/")
+
+if ([string]::IsNullOrWhiteSpace($SupabaseUrl) -or [string]::IsNullOrWhiteSpace($SupabaseKey)) {
+  [Console]::Error.WriteLine("ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required (param, env, or .env).")
+  exit 2
+}
+
+Write-Host "Corpus dir : $CorpusDirectory"
+Write-Host "Supabase   : $SupabaseUrl  (table=$Table)"
+Write-Host "Ollama     : $OllamaUrl  (embed=$EmbedModel, expect ${ExpectedDimensions}d)"
+Write-Host ""
+
+# --- Parse the corpus into { chunkId, source, text } ------------------------------------------
+# Source of truth: each `### chunk:<id>` heading begins a chunk; its body is the following non-blank
+# prose up to the next heading. Mirrors the in-workflow CORPUS constant (which is derived verbatim).
+$corpusFiles = @(Get-ChildItem -LiteralPath $CorpusDirectory -Filter *.md -File | Sort-Object Name)
+if ($corpusFiles.Count -eq 0) {
+  [Console]::Error.WriteLine("ERROR: no corpus .md files in $CorpusDirectory.")
+  exit 2
+}
+
+$chunks = New-Object System.Collections.Generic.List[object]
+foreach ($file in $corpusFiles) {
+  $lines = Get-Content -LiteralPath $file.FullName
+  $currentId = $null
+  $buffer = New-Object System.Collections.Generic.List[string]
+  function Flush-Chunk {
+    param([string]$Id, [System.Collections.Generic.List[string]]$Body, [string]$Source)
+    if ([string]::IsNullOrWhiteSpace($Id)) { return }
+    $text = (($Body | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join " ").Trim()
+    if ($text.Length -eq 0) { return }
+    $script:chunks.Add([pscustomobject]@{ chunkId = $Id; source = $Source; text = $text }) | Out-Null
+  }
+  foreach ($line in $lines) {
+    $m = [regex]::Match($line, '^\s*###\s+chunk:(?<id>[A-Za-z0-9\-]+)\s*$')
+    if ($m.Success) {
+      Flush-Chunk -Id $currentId -Body $buffer -Source $file.Name
+      $currentId = $m.Groups['id'].Value
+      $buffer = New-Object System.Collections.Generic.List[string]
+    } elseif ($null -ne $currentId) {
+      # Skip blockquote source-of-truth notes (lines starting with '>') and headings.
+      if ($line -notmatch '^\s*>' -and $line -notmatch '^\s*#') { $buffer.Add($line) | Out-Null }
+    }
+  }
+  Flush-Chunk -Id $currentId -Body $buffer -Source $file.Name
+}
+
+if ($chunks.Count -eq 0) {
+  [Console]::Error.WriteLine("ERROR: parsed 0 chunks from corpus.")
+  exit 2
+}
+Write-Host "Parsed $($chunks.Count) chunk(s): $(($chunks | ForEach-Object { $_.chunkId }) -join ', ')"
+Write-Host ""
+
+# --- HTTP helpers (HttpClient so we can set the Range header Supabase wants without PS validation) ---
+Add-Type -AssemblyName System.Net.Http
+
+function Invoke-Supabase {
+  param(
+    [string]$Method,
+    [string]$PathAndQuery,
+    [string]$JsonBody = $null,
+    [hashtable]$ExtraHeaders = @{}
+  )
+  $client = [System.Net.Http.HttpClient]::new()
+  try {
+    $client.Timeout = [TimeSpan]::FromSeconds(60)
+    $req = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::new($Method), "$SupabaseUrl$PathAndQuery")
+    # Non-browser User-Agent is MANDATORY for sb_secret_ keys (else HTTP 401 "Forbidden ... in browser").
+    $req.Headers.TryAddWithoutValidation("User-Agent", "n8n") | Out-Null
+    $req.Headers.TryAddWithoutValidation("apikey", $SupabaseKey) | Out-Null
+    $req.Headers.TryAddWithoutValidation("Authorization", "Bearer $SupabaseKey") | Out-Null
+    foreach ($k in $ExtraHeaders.Keys) { $req.Headers.TryAddWithoutValidation($k, [string]$ExtraHeaders[$k]) | Out-Null }
+    if ($null -ne $JsonBody) {
+      $req.Content = [System.Net.Http.StringContent]::new($JsonBody, [System.Text.Encoding]::UTF8, "application/json")
+    }
+    $resp = $client.SendAsync($req).Result
+    $bodyText = $resp.Content.ReadAsStringAsync().Result
+    $contentRange = $null
+    [void]$resp.Content.Headers.TryGetValues("Content-Range", [ref]$contentRange)
+    return [pscustomobject]@{
+      StatusCode = [int]$resp.StatusCode
+      Body = $bodyText
+      ContentRange = if ($contentRange) { ($contentRange -join ",") } else { $null }
+    }
+  } finally {
+    $client.Dispose()
+  }
+}
+
+function Get-DocumentCount {
+  $r = Invoke-Supabase -Method "GET" -PathAndQuery "/rest/v1/${Table}?select=id" -ExtraHeaders @{ "Prefer" = "count=exact"; "Range" = "0-0"; "Range-Unit" = "items" }
+  if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 300 -and $r.ContentRange) {
+    # Content-Range looks like "0-0/8" or "*/0".
+    $parts = $r.ContentRange.Split("/")
+    if ($parts.Count -eq 2 -and $parts[1] -match '^\d+$') { return [int]$parts[1] }
+  }
+  return -1
+}
+
+# --- Embedding via Ollama ---------------------------------------------------------------------
+function Get-Embedding {
+  param([string]$Text)
+  $body = @{ model = $EmbedModel; prompt = $Text } | ConvertTo-Json -Depth 5
+  $resp = Invoke-RestMethod -Uri "$OllamaUrl/api/embeddings" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 120
+  if ($null -eq $resp.embedding) { throw "Ollama returned no embedding for a chunk." }
+  return @($resp.embedding)
+}
+
+# --- Ingest -----------------------------------------------------------------------------------
+$before = Get-DocumentCount
+Write-Host "documents count BEFORE: $before"
+
+$chunkIds = @($chunks | ForEach-Object { $_.chunkId })
+# 1) Idempotency: delete any existing rows whose metadata.chunkId is one we are about to (re)insert.
+#    PostgREST filter on a jsonb path: metadata->>chunkId=in.(a,b,c)
+$inList = "(" + ($chunkIds -join ",") + ")"
+$delResp = Invoke-Supabase -Method "DELETE" -PathAndQuery "/rest/v1/${Table}?metadata->>chunkId=in.$inList" -ExtraHeaders @{ "Prefer" = "return=minimal" }
+if ($delResp.StatusCode -ge 200 -and $delResp.StatusCode -lt 300) {
+  Write-Host "Pre-delete of existing corpus chunkIds: HTTP $($delResp.StatusCode) (idempotent reset)"
+} else {
+  Write-Host "WARN pre-delete returned HTTP $($delResp.StatusCode): $($delResp.Body)"
+}
+
+# 2) Embed + insert each chunk.
+#    nomic-embed-text-v2-moe is trained with TASK PREFIXES: the DOCUMENT/corpus side is embedded with a
+#    "search_document: " prefix (the query side uses "search_query: ", set in the workflow). This
+#    asymmetry is the intended usage of the v2 model and materially improves retrieval. The prefix is
+#    applied ONLY to the embedding INPUT — the stored `content` stays the RAW chunk text so the grounded
+#    answer/citation quotes remain verbatim spans of the corpus.
+$inserted = 0
+foreach ($chunk in $chunks) {
+  $embedding = Get-Embedding -Text ("search_document: " + $chunk.text)
+  if ($embedding.Count -ne $ExpectedDimensions) {
+    [Console]::Error.WriteLine("ERROR: chunk '$($chunk.chunkId)' embedding has $($embedding.Count) dims, expected $ExpectedDimensions.")
+    exit 3
+  }
+  $row = @{
+    content = $chunk.text
+    metadata = @{ chunkId = $chunk.chunkId; source = $chunk.source }
+    embedding = $embedding
+  }
+  # Supabase pgvector accepts the embedding as a JSON number array on insert.
+  $json = ConvertTo-Json -InputObject @($row) -Depth 6 -Compress
+  $insResp = Invoke-Supabase -Method "POST" -PathAndQuery "/rest/v1/$Table" -JsonBody $json -ExtraHeaders @{ "Prefer" = "return=minimal" }
+  if ($insResp.StatusCode -ge 200 -and $insResp.StatusCode -lt 300) {
+    $inserted += 1
+    Write-Host ("  inserted {0,-16} ({1} dims) from {2}" -f $chunk.chunkId, $embedding.Count, $chunk.source)
+  } else {
+    [Console]::Error.WriteLine("ERROR: insert of '$($chunk.chunkId)' returned HTTP $($insResp.StatusCode): $($insResp.Body)")
+    exit 3
+  }
+}
+
+Write-Host ""
+$after = Get-DocumentCount
+Write-Host "documents count AFTER: $after  (inserted this run: $inserted)"
+
+if ($after -ne $chunks.Count) {
+  [Console]::Error.WriteLine("ERROR: row count ($after) does not match corpus chunk count ($($chunks.Count)).")
+  exit 3
+}
+
+Write-Host ""
+Write-Host "Ingest complete: $after row(s) in '$Table' == $($chunks.Count) corpus chunk(s). 768-dim schema confirmed."
+exit 0
