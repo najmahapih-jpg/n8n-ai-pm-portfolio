@@ -7,7 +7,7 @@ param(
   [int]$MinimumNodes = 27,
   [switch]$SkipCompile,
   [switch]$NoActivate,
-  # --- v0.2.0 live-path deploy-time wiring (NEVER written to any tracked file) -------------------
+  # --- live-path deploy-time wiring (NEVER written to any tracked file) --------------------------
   # The Supabase project host is a secret-scanned token and the credential binding must not live in
   # the tracked workflow JSON. These are substituted into the PUT payload (in-memory) ONLY:
   #   - the '__SUPABASE_RPC_URL__' placeholder -> $SupabaseUrl/rest/v1/rpc/match_documents
