@@ -1,0 +1,9 @@
+{
+  "id": "partial-corpus",
+  "exercises": "answer present but thin",
+  "query": "What semiconductor material are solar PV panels typically made of?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["silicon"],
+  "expectCiteChunkIds": ["solar-pv"],
+  "_note": "The fact (silicon) is present in chunk:solar-pv but thin. The stub must answer with a citation from the retrieved chunk OR abstain; it must never fabricate detail beyond the chunk text."
+}
