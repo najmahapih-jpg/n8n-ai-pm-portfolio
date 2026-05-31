@@ -1,0 +1,8 @@
+{
+  "id": "in-corpus-paraphrased",
+  "exercises": "retrieval on novel phrasing",
+  "query": "Why are wind turbines placed on ridgelines and offshore where the wind speed is high and steady?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["wind"],
+  "expectCiteChunkIds": ["wind-speed"]
+}
