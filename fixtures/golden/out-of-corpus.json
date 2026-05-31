@@ -1,0 +1,8 @@
+{
+  "id": "out-of-corpus",
+  "exercises": "abstention",
+  "query": "What is the capital of France?",
+  "expectAbstain": true,
+  "expectAnswerContains": [],
+  "expectCiteChunkIds": []
+}
