@@ -1,7 +1,7 @@
 {
   "id": "out-of-corpus",
   "exercises": "abstention",
-  "query": "What is the capital of France?",
+  "query": "法国的首都是哪里?",
   "expectAbstain": true,
   "expectAnswerContains": [],
   "expectCiteChunkIds": []
