@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/Build-WorkflowIndex.ps1",
+  "workflowCount": 1,
+  "workflows": [
+    {
+      "slug": "rag-knowledge-assistant",
+      "title": "Portfolio - RAG Knowledge Assistant API",
+      "description": "Local retrieval-grounded RAG API (v0.2.0 — stub default + LIVE Supabase pgvector / Ollama, opt-in per request): a webhook receives a query, then a RETRIEVAL-SOURCE gate routes — retrievalSource:'supabase' embeds the query via Ollama nomic-embed-text-v2-moe (768-dim, 'search_query: ' prefix) and calls the Supabase match_documents pgvector RPC (predefined header-auth credential, User-Agent n8n); otherwise the DEFAULT deterministic STUB retriever (token-overlap set-cosine, no model) searches the IN-REPO corpus (fixtures/corpus/* — 8 chunks across solar/wind/hydro). Both emit the same retrieval contract (topK=[{chunkId,source,score}], maxScore, threshold). A THRESHOLD GATE (maxScore >= threshold, default 0.18) routes to a GROUNDED ANSWER or a CLEAN ABSTAIN (abstained:true, answer:null, citations:[] — the controlled failure mode). On the grounded branch a GENERATION-SOURCE gate routes — generationSource:'ollama' calls Ollama llama3.2:3b (temperature 0, 'answer ONLY from the provided context; else abstain') for the prose; otherwise the DEFAULT stub composes a grounded extract. CRITICAL: on BOTH generation paths the citations=[{chunkId,source,quote}] are corpus-grounded (derived from the retrieved chunks, NEVER from the model), so CITATION-INTEGRITY (every cited chunkId in retrieval.topK; the quote is a real span of its chunk) holds by construction and is enforced deterministically (a cited chunk outside the retrieved set, a missing answer/citation, or a fabricated quote -> passed=false). Live nodes are onError-tolerant and DEGRADE to the deterministic result (retrievalSource:'supabase-fallback' / generationSource:'ollama-fallback'); the response reports what ACTUALLY ran. Emits a redacted audit event (ids + scores + verdicts + a query hash/length only — never the raw query, answer, chunk text, or quotes) then a structured JSON response per the eval-plan scorer contract (abstained, answer, citations, retrieval{topK,maxScore,threshold}, retrievalSource, generationSource, passed, policyVersion 'rag-knowledge-assistant-v0.2.0'). The stub is the DEFAULT everywhere CI touches, so verify:static/json/live stay OFFLINE + deterministic; the live path is opt-in (verify:rag-live, non-CI). Two trust behaviours are tested invariants, not best-effort: citation-integrity and clean-abstain — on BOTH the stub and the live paths.",
+      "owner": "portfolio",
+      "department": "Product",
+      "version": "0.2.0",
+      "status": "live-tested",
+      "project": "n8n-rag-knowledge-assistant",
+      "lastWriter": "n8n public REST API",
+      "n8nWorkflowId": "jZ5Xfml8jbKexYqf",
+      "source": "workflows\\sdk\\rag-knowledge-assistant.workflow.js",
+      "canonical": "workflows\\canonical\\rag-knowledge-assistant.canonical.json",
+      "release": "workflows\\releases\\rag-knowledge-assistant-v0.2.0.json",
+      "request": "fixtures\\requests\\rag-knowledge-assistant.md",
+      "trigger": "manual + webhook",
+      "integrations": [
+        "n8n Manual Trigger",
+        "n8n Webhook",
+        "Deterministic stub retriever over in-repo corpus (DEFAULT)",
+        "LIVE Supabase pgvector retrieval via match_documents RPC (retrievalSource:supabase, opt-in; header-auth credential)",
+        "LIVE Ollama query embedding nomic-embed-text-v2-moe 768-dim, 'search_query: ' prefix (retrievalSource:supabase)",
+        "Deterministic stub generator grounded only on retrieved chunks (DEFAULT)",
+        "LIVE Ollama grounded generation llama3.2:3b temperature 0 (generationSource:ollama, opt-in; onError -> deterministic fallback)",
+        "Threshold gate -> grounded-answer-with-citations OR clean-abstain",
+        "Deterministic citation-integrity enforcement on BOTH stub + live paths (every cited chunkId in retrieval.topK; corpus-grounded citations)",
+        "Redacted audit (ids + scores + verdicts + query hash only; no raw query/answer/chunk text)"
+      ],
+      "tags": [
+        "rag",
+        "retrieval-augmented-generation",
+        "citation-integrity",
+        "abstention",
+        "stub-default",
+        "supabase-pgvector",
+        "ollama",
+        "pgvector",
+        "live-retrieval",
+        "workflow-as-code"
+      ],
+      "fixtures": [
+        "corpus/solar.md",
+        "corpus/wind.md",
+        "corpus/hydro.md",
+        "golden/in-corpus-direct.json",
+        "golden/in-corpus-paraphrased.json",
+        "golden/out-of-corpus.json",
+        "golden/adversarial-injection.json",
+        "golden/partial-corpus.json",
+        "golden/citation-must-be-real.json"
+      ],
+      "smokeCases": [
+        "in-corpus-direct",
+        "out-of-corpus",
+        "citation-must-be-real"
+      ],
+      "localOnly": true,
+      "nodeCount": 27,
+      "nodeTypes": [
+        "n8n-nodes-base.code",
+        "n8n-nodes-base.httpRequest",
+        "n8n-nodes-base.if",
+        "n8n-nodes-base.manualTrigger",
+        "n8n-nodes-base.respondToWebhook",
+        "n8n-nodes-base.stickyNote",
+        "n8n-nodes-base.webhook"
+      ],
+      "complexity": "advanced",
+      "notes": "v0.2.0 (stub DEFAULT + LIVE opt-in). DEFAULT (everywhere CI touches): the deterministic retriever scores the query against an IN-REPO corpus by token-overlap set-cosine (fixed query -> fixed chunks; out-of-corpus -> near-nothing -> abstain), and the stub generator composes the answer ONLY from retrieved chunk text (first-sentence extract). LIVE (opt-in per request, never CI): retrievalSource:'supabase' embeds the query via Ollama nomic-embed-text-v2-moe (768-dim, asymmetric task prefixes — 'search_query: ' on the query, 'search_document: ' on the ingested corpus) and calls the Supabase match_documents pgvector RPC; generationSource:'ollama' calls llama3.2:3b (temperature 0, 'answer only from context, else abstain'). The live nodes mirror the eval-harness IF-gate idiom (IF -> live HTTP -> parse/validate -> degrade on error). CRITICAL SAFETY: citations on BOTH generation paths are corpus-grounded (chunkId/source/quote derived from the retrieved chunks, NEVER parsed from the model), so citation-integrity ('every cited chunkId in retrieval.topK' + 'quote exists in chunk') holds by construction on the live path too. The retrieval-source gate's two branches converge on the threshold gate; the generation-source gate's two converge on 'Enforce Citation Integrity'; the audit -> response -> manual-UI tail is defined once. Live nodes use onError:continueRegularOutput -> deterministic fallback (retrievalSource:'supabase-fallback' / generationSource:'ollama-fallback'), so a live miss is a clean degrade, never a crash; the response *Source reflects what actually ran. Node count 27 (19 stub + 8 live: retrieval-source IF, Embed Query, Match Documents RPC, Map Supabase Retrieval, generation-source IF, Build Grounding Context, Generate Answer, Parse+Ground Answer). The Supabase secret/URL never enters the workflow JSON (deploy-time placeholder + header-auth credential id). Live-path verification: scripts/Test-RagLive.ps1 (npm run verify:rag-live), non-CI."
+    }
+  ]
+}
