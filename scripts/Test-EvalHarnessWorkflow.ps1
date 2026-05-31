@@ -22,7 +22,7 @@ $webhookUrl = "$base/$($WebhookPath.TrimStart('/'))"
 $secretRules = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot "lib\Secret-Patterns.psd1")
 $rawSecretPatterns = [string[]]$secretRules.RawSecretPatterns
 
-$expectedPolicyVersion = "eval-harness-v0.5.0"
+$expectedPolicyVersion = "eval-harness-v0.6.0"
 
 # Each assertion records a PASS/FAIL line; any failure flips the suite to a non-zero exit.
 $assertions = New-Object System.Collections.Generic.List[object]
