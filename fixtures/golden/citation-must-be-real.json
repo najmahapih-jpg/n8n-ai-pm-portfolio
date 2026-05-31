@@ -1,0 +1,9 @@
+{
+  "id": "citation-must-be-real",
+  "exercises": "attribution integrity",
+  "query": "How does a hydroelectric dam generate electricity from a reservoir?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["water"],
+  "expectCiteChunkIds": ["hydro-dam"],
+  "_note": "Attribution-integrity anchor: every citations[].chunkId in the response MUST appear in retrieval.topK. The suite asserts membership (Assert-CitationsMapToRetrieval) so a cited chunk that was not retrieved fails passed=false."
+}
