@@ -22,7 +22,7 @@ $webhookUrl = "$base/$($WebhookPath.TrimStart('/'))"
 $secretRules = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot "lib\Secret-Patterns.psd1")
 $rawSecretPatterns = [string[]]$secretRules.RawSecretPatterns
 
-$expectedPolicyVersion = "rag-knowledge-assistant-v0.2.0"
+$expectedPolicyVersion = "rag-knowledge-assistant-v0.3.0"
 $expectedRetrievalSource = "stub"
 $expectedGenerationSource = "stub"
 
@@ -232,7 +232,7 @@ try {
 # the same membership logic and assert it reports an orphan, so the invariant can't silently no-op.
 $guardCase = "citation-integrity-guard"
 $fakeResp = [pscustomobject]@{
-  retrieval = [pscustomobject]@{ topK = @([pscustomobject]@{ chunkId = "hydro-dam" }) }
+  retrieval = [pscustomobject]@{ topK = @([pscustomobject]@{ chunkId = "three-skill-clusters" }) }
   citations = @([pscustomobject]@{ chunkId = "not-a-real-chunk" })
 }
 $guardTopIds = New-Object System.Collections.Generic.HashSet[string]
