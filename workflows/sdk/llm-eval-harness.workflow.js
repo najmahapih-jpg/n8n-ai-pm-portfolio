@@ -160,7 +160,11 @@ if (sutMode === 'model') {
   const seen = new Set();
   sutModels = ['stub', ...requested].filter((m) => { if (seen.has(m)) return false; seen.add(m); return true; });
 } else if (sutMode === 'workflow') {
-  sutModels = ['product-feedback'];
+  // v0.6.0: the workflow-SUT lane label is the generic mode 'workflow' (was 'product-feedback'), since
+  // the configurable sutExtract dot-path now grades ARBITRARY siblings (product-feedback, the RAG
+  // assistant, ...), not just product-feedback. The parse node tags every row modelId:'workflow' to
+  // match, so Aggregate's perModel grouping stays coherent (ADR-0005).
+  sutModels = ['workflow'];
 } else {
   sutModels = ['stub'];
 }
@@ -176,6 +180,14 @@ const priceTable = (body.priceTable && typeof body.priceTable === 'object' && !A
 // (the sibling webhook is served by the same n8n instance). An optional per-request override
 // lets a caller point at host.docker.internal or a remote n8n if localhost is ever unreachable.
 const sutWebhookUrl = text(body.sutWebhookUrl) || 'http://localhost:5678/webhook/portfolio/product-feedback-intelligence';
+// sutExtract is the configurable DOT-PATH applied to the workflow-SUT's HTTP response to produce each
+// row's actual 'output' (v0.6.0, ADR-0005). It DECOUPLES the workflow-SUT grading from any single
+// sibling's response shape: the default 'response.theme' keeps product-feedback grading byte-for-byte
+// identical (backward-compat), while 'abstained' grades the RAG assistant's top-level abstention flag.
+// Only the live sutMode:"workflow" path reads it; the stub/model paths are unaffected. A non-string ask
+// falls back to the default. v0.6.0 ships a SINGLE dot-path; richer extraction (array length /
+// multi-field) is a noted future extension.
+const sutExtract = text(body.sutExtract) || 'response.theme';
 const requestedJudge = text(body.judgeSource).toLowerCase();
 const judgeSource = requestedJudge === 'ollama' || requestedJudge === 'openai' ? requestedJudge : 'stub';
 // judgeModel is an OPTIONAL per-request override of the Ollama model id. It defaults to the
@@ -255,6 +267,10 @@ return [{
       priceTable,
       sutModelUrl: text(body.sutModelUrl) || 'http://host.docker.internal:11434/api/chat',
       sutWebhookUrl,
+      // v0.6.0 (ADR-0005): the configurable dot-path the workflow-SUT parse node walks on the SUT
+      // response to read each row's actual output. Default 'response.theme' (product-feedback,
+      // backward-compatible); 'abstained' grades the RAG assistant's top-level abstention flag.
+      sutExtract,
       // v0.2.0: the JUDGE now honours judgeSource:'ollama' per-request (live local judge), routed
       // by a visual IF gate downstream. Any other value keeps the deterministic stub judge so CI /
       // verify:live stays offline + reproducible (stub is the default everywhere CI touches).
@@ -320,7 +336,7 @@ return [{
       error: 'Missing golden case with {input, expected}',
       caseCount: input.validation.caseCount,
       validCaseCount: input.validation.validCaseCount,
-      policyVersion: 'eval-harness-v0.5.0'
+      policyVersion: 'eval-harness-v0.6.0'
     }
   }
 }];`
@@ -418,12 +434,14 @@ return [{
 
 // --- Live workflow-SUT branch (sutMode:"workflow") -------------------------------------------
 // Mirrors the v0.2.0 Ollama-judge idiom: a visual IF gate routes to a per-case fan-out -> an
-// httpRequest node calling a LIVE sibling -> a parse node that schema-validates and degrades
-// gracefully. Here the sibling is the deployed product-feedback API, graded as a BLACK BOX via its
-// real webhook (we POST the feedback object, read back response.theme) — an honest "tests the
-// deployed system", not an import of its code. The fan-out fires the HTTP node once per case (it is
-// one-request-per-item) and the parse node re-aggregates by index back into the SAME sut.outputs
-// shape the stub produces, so the downstream deterministic + judge + aggregate tail is unchanged.
+// httpRequest node calling a LIVE sibling -> a parse node that extracts the verdict and degrades
+// gracefully. The sibling is any deployed portfolio API, graded as a BLACK BOX via its real webhook:
+// we POST each case's input and read back the actual output by walking the CONFIGURABLE dot-path
+// runtime.sutExtract (v0.6.0, ADR-0005; default 'response.theme' grades product-feedback's theme,
+// 'abstained' grades the RAG assistant's abstention flag) — an honest "tests the deployed system",
+// not an import of its code. The fan-out fires the HTTP node once per case (it is one-request-per-item)
+// and the parse node re-aggregates by index back into the SAME sut.outputs shape the stub produces, so
+// the downstream deterministic + judge + aggregate tail is unchanged.
 const sutModeGate = ifElse({
   version: 2.3,
   config: {
@@ -455,12 +473,13 @@ const fanOutSutCases = node({
       mode: 'runOnceForAllItems',
       language: 'javaScript',
       jsCode: `const input = items[0].json;
-// Emit one item per golden case carrying exactly the product-feedback request body. For
-// sutMode:"workflow" each case's 'input' is the feedback object ({ feedbackText, reportedCount,
-// source, submittedAt }); we tolerate a bare-string input by wrapping it as feedbackText. Order is
-// the correlation key — the parse node pairs HTTP responses back to cases by index via
-// $('Fan Out SUT Cases').all(). The product-feedback webhook URL travels on each item so the
-// httpRequest node can read it from $json (per-request overridable, container-local by default).
+// Emit one item per golden case carrying exactly the SUT request body. For sutMode:"workflow" each
+// case's 'input' is passed VERBATIM when it is an OBJECT (the sibling's own request shape — e.g.
+// product-feedback's { feedbackText, ... } or the RAG assistant's { query }); a bare-string input is
+// wrapped as { feedbackText } for back-compat with the product-feedback slice. Order is the
+// correlation key — the parse node pairs HTTP responses back to cases by index via
+// $('Fan Out SUT Cases').all(). The sibling webhook URL travels on each item so the httpRequest node
+// can read it from $json (per-request overridable via sutWebhookUrl, container-local by default).
 const sutUrl = (input.runtime && input.runtime.sutWebhookUrl) ? input.runtime.sutWebhookUrl : 'http://localhost:5678/webhook/portfolio/product-feedback-intelligence';
 const items_out = input.golden.map((c) => {
   const raw = c.input;
@@ -517,51 +536,101 @@ const parseProductFeedback = node({
   type: 'n8n-nodes-base.code',
   version: 2,
   config: {
-    name: 'Parse Product-Feedback (SUT)',
+    name: 'Parse Workflow SUT',
     position: [2080, 40],
     parameters: {
       mode: 'runOnceForAllItems',
       language: 'javaScript',
-      jsCode: `// 'items' = the N product-feedback HTTP responses (one per fanned-out case, in order). Recover the
-// full run context from the Normalize node (single item) and the per-case identities from the
-// fan-out node, then extract response.theme (+ sentiment/urgency) as each case's ACTUAL output. The
-// product-feedback webhook (responseMode:responseNode) returns the bare response object, so theme is
-// at top level; we stay defensive about an { response: {...} } wrapper too. On an unreachable/erroring
-// sibling (no usable theme) the case is marked sutSource:"error" with an empty output so the
-// deterministic exact-match fails (passed=false) — a broken sibling never silently passes.
+      jsCode: `// 'items' = the N workflow-SUT HTTP responses (one per fanned-out case, in order). Recover the full
+// run context from the Normalize node (single item) and the per-case identities from the fan-out node,
+// then extract each case's ACTUAL output by walking the CONFIGURABLE DOT-PATH runtime.sutExtract over
+// the SUT response (v0.6.0, ADR-0005). This DECOUPLES grading from any one sibling's response shape:
+// the default 'response.theme' grades product-feedback (theme) byte-for-byte as before; 'abstained'
+// grades the RAG assistant's top-level abstention flag. The extracted value is coerced to a comparable
+// string the SAME way the deterministic exact-match compares 'expected' (String()), so a boolean
+// abstained:false matches a golden expected:"false". On an unreachable/erroring sibling or a missing
+// path (undefined/null) the case is marked sutSource:"error" with an empty output so the deterministic
+// exact-match fails (passed=false) — a broken sibling or wrong path never silently passes.
 const base = $('Normalize Eval Request').item.json;
 const fanned = $('Fan Out SUT Cases').all();
+const sutExtract = (base.runtime && typeof base.runtime.sutExtract === 'string' && base.runtime.sutExtract.length > 0)
+  ? base.runtime.sutExtract
+  : 'response.theme';
 
+// Walk a dot-path over an object; returns undefined if any segment is missing or a non-object is hit.
+function walkPath(obj, segments) {
+  let cur = obj;
+  for (const seg of segments) {
+    if (cur == null || typeof cur !== 'object') return undefined;
+    cur = cur[seg];
+  }
+  return cur;
+}
+// Resolve the configured path WRAPPER-TOLERANTLY: try the literal path on the raw HTTP JSON; if the
+// leading segment is 'response' and that misses, retry the remainder against both the raw object and an
+// unwrapped { response: {...} } body. This makes 'response.theme' resolve identically whether the
+// sibling returns a bare { theme, ... } (product-feedback's responseMode:responseNode) or a wrapper —
+// so the product-feedback path is unchanged — while a top-level path like 'abstained' resolves on the
+// RAG assistant's bare { abstained, ... }.
+function resolveExtract(httpJson, path) {
+  const segs = path.split('.').filter((s) => s.length > 0);
+  if (segs.length === 0) return undefined;
+  let v = walkPath(httpJson, segs);
+  if (typeof v === 'undefined' && segs[0] === 'response') {
+    const rest = segs.slice(1);
+    if (rest.length > 0) {
+      const onRaw = walkPath(httpJson, rest);
+      if (typeof onRaw !== 'undefined') return onRaw;
+      const wrapped = (httpJson && typeof httpJson === 'object') ? httpJson.response : undefined;
+      const onWrapped = walkPath(wrapped, rest);
+      if (typeof onWrapped !== 'undefined') return onWrapped;
+    }
+  }
+  return v;
+}
+// Coerce the extracted value to a comparable string, consistently with how 'expected' is compared
+// (the deterministic check does String(output) === String(expected)). booleans -> "true"/"false",
+// numbers -> decimal string, strings -> themselves, objects/arrays -> JSON; null/undefined -> ''.
+function coerce(v) {
+  if (v === null || typeof v === 'undefined') return '';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : '';
+  if (typeof v === 'string') return v;
+  try { return JSON.stringify(v); } catch (e) { return ''; }
+}
+// Defensive accessor for the transparency-only fields (present on product-feedback, absent on others).
 function readResponse(httpJson) {
-  // product-feedback returns the bare response object (responseMode:responseNode). Tolerate a wrapper.
   if (httpJson == null) return null;
   if (typeof httpJson === 'object' && httpJson.response && typeof httpJson.response === 'object') return httpJson.response;
   return httpJson;
 }
 
 const t0 = Date.now();
-// The workflow SUT is a single-"model" degenerate lane: modelId is the mode label 'product-feedback'
-// so every row carries the uniform { caseId, modelId, rowKey, ... } shape Aggregate groups by (d.1).
-const modelId = 'product-feedback';
+// The workflow SUT is a single-"model" degenerate lane: modelId is the mode label 'workflow' so every
+// row carries the uniform { caseId, modelId, rowKey, ... } shape Aggregate groups by (ADR-0004 d.1).
+const modelId = 'workflow';
 const outputs = fanned.map((f, i) => {
   const caseId = f.json.caseId;
   const httpJson = items[i] ? items[i].json : null;
+  const extracted = resolveExtract(httpJson, sutExtract);
+  // 'ok' iff the path resolved to a usable (non-null/undefined) value. A missing path -> empty output.
+  const ok = typeof extracted !== 'undefined' && extracted !== null;
+  const output = ok ? coerce(extracted) : '';
   const resp = readResponse(httpJson);
-  const theme = resp && typeof resp.theme === 'string' ? resp.theme : '';
-  const sentiment = resp && typeof resp.sentiment === 'string' ? resp.sentiment : '';
-  const urgency = resp && typeof resp.urgency === 'string' ? resp.urgency : '';
-  const ok = theme.length > 0;
   return {
     caseId,
     modelId,
     rowKey: caseId + '\\u2237' + modelId,
-    // The ACTUAL output graded by the deterministic exact-match is the classification theme; the
-    // sibling's own classifierSource is surfaced for transparency but is NOT the harness's verdict.
-    output: theme,
-    sentiment,
-    urgency,
+    // The ACTUAL output graded by the deterministic exact-match is the value at the configured dot-path,
+    // coerced to a comparable string. sutExtract is surfaced for transparency.
+    output,
+    sutExtract,
+    // Transparency-only sibling fields (product-feedback exposes these; other SUTs simply omit them).
+    // They are NOT the harness's verdict — only 'output' is graded.
+    sentiment: resp && typeof resp.sentiment === 'string' ? resp.sentiment : '',
+    urgency: resp && typeof resp.urgency === 'string' ? resp.urgency : '',
     classifierSource: resp && typeof resp.classifierSource === 'string' ? resp.classifierSource : '',
-    // An unreachable/erroring sibling -> sutSource:'error' (passed=false), never a silent pass.
+    // An unreachable/erroring sibling or an unextractable path -> sutSource:'error' (passed=false).
     sutSource: ok ? 'workflow' : 'error',
     latencyMs: 1,
     // The sibling exposes no token usage over its webhook; cost is local-free (it is a local n8n call).
@@ -577,7 +646,7 @@ return [{
     sut: {
       mode: 'workflow',
       latencyMs: Math.max(1, Date.now() - t0),
-      // 'error' if ANY case failed to yield a theme (unreachable/erroring sibling); else 'workflow'.
+      // 'error' if ANY case failed to yield an extractable value (unreachable sibling / wrong path).
       source: outputs.some((o) => o.sutSource === 'error') ? 'error' : 'workflow',
       outputs
     }
@@ -1401,7 +1470,7 @@ return [{
         basis: input.aggregate.calibration.basis
       },
       cases,
-      policyVersion: 'eval-harness-v0.5.0',
+      policyVersion: 'eval-harness-v0.6.0',
       createdAt: new Date().toISOString()
     }
   }
@@ -1462,7 +1531,7 @@ return [{
       auditEventId: input.auditEvent.auditEventId,
       processedAt: new Date().toISOString(),
       latencyMs: input.sut.latencyMs,
-      policyVersion: 'eval-harness-v0.5.0'
+      policyVersion: 'eval-harness-v0.6.0'
     },
     auditEvent: input.auditEvent
   }
@@ -1536,7 +1605,7 @@ const returnEvalResponse = node({
 });
 
 const overview = sticky(
-  '## LLM Eval Harness v0.5.0 (multi-model bench + regression-vs-baseline)\\nLocal eval-harness API: receives an eval run with inline golden cases, runs a GATED subject-under-test, scores each output with the 5-type deterministic assertion taxonomy (schema/range/format/absence/masking) FIRST, then grades the residual subjective dims (1..5 groundedness/relevance/helpfulness/safety) with a GATED judge. Every scored row carries a modelId (key caseId\\u2237modelId); Aggregate GROUPS BY modelId into perModel (total, passRate, perRubricMean, meanLatencyMs, totalTokens, estCostUsd, costBasis) + a ranked bench. SUT routing (two nested IFs): sutMode:"workflow" routes each case to the LIVE product-feedback sibling (POST /webhook/portfolio/product-feedback-intelligence) as a BLACK BOX (response.theme as the actual output, onError -> sutSource:"error", passed=false); sutMode:"model" fans out cases x sutModels and calls Ollama /api/chat (host.docker.internal:11434, temperature:0) per (case,model), extracting the model text as the actual output + eval_count/prompt_eval_count tokens + total_duration latency (the bench ALWAYS includes the deterministic "stub" lane + the live llama3.2:3b lane, an unreachable model -> sutSource:"error", passed=false); any other value uses the deterministic STUB SUT (the default, keeping the Layer-2 suite offline + reproducible). Honest cost: local Ollama is estCostUsd:0 / costBasis:"local-free" (tokens+latency reported); only KNOWN cloud ids in an explicit priceTable get a $ estimate (none used now) — local cost is never fabricated. Judge gate: judgeSource:"ollama" calls a LIVE local llama3.2:3b (format:json) per row, schema-validates, falls back deterministically (judgeSource:"fallback", passed=false) on bad/unreachable output; any other value uses the deterministic STUB judge. Judge-human CALIBRATION: cases may carry a humanLabel; the run computes judge-vs-human agreement and sets judgeTrust:"high" (>=0.8) else "low". REGRESSION vs. baseline (v0.5.0): when a baseline is supplied (body.baseline inline, or the committed fixtures/baseline/regression-baseline.json injected by the offline driver), Aggregate computes regressionDelta = current - baseline on overall passRate, PER-MODEL passRate (matched by modelId) and perRubricMean (per dim), with regressed:true iff any overall/per-model passRate drops MORE than the tolerance band (default 0); a new modelId absent from the baseline is reported (passRateDelta:null, isNew:true), never a regression. No baseline -> regressionDelta:null (honest). The explicit baseline keeps the delta DETERMINISTIC in CI (no hidden mutable store in the hot path). Emits a redacted audit event. Manual trigger runs an editor demo; webhook serves the API.',
+  '## LLM Eval Harness v0.6.0 (configurable SUT response extraction)\\nLocal eval-harness API: receives an eval run with inline golden cases, runs a GATED subject-under-test, scores each output with the 5-type deterministic assertion taxonomy (schema/range/format/absence/masking) FIRST, then grades the residual subjective dims (1..5 groundedness/relevance/helpfulness/safety) with a GATED judge. Every scored row carries a modelId (key caseId\\u2237modelId); Aggregate GROUPS BY modelId into perModel (total, passRate, perRubricMean, meanLatencyMs, totalTokens, estCostUsd, costBasis) + a ranked bench. SUT routing (two nested IFs): sutMode:"workflow" routes each case to a LIVE sibling as a BLACK BOX and reads the actual output by walking the CONFIGURABLE dot-path sutExtract on the response (v0.6.0: default "response.theme" grades product-feedback POST /webhook/portfolio/product-feedback-intelligence; "abstained" grades the RAG assistant POST /webhook/portfolio/rag-knowledge-assistant; an unreachable sibling or missing path -> sutSource:"error", passed=false); sutMode:"model" fans out cases x sutModels and calls Ollama /api/chat (host.docker.internal:11434, temperature:0) per (case,model), extracting the model text as the actual output + eval_count/prompt_eval_count tokens + total_duration latency (the bench ALWAYS includes the deterministic "stub" lane + the live llama3.2:3b lane, an unreachable model -> sutSource:"error", passed=false); any other value uses the deterministic STUB SUT (the default, keeping the Layer-2 suite offline + reproducible). Honest cost: local Ollama is estCostUsd:0 / costBasis:"local-free" (tokens+latency reported); only KNOWN cloud ids in an explicit priceTable get a $ estimate (none used now) — local cost is never fabricated. Judge gate: judgeSource:"ollama" calls a LIVE local llama3.2:3b (format:json) per row, schema-validates, falls back deterministically (judgeSource:"fallback", passed=false) on bad/unreachable output; any other value uses the deterministic STUB judge. Judge-human CALIBRATION: cases may carry a humanLabel; the run computes judge-vs-human agreement and sets judgeTrust:"high" (>=0.8) else "low". REGRESSION vs. baseline (v0.5.0): when a baseline is supplied (body.baseline inline, or the committed fixtures/baseline/regression-baseline.json injected by the offline driver), Aggregate computes regressionDelta = current - baseline on overall passRate, PER-MODEL passRate (matched by modelId) and perRubricMean (per dim), with regressed:true iff any overall/per-model passRate drops MORE than the tolerance band (default 0); a new modelId absent from the baseline is reported (passRateDelta:null, isNew:true), never a regression. No baseline -> regressionDelta:null (honest). The explicit baseline keeps the delta DETERMINISTIC in CI (no hidden mutable store in the hot path). CONFIGURABLE SUT EXTRACTION (v0.6.0, ADR-0005): the workflow-SUT actual output is read by walking the per-request dot-path body.sutExtract on the SUT response (Normalize threads it onto runtime.sutExtract; default "response.theme" keeps product-feedback grading byte-for-byte identical; "abstained" grades the RAG assistant\\u2019s top-level flag); the value is coerced to a comparable string the same way expected is compared (boolean false -> "false"), so the harness grades ARBITRARY differently-shaped siblings; a missing/unextractable path -> sutSource:"error", passed=false (never a silent pass). Emits a redacted audit event. Manual trigger runs an editor demo; webhook serves the API.',
   [runDemoFromUi, buildDemoEvalPayload, receiveEvalRun, normalizeEvalRequest, hasGolden, sutModeGate, fanOutSutCases, callProductFeedback, parseProductFeedback, sutModelGate, fanOutModelCases, callOllamaSut, parseModelSut, runSubjectStub, runDeterministicAssertions, judgeSourceGate, judgeStub, fanOutJudgeCases, judgeOllama, parseJudgeOllama, aggregateRun, buildAuditEvent, buildEvalResponse, manualUiExecution],
   { color: 4 }
 );
