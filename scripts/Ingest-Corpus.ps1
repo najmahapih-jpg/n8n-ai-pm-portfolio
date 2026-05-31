@@ -3,11 +3,16 @@
   Ingest the fixed in-repo corpus into the live Supabase pgvector `documents` table.
 
 .DESCRIPTION
-  Phase 2b (v0.2.0) live-path bootstrap. For each `### chunk:<id>` chunk in fixtures/corpus/*.md:
+  Live-path bootstrap (v0.3.0 zh "AI 时代产品经理" corpus). For each `### chunk:<id>` chunk in
+  fixtures/corpus/*.md:
     1) embed the chunk text via local Ollama /api/embeddings (model nomic-embed-text-v2-moe, 768-dim,
        with the "search_document: " task prefix the v2 model expects on the corpus side), then
-    2) upsert it into Supabase `documents` (content = chunk text, metadata = {chunkId, source},
-       embedding = the 768 vector) via the Supabase REST API.
+    2) upsert it into Supabase `documents` (content = chunk text, metadata =
+       {chunkId, source, url, retrievedAt}, embedding = the 768 vector) via the Supabase REST API.
+       source/url/retrievedAt are PROVENANCE parsed from each chunk's `> 来源:` line (citation title +
+       https URL + 检索 date), so the LIVE citation can name the real authoritative source + link — the
+       SAME provenance the in-workflow stub CORPUS constant carries. This is the contract the
+       'Map Supabase Retrieval' node reads (metadata.{chunkId,source,url}).
 
   This is a LOCAL, opt-in, one-time bootstrap (NOT part of CI / verify:live). The stub-default core
   needs none of this. Embeddings are local + free; Supabase Free tier is free.
@@ -73,39 +78,76 @@ Write-Host "Supabase   : $SupabaseUrl  (table=$Table)"
 Write-Host "Ollama     : $OllamaUrl  (embed=$EmbedModel, expect ${ExpectedDimensions}d)"
 Write-Host ""
 
-# --- Parse the corpus into { chunkId, source, text } ------------------------------------------
+# --- Parse the corpus into { chunkId, source, url, retrievedAt, text } -------------------------
 # Source of truth: each `### chunk:<id>` heading begins a chunk; its body is the following non-blank
-# prose up to the next heading. Mirrors the in-workflow CORPUS constant (which is derived verbatim).
+# prose up to the next heading. Its `> 来源:` line is the authoritative PROVENANCE (citation title +
+# https URL + 检索 date). Mirrors the in-workflow CORPUS constant (which is derived verbatim + carries
+# source + url). The file-header blockquote's `retrievedAt: <date>` is the per-file fallback date.
 $corpusFiles = @(Get-ChildItem -LiteralPath $CorpusDirectory -Filter *.md -File | Sort-Object Name)
 if ($corpusFiles.Count -eq 0) {
   [Console]::Error.WriteLine("ERROR: no corpus .md files in $CorpusDirectory.")
   exit 2
 }
 
+# Parse a `> 来源:<title>。<https url> · 检索 <date>` provenance line into { source, url, retrievedAt }.
+# Robust to full-width/half-width punctuation: url = the first http(s) token; source = the text before
+# it (trailing 。/period + separators trimmed); retrievedAt = the date after 检索 (yyyy-mm-dd), else "".
+function Parse-Provenance {
+  param([string]$Line, [string]$FallbackDate)
+  $body = ($Line -replace '^\s*>\s*', '').Trim()
+  $body = ($body -replace '^来源[:：]\s*', '')
+  $url = ""
+  $um = [regex]::Match($body, 'https?://[^\s·।,，)）]+')
+  if ($um.Success) { $url = $um.Value.TrimEnd('.', '。', '·', ',', '，') }
+  $retrievedAt = $FallbackDate
+  $dm = [regex]::Match($body, '检索\s*(?<d>\d{4}-\d{2}-\d{2})')
+  if ($dm.Success) { $retrievedAt = $dm.Groups['d'].Value }
+  # source = everything up to the url (or the 检索 marker if no url), trimmed of trailing punctuation.
+  $source = $body
+  if ($um.Success) { $source = $body.Substring(0, $um.Index) }
+  $source = ($source -replace '检索\s*\d{4}-\d{2}-\d{2}.*$', '')
+  $source = $source.Trim().TrimEnd('。', '.', '·', ';', '；', ',', '，').Trim()
+  return [pscustomobject]@{ source = $source; url = $url; retrievedAt = $retrievedAt }
+}
+
 $chunks = New-Object System.Collections.Generic.List[object]
 foreach ($file in $corpusFiles) {
   $lines = Get-Content -LiteralPath $file.FullName
+  # Per-file fallback retrievedAt from the header blockquote (`retrievedAt: yyyy-mm-dd`).
+  $fileDate = ""
+  foreach ($l in $lines) {
+    $fm = [regex]::Match($l, 'retrievedAt[:：]\s*(?<d>\d{4}-\d{2}-\d{2})')
+    if ($fm.Success) { $fileDate = $fm.Groups['d'].Value; break }
+  }
   $currentId = $null
   $buffer = New-Object System.Collections.Generic.List[string]
+  $currentSourceLine = $null
   function Flush-Chunk {
-    param([string]$Id, [System.Collections.Generic.List[string]]$Body, [string]$Source)
+    param([string]$Id, [System.Collections.Generic.List[string]]$Body, [string]$FileName, [string]$SourceLine, [string]$FileDate)
     if ([string]::IsNullOrWhiteSpace($Id)) { return }
     $text = (($Body | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join " ").Trim()
     if ($text.Length -eq 0) { return }
-    $script:chunks.Add([pscustomobject]@{ chunkId = $Id; source = $Source; text = $text }) | Out-Null
+    $prov = if (-not [string]::IsNullOrWhiteSpace($SourceLine)) { Parse-Provenance -Line $SourceLine -FallbackDate $FileDate } else { [pscustomobject]@{ source = $FileName; url = ""; retrievedAt = $FileDate } }
+    $src = if (-not [string]::IsNullOrWhiteSpace($prov.source)) { $prov.source } else { $FileName }
+    $script:chunks.Add([pscustomobject]@{ chunkId = $Id; source = $src; url = $prov.url; retrievedAt = $prov.retrievedAt; text = $text }) | Out-Null
   }
   foreach ($line in $lines) {
     $m = [regex]::Match($line, '^\s*###\s+chunk:(?<id>[A-Za-z0-9\-]+)\s*$')
     if ($m.Success) {
-      Flush-Chunk -Id $currentId -Body $buffer -Source $file.Name
+      Flush-Chunk -Id $currentId -Body $buffer -FileName $file.Name -SourceLine $currentSourceLine -FileDate $fileDate
       $currentId = $m.Groups['id'].Value
       $buffer = New-Object System.Collections.Generic.List[string]
+      $currentSourceLine = $null
     } elseif ($null -ne $currentId) {
-      # Skip blockquote source-of-truth notes (lines starting with '>') and headings.
-      if ($line -notmatch '^\s*>' -and $line -notmatch '^\s*#') { $buffer.Add($line) | Out-Null }
+      # Capture the chunk's `> 来源:` provenance line; skip all other blockquote notes + headings.
+      if ($line -match '^\s*>\s*来源[:：]') {
+        $currentSourceLine = $line
+      } elseif ($line -notmatch '^\s*>' -and $line -notmatch '^\s*#') {
+        $buffer.Add($line) | Out-Null
+      }
     }
   }
-  Flush-Chunk -Id $currentId -Body $buffer -Source $file.Name
+  Flush-Chunk -Id $currentId -Body $buffer -FileName $file.Name -SourceLine $currentSourceLine -FileDate $fileDate
 }
 
 if ($chunks.Count -eq 0) {
@@ -200,7 +242,8 @@ foreach ($chunk in $chunks) {
   }
   $row = @{
     content = $chunk.text
-    metadata = @{ chunkId = $chunk.chunkId; source = $chunk.source }
+    # Provenance carried so the LIVE citation names the real source + link (parity with the stub CORPUS).
+    metadata = @{ chunkId = $chunk.chunkId; source = $chunk.source; url = $chunk.url; retrievedAt = $chunk.retrievedAt }
     embedding = $embedding
   }
   # Supabase pgvector accepts the embedding as a JSON number array on insert.
