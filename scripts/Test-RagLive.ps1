@@ -1,20 +1,30 @@
 <#
 .SYNOPSIS
-  LIVE-path verification (NON-CI) for the RAG Knowledge Assistant v0.2.0.
+  LIVE-path verification (NON-CI) for the RAG Knowledge Assistant v0.3.0 (zh "AI 时代产品经理" corpus).
 
 .DESCRIPTION
   Exercises the REAL live backend end-to-end through the deployed webhook: retrievalSource:"supabase"
   (Ollama nomic-embed-text-v2-moe query embedding, "search_query: " prefix -> Supabase match_documents
   pgvector RPC) and
-  generationSource:"ollama" (llama3.2:3b grounded generation). This is the Layer-1 live activity that
-  the offline Layer-2 suite (verify:live) deliberately does NOT cover — it is opt-in, requires the live
-  Supabase + Ollama backends, and is NEVER part of CI (CI stays on the stub default, offline).
+  generationSource:"ollama" (llama3.2:3b grounded generation, answering 用简体中文). This is the Layer-1
+  live activity that the offline Layer-2 suite (verify:live) deliberately does NOT cover — it is opt-in,
+  requires the live Supabase + Ollama backends, and is NEVER part of CI (CI stays on the stub default).
+
+  The queries are CHINESE (the corpus is the 13-chunk zh "AI 时代产品经理" knowledge base):
+    - in-corpus     "写好 eval 对 AI 产品经理有多重要?" -> retrieves chunk:evals-defining-skill (+ source/url).
+    - out-of-corpus "法国的首都是哪里?" -> scores below the supabase source-default threshold (0.35) ->
+                    clean Chinese abstain. (No per-request threshold override is sent — the abstain MUST
+                    come from the source default, the exact behaviour that regressed when one global 0.08
+                    floor served both score scales.)
 
   Asserts the trust invariants on the LIVE path:
-    - in-corpus  -> abstained:false, retrievalSource:"supabase", a real grounded answer, >=1 citation,
-                    and every citation.chunkId is in retrieval.topK (citation-integrity holds live too).
-    - out-of-corpus -> a clean live abstain (retrieval below threshold -> abstained:true, answer null,
-                    citations []), retrievalSource reflecting the live store ("supabase"/"supabase-fallback").
+    - in-corpus  -> abstained:false, retrievalSource:"supabase", a real grounded Chinese answer, >=1
+                    citation, every citation.chunkId is in retrieval.topK, and the citation carries the
+                    real provenance (source + url) (citation-integrity live too).
+    - out-of-corpus -> a clean live abstain DRIVEN BY THE SOURCE DEFAULT: retrievalSource:"supabase"
+                    (the live store ran, returning ranked rows below the floor), retrieval.threshold==0.35,
+                    maxScore < threshold -> abstained:true, answer null, citations []. This is the
+                    regression guard for the per-source threshold bug (live out-of-corpus must abstain).
 
   Pre-flight: confirms Ollama has both models, Supabase is reachable (User-Agent n8n), and the
   documents table is populated (run scripts/Ingest-Corpus.ps1 first). A non-green pre-flight is a
@@ -31,8 +41,8 @@ param(
   [string]$OllamaUrl = $env:OLLAMA_URL,
   [string]$EmbedModel = "nomic-embed-text-v2-moe",
   [string]$GenModel = "llama3.2:3b",
-  [string]$InCorpusQuery = "How does pumped-storage hydropower work?",
-  [string]$OutOfCorpusQuery = "What is the capital of France and who painted the Mona Lisa?"
+  [string]$InCorpusQuery = "写好 eval 对 AI 产品经理有多重要?",
+  [string]$OutOfCorpusQuery = "法国的首都是哪里?"
 )
 
 Set-StrictMode -Version Latest
@@ -139,12 +149,23 @@ if ($null -ne $inJson) {
   Add-Assertion -Case "in-corpus-live" -Type "citation-integrity" -Label ">= 1 citation" -Ok:($citeIds.Count -ge 1) -Detail "citations=$($citeIds.Count)"
   $orphans = @($citeIds | Where-Object { $topIds -notcontains $_ })
   Add-Assertion -Case "in-corpus-live" -Type "citation-integrity" -Label "every citation.chunkId in retrieval.topK (LIVE)" -Ok:($orphans.Count -eq 0) -Detail $(if ($orphans.Count -gt 0) { "orphans: $($orphans -join ', ')" } else { "topK=[$($topIds -join ', ')] cites=[$($citeIds -join ', ')]" })
+  # Provenance: the grounded citation must name the REAL authoritative source + link (source + url),
+  # carried from the corpus metadata — not an empty/placeholder attribution.
+  $firstCite = if ($inJson.PSObject.Properties["citations"]) { @($inJson.citations) | Select-Object -First 1 } else { $null }
+  $citeSource = if ($firstCite -and $firstCite.PSObject.Properties["source"] -and $null -ne $firstCite.source) { [string]$firstCite.source } else { "" }
+  $citeUrl = if ($firstCite -and $firstCite.PSObject.Properties["url"] -and $null -ne $firstCite.url) { [string]$firstCite.url } else { "" }
+  Add-Assertion -Case "in-corpus-live" -Type "citation-integrity" -Label "citation carries source + url (real provenance)" -Ok:($citeSource.Trim().Length -gt 0 -and $citeUrl.Trim().Length -gt 0) -Detail "source='$citeSource' url='$citeUrl'"
   Add-Assertion -Case "in-corpus-live" -Type "exact-match" -Label "passed == true" -Ok:([bool]$inJson.passed -eq $true) -Detail "passed=$([bool]$inJson.passed)"
 }
 
-# --- (b) OUT-OF-CORPUS live: supabase retrieval below threshold -> clean abstain -----------------
-Write-Host "=== (b) OUT-OF-CORPUS  retrievalSource:supabase generationSource:ollama ==="
-$outBody = @{ requestId = "rag-live-out-of-corpus"; query = $OutOfCorpusQuery; retrievalSource = "supabase"; generationSource = "ollama"; threshold = 0.6 } | ConvertTo-Json -Depth 6
+# --- (b) OUT-OF-CORPUS live: supabase retrieval below the SOURCE-DEFAULT threshold -> clean abstain
+# CRITICAL REGRESSION GUARD: this request sets NO per-request threshold, so it exercises the LIVE
+# supabase source default (0.35). nomic-embed-text-v2-moe puts out-of-corpus at ~0.15-0.17, which the
+# old single global default (0.08) sat BELOW — so the live path never abstained and shipped irrelevant
+# citations. With the per-source 0.35 default the out-of-corpus query MUST cleanly abstain. (Do NOT add
+# a threshold override here — that would mask exactly the bug this asserts against.)
+Write-Host "=== (b) OUT-OF-CORPUS  retrievalSource:supabase generationSource:ollama (source-default threshold) ==="
+$outBody = @{ requestId = "rag-live-out-of-corpus"; query = $OutOfCorpusQuery; retrievalSource = "supabase"; generationSource = "ollama" } | ConvertTo-Json -Depth 6
 $outResp = Invoke-Live -Body $outBody
 $outStatus = [int]$outResp.StatusCode
 $outRaw = [string]$outResp.Content
@@ -158,8 +179,16 @@ if ($null -ne $outJson) {
   $rs = [string]$outJson.retrievalSource
   $ansNull = (-not $outJson.PSObject.Properties["answer"]) -or ($null -eq $outJson.answer)
   $citeCount = if ($outJson.PSObject.Properties["citations"]) { @($outJson.citations).Count } else { -1 }
+  $thr = if ($outJson.PSObject.Properties["retrieval"] -and $outJson.retrieval.PSObject.Properties["threshold"]) { [double]$outJson.retrieval.threshold } else { -1 }
+  $maxScore = if ($outJson.PSObject.Properties["retrieval"] -and $outJson.retrieval.PSObject.Properties["maxScore"]) { [double]$outJson.retrieval.maxScore } else { -1 }
+  # The live store must actually have RUN (ranked rows returned, just below threshold) — proving this is
+  # a genuine retrieval-below-threshold abstain on the supabase scale, not a supabase-fallback (no rows).
+  Add-Assertion -Case "out-of-corpus-live" -Type "exact-match" -Label "retrievalSource == supabase (live store ran, not fallback)" -Ok:($rs -eq "supabase") -Detail "got '$rs' (maxScore=$maxScore)"
+  # The supabase SOURCE-DEFAULT threshold (0.35) must be in effect — no per-request override was sent.
+  Add-Assertion -Case "out-of-corpus-live" -Type "exact-match" -Label "threshold == 0.35 (supabase source default, no override)" -Ok:([math]::Abs($thr - 0.35) -lt 1e-9) -Detail "threshold=$thr"
+  # out-of-corpus must score BELOW the source default -> the gate routes to a clean abstain.
+  Add-Assertion -Case "out-of-corpus-live" -Type "numeric-range" -Label "maxScore < threshold (out-of-corpus below the 0.35 floor)" -Ok:($maxScore -ge 0 -and $maxScore -lt $thr) -Detail "maxScore=$maxScore threshold=$thr"
   Add-Assertion -Case "out-of-corpus-live" -Type "clean-abstain" -Label "abstained:true AND answer null AND citations []" -Ok:($abst -eq $true -and $ansNull -and $citeCount -eq 0) -Detail "abstained=$abst answerNull=$ansNull citations=$citeCount"
-  Add-Assertion -Case "out-of-corpus-live" -Type "exact-match" -Label "retrievalSource reflects live store (supabase/supabase-fallback)" -Ok:($rs -eq "supabase" -or $rs -eq "supabase-fallback") -Detail "got '$rs'"
   Add-Assertion -Case "out-of-corpus-live" -Type "exact-match" -Label "passed == true (clean abstain is a pass)" -Ok:([bool]$outJson.passed -eq $true) -Detail "passed=$([bool]$outJson.passed)"
 }
 
