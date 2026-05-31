@@ -1,0 +1,8 @@
+{
+  "id": "in-corpus-direct",
+  "exercises": "answer + citation",
+  "query": "How does pumped-storage hydropower work?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["pumped"],
+  "expectCiteChunkIds": ["hydro-pumped"]
+}
