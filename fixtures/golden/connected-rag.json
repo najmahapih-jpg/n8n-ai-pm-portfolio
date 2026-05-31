@@ -1,0 +1,22 @@
+{
+  "runId": "connected-rag",
+  "sutMode": "workflow",
+  "sutExtract": "abstained",
+  "sutWebhookUrl": "http://localhost:5678/webhook/portfolio/rag-knowledge-assistant",
+  "golden": [
+    {
+      "id": "rag-in-corpus",
+      "input": { "query": "How does pumped-storage hydropower work?" },
+      "expected": "false",
+      "assertions": { "equals": "false", "maxLength": 8 },
+      "_note": "Black-box grade of the RAG assistant's ABSTENTION decision via sutExtract:'abstained'. The corpus chunk 'hydro-pumped' covers pumped-storage hydropower, so the deployed RAG assistant retrieves above threshold and ANSWERS -> abstained:false. expected is the abstained boolean as a string ('false'), which the harness's deterministic exact-match compares against the coerced extracted value. NOTE: input is the OBJECT { query } (not a bare string) because A's 'Fan Out SUT Cases' passes an object input verbatim as the SUT request body, and the RAG assistant reads body.query; a bare string would be wrapped as { feedbackText } and ignored."
+    },
+    {
+      "id": "rag-out-of-corpus",
+      "input": { "query": "What is the capital of France?" },
+      "expected": "true",
+      "assertions": { "equals": "true", "maxLength": 8 },
+      "_note": "Out-of-corpus (the corpus is solar/wind/hydro only): retrieval does not clear the threshold, so the RAG assistant CLEANLY ABSTAINS -> abstained:true (answer:null, citations:[]). expected:'true' is the abstained flag as a string. This grades the controlled failure mode of a second, differently-shaped sibling as a black box — proving the configurable sutExtract decoupled the harness from product-feedback's response shape."
+    }
+  ]
+}
