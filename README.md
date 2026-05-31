@@ -8,12 +8,16 @@ This is the portfolio's first **retrieval-grounded** workflow — the most in-de
 capability — and it is built to be **graded by Project A** (the LLM eval harness) as a black-box
 subject-under-test, turning the portfolio into a connected system.
 
-> **Status: v0.2.0 — live (stub-default core + opt-in Supabase pgvector / Ollama, deployed & verified).**
+> **Status: v0.3.0 — live (stub-default core + opt-in Supabase pgvector / Ollama, deployed & verified)**
+> over a **Chinese, authoritative-sourced, provenance-tracked "AI 时代产品经理" knowledge base**.
 > The eval-first front matter (requirement spec, eval plan, ADR-0001) was authored **before any node**;
-> the deterministic stub core shipped in v0.1.0; v0.2.0 wires the **live retrieval-grounded path**
+> the deterministic stub core shipped in v0.1.0; v0.2.0 wired the **live retrieval-grounded path**
 > (Supabase pgvector `match_documents` + Ollama `nomic-embed-text-v2-moe` embeddings + `llama3.2:3b` grounded
-> generation) behind per-request gates, with the stub remaining the default everywhere CI touches. The
-> live path is proven end-to-end through the deployed webhook (`npm run verify:rag-live`).
+> generation) behind per-request gates; **v0.3.0 swaps the corpus to a 13-chunk Chinese AI-PM knowledge
+> base** (三大权威来源: 西方PM / 中文社区 / 开源社区; every chunk carries `source` + `url` + `retrievedAt`
+> provenance, refreshable via `scripts/Refresh-Corpus.ps1`) with Chinese grounded answers + a Chinese
+> abstain message. The stub remains the default everywhere CI touches; the live path is proven end-to-end
+> through the deployed webhook (`npm run verify:rag-live`).
 
 ## What it does
 
@@ -34,9 +38,10 @@ Two behaviours are **tested invariants**, not best-effort:
 
 | Layer | Default (CI / reproducible) | Live (opt-in, per request) |
 |---|---|---|
-| Vector store | deterministic **stub retriever** (in-repo corpus) | **Supabase (pgvector)** — free tier, n8n-native node |
+| Corpus | **13 Chinese "AI 时代产品经理" chunks** (`fixtures/corpus/ai-pm-*.md`) across 西方PM / 中文社区 / 开源社区, each carrying `source` + `url` + `retrievedAt` | same chunks, embedded into Supabase `documents` (`metadata={chunkId,source,url,retrievedAt}`) — refreshable via `scripts/Refresh-Corpus.ps1` |
+| Vector store | deterministic **stub retriever** (TF-IDF cosine over CJK bigrams + ASCII tokens, in-repo corpus) | **Supabase (pgvector)** — free tier, n8n-native node |
 | Embeddings | stub vectors | **Ollama `nomic-embed-text-v2-moe`** (local, free; `search_query:`/`search_document:` task prefixes) |
-| Generation | deterministic **stub generator** | **Ollama `llama3.2:3b`** (local, free) |
+| Generation | deterministic **stub generator** (Chinese grounded extract) | **Ollama `llama3.2:3b`** (local, free; 只依据上下文用简体中文作答) |
 
 The default everywhere CI touches is stub → offline, reproducible, key-free. Live Supabase + Ollama
 are opt-in **per request** (`retrievalSource:"supabase"`, `generationSource:"ollama"`) and routed behind
@@ -66,13 +71,14 @@ honestly-labelled activity — and the job of Project A.
 - [fixtures/requests/rag-knowledge-assistant.md](fixtures/requests/rag-knowledge-assistant.md) — requirement spec (Problem → Solution → Impact + Control).
 - [docs/eval-plan.md](docs/eval-plan.md) — two-layer recursion, scorer contract, golden dataset, citation/abstain assertion map.
 - [docs/adr/0001-rag-supabase-pgvector-with-stub-default-and-abstention.md](docs/adr/0001-rag-supabase-pgvector-with-stub-default-and-abstention.md) — vector-store choice + stub default + abstention/citation invariants.
+- [docs/adr/0004-authoritative-sourced-corpus-and-refresh.md](docs/adr/0004-authoritative-sourced-corpus-and-refresh.md) — Chinese authoritative-sourced, provenance-tracked corpus + `Refresh-Corpus.ps1` (with deferred automated web-fetch).
 
 ## Portfolio roadmap
 
 | # | Project | Status | Different-from-current axis |
 |---|---|---|---|
-| A | LLM Eval Harness (`../n8n-llm-eval-harness`) | **done — v0.5.0, live, git-archived** | meta-level: grades AI quality |
-| **B** | **RAG Knowledge Assistant (this repo)** | **done — v0.2.0, live (stub default + opt-in Supabase/Ollama), deployed & verified** | retrieval grounding (new tech stack) |
+| A | LLM Eval Harness (`../n8n-llm-eval-harness`) | **done — v0.6.0, live (grades B as a black-box SUT via `sutExtract:"abstained"`)** | meta-level: grades AI quality |
+| **B** | **RAG Knowledge Assistant (this repo)** | **done — v0.3.0, live (zh AI-PM corpus, stub default + opt-in Supabase/Ollama), deployed & verified; graded by A** | retrieval grounding (new tech stack) |
 | C | Autonomous Research Agent | planned | agentic / stateful |
 | D | Scheduled Insight Digest / Drift Monitor | planned | scheduled batch + monitoring |
 
@@ -83,7 +89,8 @@ honestly-labelled activity — and the job of Project A.
 | `npm run verify:static` | parse + tracked-JSON + **secret scan** + registry freshness + node floor | yes | source is well-formed and **no Supabase key/host leaks** into tracked files |
 | `npm run verify:json` | canonical + release JSON shape, node floor (27) | yes | the committed workflow snapshots are valid n8n graphs |
 | `npm run verify:live` | deploy SDK → live n8n, then the **offline stub** Layer-2 suite (97 assertions, 6 golden cases) | yes | ingest→retrieve→ground→cite→**abstain** plumbing + **citation-integrity** + **clean-abstain**, deterministically (stub default) |
-| `npm run verify:rag-live` | **LIVE** Supabase pgvector + Ollama through the deployed webhook (15 assertions) | **no** (opt-in, Layer-1) | the real retrieval-grounded path answers in-corpus with a real citation and abstains cleanly out-of-corpus |
+| `npm run verify:rag-live` | **LIVE** Supabase pgvector + Ollama through the deployed webhook (15 assertions) | **no** (opt-in, Layer-1) | the real retrieval-grounded path answers an in-corpus **Chinese** question with a real citation (**source + url**) and abstains cleanly out-of-corpus (Chinese abstain) |
+| `npm run refresh:corpus` | re-embed `fixtures/corpus/*.md` → Supabase + a **staleness report** (each chunk's `retrievedAt` age, flag > 90d) | **no** (ops) | the live corpus is one-command-refreshable from the allowlisted sources; the stub stays a pinned snapshot |
 
 The stub is the default on every CI path, so `verify:static` / `verify:json` / `verify:live` stay
 **offline + deterministic + key-free** even though the live nodes are deployed.
@@ -98,20 +105,22 @@ The stub is the default on every CI path, so `verify:static` / `verify:json` / `
    browser-like User-Agent — every direct Supabase call sets a non-browser `User-Agent: n8n`.
 3. Pull the local Ollama embedding model: `ollama pull nomic-embed-text-v2-moe` (768-dim; `llama3.2:3b` for generation).
 4. Create the n8n header-auth credential carrying the Supabase `apikey` header (its id is referenced by
-   the deploy step, never written to tracked files) and ingest the corpus: `pwsh ./scripts/Ingest-Corpus.ps1`
-   (embeds each `fixtures/corpus/*` chunk via Ollama and upserts it into Supabase `documents`).
+   the deploy step, never written to tracked files) and ingest the corpus: `npm run ingest:corpus`
+   (embeds each `fixtures/corpus/*.md` chunk via Ollama and upserts it into Supabase `documents` with
+   `metadata={chunkId,source,url,retrievedAt}`). Later, `npm run refresh:corpus` re-embeds + prints a
+   staleness report; automated web-fetch refresh of the source URLs is deferred to Project D (see ADR-0004).
 
 ## Current Status
 - [x] Project skeleton created (mirrors the proven harness).
 - [x] Eval-first front matter: requirement spec, eval plan, ADR-0001.
 - [x] PowerShell toolchain + package.json + CI + hooks + secret patterns (adapted from siblings).
 - [x] SDK workflow: stub retriever + stub generator core (offline) — ingest/chunk/retrieve/ground/cite/abstain.
-- [x] Golden corpus + question set + Layer-2 behavioural suite (97 assertions; citation-integrity + clean-abstain).
+- [x] Golden corpus + question set + Layer-2 behavioural suite (97 assertions; citation-integrity + clean-abstain), in Chinese.
 - [x] Live wiring: Supabase pgvector retrieval + Ollama embeddings/generation behind per-request gates (v0.2.0).
-- [x] Deployed to local n8n via REST API (workflow `jZ5Xfml8jbKexYqf`, 27 nodes, active); canonical/release snapshots refreshed.
-- [x] Corpus ingested into Supabase `documents` (8 chunks, 768-dim); live path verified end-to-end (`verify:rag-live`, 15 assertions).
-- [~] Project A grades B as a black-box SUT: A invokes B over its real webhook end-to-end, but A's
-  `sutMode:"workflow"` parser extracts `response.theme` (built for the product-feedback classifier
-  sibling), whereas B is a RAG assistant returning `answer`/`abstained`/`citations` — so A's exact-match
-  verdict is honestly `passed:false` (shape mismatch, not a B failure). Wiring B-as-RAG-SUT into A's
-  parser is a Project A change (out of scope here; A's deployed workflows are frozen).
+- [x] v0.3.0 corpus: 13 Chinese "AI 时代产品经理" chunks, authoritative-sourced + provenance-tracked (`source`/`url`/`retrievedAt`); Chinese grounded answers + Chinese abstain.
+- [x] Deployed to local n8n via REST API (workflow `jZ5Xfml8jbKexYqf`, 27 nodes, active); canonical/release v0.3.0 snapshots refreshed.
+- [x] Corpus ingested into Supabase `documents` (13 chunks, 768-dim, `metadata.url`); live path verified end-to-end (`verify:rag-live`, 15 assertions; Chinese grounded answer + Chinese abstain).
+- [x] `scripts/Refresh-Corpus.ps1` re-embeds the corpus + prints a staleness report (retrievedAt age, flag > 90d); automated web-fetch refresh deferred to Project D.
+- [x] Project A grades B as a black-box SUT — A's configurable `sutExtract:"abstained"` (ADR-0005 in A)
+  reads B's top-level `abstained` flag and exact-matches it; B's deterministic stub answers in-corpus and
+  abstains out-of-corpus, so A's `verify:connected-rag` is a reproducible **2/2 (passRate 1.0)**.
