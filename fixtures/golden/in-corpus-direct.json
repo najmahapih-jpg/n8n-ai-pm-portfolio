@@ -1,8 +1,8 @@
 {
   "id": "in-corpus-direct",
   "exercises": "answer + citation",
-  "query": "How does pumped-storage hydropower work?",
+  "query": "转型 AI 产品经理要补齐哪三大技能簇?",
   "expectAbstain": false,
-  "expectAnswerContains": ["pumped"],
-  "expectCiteChunkIds": ["hydro-pumped"]
+  "expectAnswerContains": ["三大技能簇"],
+  "expectCiteChunkIds": ["three-skill-clusters"]
 }
