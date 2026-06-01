@@ -1,0 +1,7 @@
+# Workflow Registry
+
+Generated from canonical workflow JSON and per-workflow metadata. Do not edit table rows by hand; run pwsh -NoProfile -File .\scripts\Build-WorkflowIndex.ps1.
+
+| Workflow | Version | Status | Trigger | Nodes | Complexity | Integrations | Release | Smoke |
+| --- | --- | --- | --- | ---: | --- | --- | --- | --- |
+| Portfolio - Scheduled Drift Monitor | 0.2.0 | live-tested | schedule + manual + webhook (on-demand) | 21 | intermediate | n8n Schedule Trigger (weekly, default — the production cadence), n8n Manual Trigger (editor demo), n8n Webhook Trigger (on-demand run + Layer-2 suite entry; responds with the run record), Monitor 1 — Corpus Freshness: fingerprint diff vs pinned SOURCE_MANIFEST (stub default; live HTTP fetch + non-browser UA WIRED, opt-in via mode:live — reachability is container-network dependent), Monitor 2 — Answer-Quality Drift: quality reading vs rolling baseline (stub default; live POST to Project A eval webhook WIRED, opt-in via mode:live — the eval-gated A->B->D loop), Digest summarizer: deterministic stub (DEFAULT) \| live Ollama llama3.2:3b prose WIRED (METRICS line pinned from the record, so digest-integrity holds under the live LLM), Digest-integrity enforcement (every digest number recomputed from the run record), Redacted audit (ids + counts + verdicts only) | `workflows\releases\scheduled-drift-monitor-v0.2.0.json` | `all-clear`, `quality-regressed`, `source-changed` |
