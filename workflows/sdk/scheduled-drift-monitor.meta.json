@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "slug": "scheduled-drift-monitor",
+  "title": "Portfolio - Scheduled Drift Monitor",
+  "description": "Local n8n Workflow-as-Code project: the portfolio's first SCHEDULED (cron) + MONITORING workflow (schedule-driven, with an on-demand webhook for ad-hoc/test runs). On a schedule (default weekly), a manual editor run, or an on-demand webhook, two pluggable monitors run and an integrity-checked digest is emitted. Monitor 1 (Corpus Freshness) fingerprints Project B's allowlisted corpus sources against a pinned SOURCE_MANIFEST -> unchanged|changed|stale|unreachable (serves B's RAG periodic update = B ADR-0004 option C); the workflow is DETECT-ONLY (no Supabase-write node), so refresh-gating ('zero live writes') holds BY CONSTRUCTION. Monitor 2 (Answer-Quality Drift) compares a quality reading to the prior run baseline -> regressed? (a time-series drift, distinct from A's single-baseline regressionDelta). The two are aggregated (drift.any = quality regressed OR any source changed/stale/unreachable), a digest is summarized FROM the run record, and DIGEST-INTEGRITY is enforced: every number in the digest's METRICS line is recomputed from the record (sibling B's citation-integrity transposed to a summary). STUB-DEFAULT everywhere CI touches; the LIVE path (mode:live, opt-in) is WIRED in v0.2.0 — live source-fetch (allowlisted URLs + non-browser UA), live A-eval (Project A grades B as a black-box SUT and returns passRate), and a live Ollama llama3.2:3b digest, each onError-tolerant (degrades to stub). Deployed to n8n via the public REST API (no MCP).",
+  "owner": "portfolio",
+  "department": "Product",
+  "version": "0.2.0",
+  "status": "live-tested",
+  "project": "n8n-scheduled-drift-monitor",
+  "lastWriter": "n8n public REST API",
+  "n8nWorkflowId": "Gjd7wma62zubk3Wy",
+  "source": "scheduled-drift-monitor.workflow.js",
+  "canonical": "scheduled-drift-monitor.canonical.json",
+  "release": "scheduled-drift-monitor-v0.2.0.json",
+  "request": "scheduled-drift-monitor.md",
+  "trigger": "schedule + manual + webhook (on-demand)",
+  "integrations": [
+    "n8n Schedule Trigger (weekly, default — the production cadence)",
+    "n8n Manual Trigger (editor demo)",
+    "n8n Webhook Trigger (on-demand run + Layer-2 suite entry; responds with the run record)",
+    "Monitor 1 — Corpus Freshness: fingerprint diff vs pinned SOURCE_MANIFEST (stub default; live HTTP fetch + non-browser UA WIRED, opt-in via mode:live — reachability is container-network dependent)",
+    "Monitor 2 — Answer-Quality Drift: quality reading vs rolling baseline (stub default; live POST to Project A eval webhook WIRED, opt-in via mode:live — the eval-gated A->B->D loop)",
+    "Digest summarizer: deterministic stub (DEFAULT) | live Ollama llama3.2:3b prose WIRED (METRICS line pinned from the record, so digest-integrity holds under the live LLM)",
+    "Digest-integrity enforcement (every digest number recomputed from the run record)",
+    "Redacted audit (ids + counts + verdicts only)"
+  ],
+  "tags": [
+    "scheduled",
+    "cron",
+    "drift-monitoring",
+    "digest-integrity",
+    "rag-freshness",
+    "eval-gated-refresh",
+    "stub-default",
+    "monitoring",
+    "workflow-as-code"
+  ],
+  "fixtures": [
+    "golden/all-clear.json",
+    "golden/quality-regressed.json",
+    "golden/source-changed.json",
+    "golden/source-stale.json",
+    "golden/source-unreachable.json",
+    "golden/digest-must-be-real.json"
+  ],
+  "smokeCases": [
+    "all-clear",
+    "quality-regressed",
+    "source-changed"
+  ],
+  "evalSource": "stub (DEFAULT; deterministic reading vs embedded PRIOR_BASELINE) | workflow (LIVE POST to Project A eval webhook — WIRED, opt-in via mode:live)",
+  "fetchSource": "stub (DEFAULT; fingerprint vs pinned SOURCE_MANIFEST) | http (LIVE allowlisted-URL fetch + non-browser UA — WIRED, opt-in via mode:live; reachability is container-network dependent)",
+  "summarySource": "stub (DEFAULT; deterministic template from the run record) | ollama (LIVE llama3.2:3b digest prose — WIRED; METRICS line pinned from the record so digest-integrity holds)",
+  "localOnly": true,
+  "buildMechanism": "sdk-standalone (@n8n/workflow-sdk) compiled to JSON via scripts/lib/compile-sdk.mjs (parseWorkflowCode + validateWorkflow), deployed via the n8n public REST API (no MCP). Live HTTP calls use the n8n Code node this.helpers.httpRequest helper, gated on mode:live + onError-tolerant. Mirrors the sibling n8n-llm-eval-harness / n8n-rag-knowledge-assistant toolchain + stub-default discipline.",
+  "notes": "v0.2.0 LIVE-WIRED, deployed live as n8n workflow Gjd7wma62zubk3Wy (active). Gates green: verify:static (7 checks) + verify:live (115 assertions / 6 golden scenarios, OFFLINE stub) + verify:drift-live (11 checks, OPT-IN live: real A-eval passRate, live source-fetch path, live Ollama digest with integrity intact). The portfolio's fourth project and first scheduled/monitoring workflow. Node count 21 (3 triggers: schedule + manual + on-demand webhook; 1 sticky; 14 code; 2 IF gates; 1 respondToWebhook). DETECT-ONLY: the workflow never writes B's live KB, so refresh-gating holds by construction. v0.2.0 wired the LIVE path (live source-fetch + live A-eval + live Ollama digest, each gated on mode:live + onError-degrade-to-stub). The gated re-embed loop is implemented host-side as scripts/Refresh-Sources.ps1 (npm run refresh:sources): eval-before -> fetch + SHA-256 fingerprint detect vs fixtures/sources/manifest.json -> -Apply re-embed via B's Ingest-Corpus.ps1 -> eval-after drift gate (passRateAfter >= before - threshold); report-only DEFAULT (validated report-only + -Pin; -Apply mutates B's Supabase). Known limitation: the raw-body fingerprint is dynamic-content-sensitive (a stable main-text extract is the precision fix; the eval gate is the safety net). DEFERRED: Monitor 3 (feedback-theme distribution drift) + the fingerprint-precision upgrade. Live source reachability is container-network dependent (the n8n container reached A via host.docker.internal but public source URLs were unreachable in this environment — reported honestly as drift). Never touches the 5 existing workflow ids (IhmmthDFMKdDbgvp A, jZ5Xfml8jbKexYqf B, 6Gc3wmri0tJre07B product-feedback, +2).",
+  "updatedAt": "2026-05-31T00:00:00Z"
+}
