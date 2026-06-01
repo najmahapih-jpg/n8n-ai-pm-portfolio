@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "description": "Persisted source manifest for the eval-gated refresh loop (scripts/Refresh-Sources.ps1). Mirrors the in-workflow SOURCE_MANIFEST constant, but here the fingerprints are REAL (a SHA-256 prefix of the fetched body) and PERSISTED across runs — the cross-run change-detection state the n8n workflow cannot hold. fingerprint is '' until first pinned (run with -Pin or -Apply). The URLs are Project B's allowlisted corpus sources (B ADR-0004).",
+  "staleAfterDays": 90,
+  "sources": [
+    {
+      "sourceId": "svpg-ai-pm",
+      "url": "https://www.svpg.com/ai-product-management/",
+      "chunkIds": [
+        "pm-more-essential",
+        "genuine-value"
+      ],
+      "fingerprint": "5189f376ccd49875",
+      "retrievedAt": "2026-06-01"
+    },
+    {
+      "sourceId": "lennys-evals",
+      "url": "https://www.lennysnewsletter.com/p/beyond-vibe-checks-a-pms-complete",
+      "chunkIds": [
+        "evals-defining-skill"
+      ],
+      "fingerprint": "1ca2a6ed36be2a73",
+      "retrievedAt": "2026-06-01"
+    },
+    {
+      "sourceId": "institutepm-2026",
+      "url": "https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026",
+      "chunkIds": [
+        "how-to-learn",
+        "portfolio-proof",
+        "three-skill-clusters"
+      ],
+      "fingerprint": "4941c9b28b4e48f4",
+      "retrievedAt": "2026-06-01"
+    },
+    {
+      "sourceId": "feishu-yujun",
+      "url": "https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g",
+      "chunkIds": [
+        "yujun-growth",
+        "yujun-user-value"
+      ],
+      "fingerprint": "b5051cc3034ccfb3",
+      "retrievedAt": "2026-06-01"
+    },
+    {
+      "sourceId": "woshipm-hanniman",
+      "url": "https://www.woshipm.com/pmd/5396083.html",
+      "chunkIds": [
+        "hanniman-humanity"
+      ],
+      "fingerprint": "2827a11b77b7c9f2",
+      "retrievedAt": "2026-06-01"
+    },
+    {
+      "sourceId": "hf-llm-course",
+      "url": "https://github.com/mlabonne/llm-course",
+      "chunkIds": [
+        "rag-eval-faithfulness"
+      ],
+      "fingerprint": "56d1805172f8c1d3",
+      "retrievedAt": "2026-06-01"
+    }
+  ]
+}
