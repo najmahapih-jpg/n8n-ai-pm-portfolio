@@ -1,0 +1,6 @@
+{
+  "id": "source-changed",
+  "description": "One source's fingerprint differs from the pinned manifest. The monitor must flag a changed source and recommend re-curation, with ZERO live writes (report-only default = refresh-gating).",
+  "request": { "mode": "stub", "runId": "run_source-changed", "asOf": "2026-05-31", "stubSources": { "institutepm-2026": { "fingerprintNow": "deadbeef" } } },
+  "expect": { "driftAny": true, "regressed": false, "changed": 1, "stale": 0, "unreachable": 0, "reembedded": 0, "passed": true }
+}
