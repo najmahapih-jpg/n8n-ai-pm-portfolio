@@ -62,6 +62,7 @@ Public deployments must strip or reject caller-supplied URL overrides unless an 
 
 ## Operational Limits
 
+- NOTE: the size/string/item limits in this section are **not enforced in-workflow** (the workflow only coerces and trims inputs); they are the caps a deployment gateway should enforce in front of the public webhook.
 - Supported public JSON body size: 256 KB maximum. Larger datasets should be split into separate runs.
 - Item count: up to 25 golden cases per request, up to 5 non-stub `sutModels`, and at most 100 evaluated `(case, model)` rows after fan-out.
 - String limits: `input` and `expected` 8,000 characters each; case ids and model ids 128 characters; assertion lists up to 20 checks per case.
