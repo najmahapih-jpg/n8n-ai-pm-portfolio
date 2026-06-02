@@ -54,6 +54,7 @@ Example:
 
 ## Operational Limits
 
+- NOTE: the size/string/item limits in this section are **not enforced in-workflow** (the workflow only coerces and trims inputs); they are the caps a deployment gateway should enforce in front of the public webhook.
 - Supported public JSON body size: 64 KB maximum. Deployments should reject larger payloads before invoking the workflow.
 - String limits: email 254 characters, subject/title 200 characters, message/description 8,000 characters, `source` 64 characters, and account/customer ids 128 characters.
 - Item count: one ticket per request. Batch inputs are outside the public contract.
