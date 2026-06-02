@@ -195,3 +195,17 @@ Use this one-case Feishu send smoke test only after a real Feishu webhook is con
 ```powershell
 pwsh -NoProfile -File .\scripts\Test-SupportTriageWorkflow.ps1 -CaseName enterprise-incident -FeishuMode sent
 ```
+
+## Open Source Health
+
+This repository includes the baseline files needed for public collaboration:
+
+- License: Apache-2.0 (`LICENSE`).
+- Contributions: `CONTRIBUTING.md`.
+- Security policy: `SECURITY.md`.
+- Security and privacy boundaries: `docs/security-boundaries.md`.
+- Workflow contract: `docs/workflow-contract.md`.
+- Conduct: `CODE_OF_CONDUCT.md`.
+- GitHub templates: `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md`.
+
+Before publishing or accepting contributions, run `npm run verify:static`, `npm run verify:json`, and `npm run smoke`; run `npm run verify:live` only when local n8n and required credentials are configured.
