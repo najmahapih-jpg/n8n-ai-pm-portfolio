@@ -1,0 +1,6 @@
+{
+  "id": "digest-fabricated-prose",
+  "description": "NEGATIVE digest-integrity (the headline invariant, made load-bearing). The summarizer prose is INJECTED with a fabricated pass-rate (0.99) the run record (passRate 0.83) does not show. The machine-appended METRICS line is still recomputed from the record (so it matches), but the prose check MUST flip digestIntegrity.passed=false. This is exactly the failure the pre-v0.3.0 METRICS-only check could not catch — proof the invariant is asserted, not merely narrated.",
+  "request": { "mode": "stub", "runId": "run_digest-fabricated-prose", "asOf": "2026-05-31", "stubQuality": { "passRate": 0.83 }, "stubDigestProse": "本期通过率高达 0.99，知识库与回答质量完全稳定，没有任何漂移信号，无需关注。" },
+  "expect": { "driftAny": true, "regressed": true, "changed": 0, "stale": 0, "unreachable": 0, "reembedded": 0, "passed": false, "digestIntegrity": false, "summarySource": "stub-injected" }
+}
