@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Persisted source manifest for the eval-gated refresh loop (scripts/Refresh-Sources.ps1). Mirrors the in-workflow SOURCE_MANIFEST constant, but here the fingerprints are REAL (a SHA-256 prefix of the fetched body) and PERSISTED across runs — the cross-run change-detection state the n8n workflow cannot hold. fingerprint is '' until first pinned (run with -Pin or -Apply). The URLs are Project B's allowlisted corpus sources (B ADR-0004).",
+  "description": "Persisted source manifest for the eval-gated refresh loop (scripts/Refresh-Sources.ps1). DELIBERATELY SEPARATE from the in-workflow SOURCE_MANIFEST constant: this host-side manifest holds the REAL, PERSISTED SHA-256 fingerprints (the cross-run change-detection state the n8n workflow cannot hold), while the embedded constant is only the URL/chunkId allowlist plus a stub-mode baseline (as of v0.3.0 the live workflow no longer uses its fingerprint for change-detection). fingerprint is '' until first pinned (run with -Pin or -Apply). The URLs are Project B's allowlisted corpus sources (B ADR-0004).",
   "staleAfterDays": 90,
   "sources": [
     {
