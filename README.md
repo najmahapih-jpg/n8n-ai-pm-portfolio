@@ -305,3 +305,17 @@ a correct, surfaced result, not a hidden failure).
 - [ ] Schedule trigger (batch eval runs) + optional Markdown/Feishu reporting.
 - [ ] Richer `sutExtract` than a single dot-path (array length e.g. `citations.length`, multi-field
       composition, or a transform) — v0.6.0 ships a single dot-path; the boundary is noted in [ADR-0005](docs/adr/0005-configurable-sut-response-extraction.md).
+
+## Open Source Health
+
+This repository includes the baseline files needed for public collaboration:
+
+- License: Apache-2.0 (`LICENSE`).
+- Contributions: `CONTRIBUTING.md`.
+- Security policy: `SECURITY.md`.
+- Security and privacy boundaries: `docs/security-boundaries.md`.
+- Workflow contract: `docs/workflow-contract.md`.
+- Conduct: `CODE_OF_CONDUCT.md`.
+- GitHub templates: `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md`.
+
+Before publishing or accepting contributions, run `npm run verify:static`, `npm run verify:json`, and `npm run smoke`; run `npm run verify:live` only when local n8n and required credentials are configured.
