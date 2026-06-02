@@ -11,8 +11,9 @@ import { workflow, node, trigger, sticky, ifElse, expr } from '@n8n/workflow-sdk
 //     BY CONSTRUCTION (no Supabase-write node exists here); the gated re-embed is a later live increment.
 //   Monitor 2 (Answer-Quality Drift): compares a quality reading to the prior run's baseline -> regressed?
 // The two are aggregated into a run record, a digest is summarized FROM that record, and DIGEST-INTEGRITY
-// is enforced (every number in the digest is recomputed from the record — the summarizer cannot claim a
-// drift the data does not show; this is sibling B's citation-integrity transposed to a summary).
+// is enforced in two record-grounded checks: the machine-appended METRICS line is recomputed from the
+// record, AND any pass-rate-shaped figure in the summarizer's prose must match a record rate (so an LLM
+// that states a passRate the data does not show fails the run; sibling B's citation-integrity for a summary).
 //
 // STUB-DEFAULT, exactly mirroring siblings A/B: mode is NORMALIZED ("live" accepted) but v0.1.0 DEGRADES
 // it to "stub" (no live HTTP nodes yet), so CI can never reach a live backend. Layer-2 scenarios are
@@ -124,18 +125,28 @@ const monitors = Array.isArray(body.monitors) && body.monitors.length ? body.mon
 //   stubSources: { <sourceId>: { fingerprintNow?: string, statusHint?: 'unreachable' } }
 //   stubQuality: { passRate?: number, perRubric?: object }   (the current eval reading)
 //   priorBaseline: partial override of the embedded PRIOR_BASELINE
+//   stubDigestProse: adversarial summarizer prose (a string) routed through the digest path so the
+//     digest-integrity invariant can be tested as a NEGATIVE — prose that states a pass-rate the data
+//     does not show MUST flip digestIntegrity.passed=false.
 const isObj = (v) => v && typeof v === 'object';
 const stubSources = isObj(body.stubSources) ? body.stubSources : {};
 const stubQuality = isObj(body.stubQuality) ? body.stubQuality : null;
 const priorBaseline = isObj(body.priorBaseline) ? body.priorBaseline : null;
+const stubDigestProse = typeof body.stubDigestProse === 'string' ? body.stubDigestProse : null;
 
 // summarySource: the digest prose engine. DEFAULT stub; in live mode default ollama; explicit 'stub' wins.
 const summarySource = text(body.summarySource).toLowerCase() === 'stub' ? 'stub' : (mode === 'live' ? 'ollama' : 'stub');
+// SSRF GUARD: the *Url overrides below drive server-side POSTs from INSIDE the n8n container. The
+// on-demand webhook is unauthenticated (a public surface), so a caller-supplied URL arriving via the
+// 'webhook' entrypoint is IGNORED — only the trusted 'manual'/'schedule' entrypoints may retarget these
+// fetches, so a public caller can never redirect them to an internal/metadata host (169.254.x.x, etc.).
+const trustOverrides = entrypoint !== 'webhook';
+const pick = (v, def) => ((trustOverrides && text(v)) ? text(v) : def);
 // Live endpoints — the workflow runs INSIDE the n8n container, which reaches host services (incl. the
-// same n8n that hosts Project A) via host.docker.internal. A request may override any of them.
-const aEvalUrl = text(body.aEvalUrl) || 'http://host.docker.internal:5678/webhook/portfolio/llm-eval-harness';
-const ragSutUrl = text(body.ragSutUrl) || 'http://host.docker.internal:5678/webhook/portfolio/rag-knowledge-assistant';
-const ollamaChatUrl = text(body.ollamaChatUrl) || 'http://host.docker.internal:11434/api/chat';
+// same n8n that hosts Project A) via host.docker.internal.
+const aEvalUrl = pick(body.aEvalUrl, 'http://host.docker.internal:5678/webhook/portfolio/llm-eval-harness');
+const ragSutUrl = pick(body.ragSutUrl, 'http://host.docker.internal:5678/webhook/portfolio/rag-knowledge-assistant');
+const ollamaChatUrl = pick(body.ollamaChatUrl, 'http://host.docker.internal:11434/api/chat');
 const genModel = text(body.genModel) || 'llama3.2:3b';
 const userAgent = text(body.userAgent) || 'n8n';
 
@@ -146,7 +157,7 @@ return [{
       requestedAt: text(body.requestedAt) || new Date().toISOString()
     },
     runtime: { entrypoint, mode, requestedMode, summarySource, reportOnly, driftThreshold, staleAfterDays, asOf, monitors, aEvalUrl, ragSutUrl, ollamaChatUrl, genModel, userAgent },
-    inject: { stubSources, stubQuality, priorBaseline },
+    inject: { stubSources, stubQuality, priorBaseline, stubDigestProse },
     sourcePayloadKeys: Object.keys(body)
   }
 }];`
@@ -202,10 +213,13 @@ const SOURCE_MANIFEST = [
   { sourceId: 'hf-llm-course', url: 'https://github.com/mlabonne/llm-course', chunkIds: ['rag-eval-faithfulness'], fingerprint: '2c3d4e5f', retrievedAt: '2026-05-31' }
 ];
 if (input.runtime.mode === 'live') {
-  // LIVE M1: GET each allowlisted URL (non-browser UA), fingerprint the body (FNV-1a). A non-2xx /
-  // network error degrades THAT source to unreachable — never crashes the run. fetchSource 'http'.
-  // (Cross-run change detection vs a PERSISTED real fingerprint is the run-history increment; here the
-  // fetched fingerprint is compared to the pinned manifest value to exercise the diff mechanism.)
+  // LIVE M1: GET each allowlisted URL (non-browser UA), fingerprint the body (FNV-1a) and RECORD it.
+  // A non-2xx / network error degrades THAT source to unreachable — never crashes the run. fetchSource 'http'.
+  // NOTE: the workflow has NO persisted prior fingerprint (the embedded manifest value is a stub-mode
+  // baseline, not a real cross-run one), so the live path does NOT derive a 'changed' verdict from it —
+  // doing so would be a guaranteed false alarm on every run. Real cross-run change-detection is the host
+  // loop's job (Refresh-Sources.ps1, persisted SHA-256). Live M1 = reachability + staleness; fingerprintNow
+  // is recorded for the future persisted-baseline increment.
   function fnv(v){let h=2166136261;const t=String(v);for(let i=0;i<t.length;i+=1){h^=t.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(16).padStart(8,'0');}
   const ua = input.runtime.userAgent || 'n8n';
   const collectedLive = [];
@@ -261,11 +275,17 @@ function ageDays(d) {
 // Per source: unreachable (no fingerprint) -> changed (fingerprint differs) -> stale (age > window) ->
 // unchanged. The two failure modes the eval-plan guards: a MISSED change (false negative) and a FALSE
 // alarm (false positive) — both deterministic given the injected scenario.
+// LIVE vs STUB: the n8n workflow has NO persisted prior fingerprint, so a live content-change verdict
+// would be meaningless (the embedded manifest value is a stub baseline, not a real cross-run one) and
+// would false-alarm on EVERY run. In live mode the 'changed' branch is therefore SKIPPED — live M1
+// reports reachability + staleness only; real cross-run change-detection is the host loop's job
+// (Refresh-Sources.ps1, persisted SHA-256). The 'changed' verdict is exercised by the stub scenarios.
+const liveFetch = input.freshness.fetchSource === 'http';
 const sources = input.freshness.collected.map((s) => {
   const age = ageDays(s.retrievedAt);
   let status;
   if (s.statusHint === 'unreachable' || s.fingerprintNow === null) status = 'unreachable';
-  else if (s.fingerprintNow !== s.fingerprintPrev) status = 'changed';
+  else if (!liveFetch && s.fingerprintNow !== s.fingerprintPrev) status = 'changed';
   else if (age !== null && age > staleAfterDays) status = 'stale';
   else status = 'unchanged';
   return { sourceId: s.sourceId, url: s.url, chunkIds: s.chunkIds, status, ageDays: age, fingerprintPrev: s.fingerprintPrev, fingerprintNow: s.fingerprintNow };
@@ -442,6 +462,13 @@ if (input.runtime.summarySource === 'ollama') {
   }
 }
 
+// Layer-2 adversarial knob: if a scenario injects summarizer prose, route IT (not the deterministic stub
+// body) through the digest — the METRICS line is STILL appended from the record, so this exercises whether
+// digest-integrity catches prose that contradicts the data (the headline-invariant NEGATIVE test).
+if (input.inject && typeof input.inject.stubDigestProse === 'string' && input.inject.stubDigestProse.length) {
+  const injectedMd = '# 漂移监控简报 (' + input.runtime.asOf + ')\\n\\n' + input.inject.stubDigestProse + '\\n\\n' + metrics;
+  return [{ json: { ...input, digest: { title: titleStr, markdown: injectedMd, summarySource: 'stub-injected' } } }];
+}
 return [{ json: { ...input, digest: { title: titleStr, markdown: stubMarkdown, summarySource: 'stub' } } }];`
     }
   }
@@ -457,9 +484,13 @@ const enforceDigestIntegrity = node({
       mode: 'runOnceForAllItems',
       language: 'javaScript',
       jsCode: `const input = items[0].json;
-// DIGEST-INTEGRITY (the headline invariant, sibling B's citation-integrity transposed to a summary):
-// parse every quantitative claim back out of the digest markdown and require it to EQUAL the run record.
-// A summarizer (stub today, Ollama tomorrow) that states a number the data does not show -> passed=false.
+// DIGEST-INTEGRITY (the headline invariant; sibling B's citation-integrity transposed to a summary).
+// TWO checks, BOTH grounded only in the deterministic run record (the summarizer is never trusted):
+//  (1) METRICS LINE — the machine-appended 'key=value' line must equal the record (it wasn't corrupted).
+//  (2) PROSE CLAIM  — any PASS-RATE-SHAPED figure (a percentage, or a decimal in [0,1]) the summarizer
+//      wrote in prose must equal a rate the record holds, so an LLM (or injected) summary that states a
+//      pass-rate the data does not show -> passed=false. (Pre-v0.3.0 only (1) existed, so a fabricated
+//      number in the prose passed. Authoritative counts are the METRICS line; bare integers are context.)
 const md = String(input.digest.markdown || '');
 const q = input.quality;
 const f = input.freshness;
@@ -483,6 +514,24 @@ passed = check('changed', f.changed) && passed;
 passed = check('stale', f.stale) && passed;
 passed = check('unreachable', f.unreachable) && passed;
 passed = check('driftAny', d.any) && passed;
+
+// (2) PROSE CLAIM — scan the prose (digest minus the appended METRICS line; ISO dates stripped so the
+// dated title is not read as a metric). Any percentage, or any decimal <= 1, MUST equal a record rate
+// (passRate / passRatePrev / |passRateDelta|), compared numerically (so 1.0 / 1 / 100% all reconcile).
+const metricsIdx = md.indexOf('METRICS ');
+let prose = (metricsIdx >= 0 ? md.slice(0, metricsIdx) : md);
+prose = prose.replace(new RegExp('\\\\d{4}-\\\\d{2}-\\\\d{2}', 'g'), ' ');
+const eqv = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
+const rateSet = [q.passRate, q.passRatePrev, Math.abs(q.passRateDelta)];
+const pctSet = rateSet.map((r) => r * 100);
+const fabricated = [];
+const pcts = prose.match(new RegExp('\\\\d+(?:\\\\.\\\\d+)?%', 'g')) || [];
+pcts.forEach((tok) => { const v = parseFloat(tok); if (!pctSet.some((p) => eqv(p, v))) fabricated.push(tok); });
+const decs = prose.match(new RegExp('\\\\d*\\\\.\\\\d+', 'g')) || [];
+decs.forEach((tok) => { const v = parseFloat(tok); if (v <= 1 && !rateSet.some((r) => eqv(r, v))) fabricated.push(tok); });
+const proseOk = (fabricated.length === 0);
+checks.push({ name: 'prose-no-fabricated-rate', ok: proseOk, parsed: fabricated.join(','), actual: '' });
+passed = proseOk && passed;
 return [{ json: { ...input, digestIntegrity: { passed, checks }, passed } }];`
     }
   }
@@ -526,7 +575,7 @@ return [{
       passRate: input.quality.passRate,
       passRateDelta: input.quality.passRateDelta,
       digestIntegrityPassed: input.digestIntegrity.passed,
-      policyVersion: 'scheduled-drift-monitor-v0.2.0',
+      policyVersion: 'scheduled-drift-monitor-v0.3.0',
       createdAt: new Date().toISOString()
     }
   }
@@ -580,7 +629,7 @@ return [{
     history: { priorRunId: input.baseline.runId, priorAsOf: input.baseline.asOf, baselineUpdated: false },
     passed: input.passed === true,
     auditEvent: input.auditEvent,
-    policyVersion: 'scheduled-drift-monitor-v0.2.0',
+    policyVersion: 'scheduled-drift-monitor-v0.3.0',
     processedAt: new Date().toISOString()
   }
 }];`
@@ -693,7 +742,7 @@ const webhookExecutionGate = ifElse({
 });
 
 const overview = sticky(
-  '## Scheduled Drift Monitor v0.2.0 (stub default + opt-in live; cron + monitoring — the first scheduled + monitoring workflow in the portfolio). On a SCHEDULE (default weekly) or a manual editor run, two pluggable monitors run and an integrity-checked digest is emitted. Monitor 1 (Corpus Freshness): fingerprints the allowlisted corpus sources of Project B against a pinned SOURCE_MANIFEST -> unchanged|changed|stale|unreachable (serves the RAG periodic refresh for B = B ADR-0004 option C). DETECT-ONLY: no Supabase-write node exists here, so refresh-gating (zero live writes) holds BY CONSTRUCTION; the gated re-embed is a reviewed harness action landing with the live increment. Monitor 2 (Answer-Quality Drift): compares a quality reading to the prior run baseline -> regressed? (a time-series drift, distinct from the single-baseline regressionDelta in A). The two are aggregated (drift.any = quality regressed OR any source changed/stale/unreachable), a digest is summarized FROM the run record, and DIGEST-INTEGRITY is enforced: every number in the digest is recomputed from the record (sibling B citation-integrity transposed to a summary — the summarizer cannot claim a drift the data does not show). STUB-DEFAULT everywhere CI touches (stub is the default + the only path verify:static/json/live touch), so the offline suite stays deterministic; Layer-2 scenarios are driven by per-request injections (stubSources / stubQuality / priorBaseline). The LIVE path (mode:live, opt-in) is WIRED in v0.2.0: live source-fetch (allowlisted URLs, non-browser UA) + live A-eval (Project A grades B as a black-box SUT and returns passRate) + live Ollama llama3.2:3b digest prose — each onError-tolerant (degrades to stub), exercised by verify:drift-live. The digest METRICS line is always pinned from the run record, so digest-integrity holds even under the live LLM. The gated re-embed (delegating to B Ingest-Corpus.ps1) + Monitor 3 remain deferred. policyVersion scheduled-drift-monitor-v0.2.0.',
+  '## Scheduled Drift Monitor v0.3.0 (stub default + opt-in live; cron + monitoring — the first scheduled + monitoring workflow in the portfolio). On a SCHEDULE (default weekly) or a manual editor run, two pluggable monitors run and an integrity-checked digest is emitted. Monitor 1 (Corpus Freshness): checks the allowlisted corpus sources of Project B -> unchanged|changed|stale|unreachable. STUB mode drives the changed verdict from an injected fingerprint; LIVE mode has no persisted prior fingerprint, so it reports reachability + staleness only (real cross-run change-detection is the host loop Refresh-Sources.ps1, persisted SHA-256). Serves the RAG periodic refresh for B = B ADR-0004 option C. DETECT-ONLY: no Supabase-write node exists here, so refresh-gating (zero live writes) holds BY CONSTRUCTION; the gated re-embed is a reviewed harness action landing with the live increment. Monitor 2 (Answer-Quality Drift): compares a quality reading to the prior run baseline -> regressed? (a time-series drift, distinct from the single-baseline regressionDelta in A). The two are aggregated (drift.any = quality regressed OR any source changed/stale/unreachable), a digest is summarized FROM the run record, and DIGEST-INTEGRITY is enforced in TWO record-grounded checks (the summarizer is never trusted): (1) the machine-appended METRICS line is recomputed from the record, and (2) any pass-rate-shaped figure (a percentage or a decimal in [0,1]) in the summarizer prose must equal a record rate — so an LLM that states a passRate the data does not show fails the run (sibling B citation-integrity transposed to a summary; proven by the digest-fabricated-prose negative scenario). STUB-DEFAULT everywhere CI touches (stub is the default + the only path verify:static/json/live touch), so the offline suite stays deterministic; Layer-2 scenarios are driven by per-request injections (stubSources / stubQuality / priorBaseline). The LIVE path (mode:live, opt-in) is WIRED: live source-fetch (allowlisted URLs, non-browser UA) + live A-eval (Project A grades B as a black-box SUT and returns passRate) + live Ollama llama3.2:3b digest prose — each onError-tolerant (degrades to stub), exercised by verify:drift-live. Caller-supplied URL overrides are honored only from the trusted manual/schedule entrypoints; the unauthenticated webhook entrypoint IGNORES them (SSRF guard). The digest METRICS line is always pinned from the run record, so digest-integrity holds even under the live LLM. The gated re-embed (delegating to B Ingest-Corpus.ps1) + Monitor 3 remain deferred. policyVersion scheduled-drift-monitor-v0.3.0.',
   [runOnSchedule, runFromUi, receiveRunRequest, buildDemoRunConfig, normalizeRunConfig, loadPriorBaseline, collectSources, detectSourceDrift, collectEvalReading, detectQualityDrift, aggregateRunRecord, summarizeDigest, enforceDigestIntegrity, buildAuditEvent, buildRunOutput, webhookExecutionGate, runEntrypointGate, returnResponse],
   { color: 4 }
 );
