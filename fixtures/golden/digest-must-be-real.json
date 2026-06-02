@@ -1,6 +1,6 @@
 {
   "id": "digest-must-be-real",
-  "description": "Compound drift (quality regressed to 0.5 AND one source changed). The digest must state EXACTLY the run record's numbers — the digest-integrity invariant (the summarizer cannot claim a drift the data does not show).",
+  "description": "Compound drift (quality regressed to 0.5 AND one source changed). The digest's METRICS line must state EXACTLY the run record's numbers — the digest-integrity invariant (recomputed from the record, never trusted from the summarizer; the prose pass-rate guard is exercised by digest-fabricated-prose).",
   "request": { "mode": "stub", "runId": "run_digest-must-be-real", "asOf": "2026-05-31", "stubQuality": { "passRate": 0.5 }, "stubSources": { "feishu-yujun": { "fingerprintNow": "cafebabe" } } },
   "expect": { "driftAny": true, "regressed": true, "changed": 1, "stale": 0, "unreachable": 0, "reembedded": 0, "passed": true }
 }
