@@ -37,9 +37,11 @@ Implements the **automated source-drift refresh** that B's
 explicitly deferred to Project D.
 - **Collect:** for each source in D's **source manifest** (`fixtures/sources/manifest.json` — B's
   allowlisted corpus URLs + a content fingerprint + `retrievedAt`), fetch the current content.
-  **Default = deterministic stub fetch** (pinned snapshot in `fixtures/sources/snapshots/`, offline,
-  reproducible). **Live = opt-in HTTP fetch** with a **non-browser User-Agent** (the same `sb_secret_`
-  / 401 gotcha class B documented; allowlisted domains only).
+  **Default = deterministic stub fetch** from the in-workflow `SOURCE_MANIFEST` constant (offline,
+  reproducible; a scenario overrides a source's fingerprint/status via `inject.stubSources`). **Live =
+  opt-in HTTP fetch** with a **non-browser User-Agent** (the same `sb_secret_` / 401 gotcha class B
+  documented; allowlisted domains only). In live mode there is no persisted prior fingerprint, so M1
+  reports reachability + staleness only — cross-run change-detection is the host loop (`Refresh-Sources.ps1`).
 - **Drift:** per source, compute a status — `unchanged` | `changed` (fingerprint differs) | `stale`
   (`retrievedAt` age > `staleAfterDays`, default 90) | `unreachable`.
 - **Action (gated):** when a source is `changed` **and** `mode:"live"` **and** not `reportOnly` →
@@ -52,10 +54,10 @@ explicitly deferred to Project D.
 - **Collect:** obtain a quality reading for the live SUTs by exercising **Project A's eval harness**
   (`POST /webhook/portfolio/llm-eval-harness`), which already grades RAG-B (`sutExtract:"abstained"`)
   and product-feedback (`sutExtract:"response.theme"`) as black-box SUTs and returns `passRate`,
-  `perRubric`, and `regressionDelta`. **Default = deterministic stub** (pinned A-response snapshot in
-  `fixtures/eval/`). **Live = opt-in** real call to A.
-- **Drift:** compare this run's metrics to the **prior run(s)** in the run-history store — a rolling
-  **time-series** drift, distinct from A's single-baseline `regressionDelta`. Compute `passRateDelta`,
+  `perRubric`, and `regressionDelta`. **Default = deterministic stub** from the in-workflow `PRIOR_BASELINE`
+  constant (overridable via `inject.stubQuality` / `inject.priorBaseline`). **Live = opt-in** real call to A.
+- **Drift:** compare this run's metrics to a **single prior baseline** (an embedded constant today;
+  persisted rolling run-history is deferred), distinct from A's single-baseline `regressionDelta`. Compute `passRateDelta`,
   per-rubric deltas, and a `regressed` flag (`delta < -driftThreshold`, default 0.05).
 
 ### Monitor 3 — Feedback-Theme Distribution Drift  *(DEFERRED — pluggable)*
@@ -83,7 +85,7 @@ low-cost mandate. Tracked in the roadmap; adding it is one new monitor, not a re
 {
   "runId": "...", "asOf": "2026-05-31", "mode": "stub", "reportOnly": true,
   "freshness": {
-    "sources": [{ "chunkId": "...", "url": "...", "status": "unchanged|changed|stale|unreachable",
+    "sources": [{ "chunkIds": ["..."], "url": "...", "status": "unchanged|changed|stale|unreachable",
                   "ageDays": 12, "fingerprintPrev": "...", "fingerprintNow": "..." }],
     "changed": 0, "stale": 0, "unreachable": 0, "reembedded": 0
   },
@@ -105,13 +107,16 @@ low-cost mandate. Tracked in the roadmap; adding it is one new monitor, not a re
    `regressed` / source-`status` flags MUST match the expectation. Two failure modes, both must fail
    loudly: **missed drift** (a real degradation not flagged) and **false alarm** (drift flagged on a
    no-change run). (The dual mirrors B's *hallucinate-on-miss* / *false-abstain*.)
-2. **Refresh-gating.** A `changed` source produces a re-curate recommendation; in `reportOnly` (the
-   default, and always in CI) the run performs **zero live writes** to Supabase — asserted as a
-   negative (no write path is reached).
-3. **Digest-integrity.** Every quantitative claim in `digest.markdown` (pass rates, deltas, counts)
-   MUST be **derived from / consistent with** the deterministic run record — never invented by the
-   summarizer. This is B's *citation-integrity* applied to a summary: the digest cannot claim a drift
-   the data does not show. Enforced by recomputing the digest's numbers from the run record.
+2. **Refresh-gating.** A `changed` source produces a re-curate recommendation; the workflow performs
+   **zero live writes** to Supabase **by construction** — no Supabase-write node exists in the 21-node
+   workflow (so the CI check of `reembedded == 0` is structural, not a behavioral negative). The only
+   write-capable code is the host-side `Refresh-Sources.ps1` (report-only default, never in CI).
+3. **Digest-integrity.** Enforced in two record-grounded checks: (a) the machine-appended `METRICS …`
+   line is recomputed from the run record and must match exactly; (b) any **pass-rate-shaped figure** (a
+   percentage, or a decimal in [0,1]) in the summarizer's prose must equal a record rate — so an LLM that
+   states a passRate the data does not show fails the run (authoritative counts are the METRICS line;
+   bare integers in prose are context). This is B's *citation-integrity* applied to a summary; proven by
+   the `digest-fabricated-prose` negative scenario.
 4. **Stub-default, live opt-in.** Every external touch (source fetch, A's eval, LLM summary, Supabase
    re-embed) has a deterministic offline stub as the default; live is per-request opt-in and never
    touched by CI. A misconfigured request can never reach a live backend in the offline suite.
@@ -133,4 +138,4 @@ re-curated provenance; per-source HTML→text extraction beyond a fingerprint di
   (no-drift + degraded + source-changed scenarios), refresh-gating (no writes), digest-integrity.
 - Live (opt-in) proves a real reading end-to-end: a real call to A returns a pass-rate that is
   persisted and compared to the prior run; a real source fetch fingerprints + flags drift.
-- The digest reads like something a PM would actually act on, and every number in it is real.
+- The digest reads like something a PM would actually act on, and its numbers are recomputed from the run record (the METRICS line), not invented by the summarizer.
