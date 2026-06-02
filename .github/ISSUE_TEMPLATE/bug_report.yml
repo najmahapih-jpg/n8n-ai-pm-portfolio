@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a reproducible workflow, fixture, or tooling bug.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include secrets, private webhook URLs, tokens, or live customer data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List the exact commands, payload, fixture, or workflow path.
+      placeholder: |
+        1. Run ...
+        2. Send payload ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Package version, release snapshot, or commit SHA.
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification output
+      description: Paste relevant sanitized output from npm scripts.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed secrets, tokens, webhook URLs, and customer data.
+          required: true
