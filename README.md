@@ -141,3 +141,17 @@ The workflow currently prepares a CRM-ready payload and a hot-lead notification 
 4. Adapter credentials are configured outside Git.
 
 See `docs/external-adapters.md`.
+
+## Open Source Health
+
+This repository includes the baseline files needed for public collaboration:
+
+- License: Apache-2.0 (`LICENSE`).
+- Contributions: `CONTRIBUTING.md`.
+- Security policy: `SECURITY.md`.
+- Security and privacy boundaries: `docs/security-boundaries.md`.
+- Workflow contract: `docs/workflow-contract.md`.
+- Conduct: `CODE_OF_CONDUCT.md`.
+- GitHub templates: `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md`.
+
+Before publishing or accepting contributions, run `npm run verify:static`, `npm run verify:json`, and `npm run smoke`; run `npm run verify:live` only when local n8n and required credentials are configured.
