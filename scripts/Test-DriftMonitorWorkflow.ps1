@@ -22,7 +22,7 @@ $webhookUrl = "$base/$($WebhookPath.TrimStart('/'))"
 $secretRules = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot "lib\Secret-Patterns.psd1")
 $rawSecretPatterns = [string[]]$secretRules.RawSecretPatterns
 
-$expectedPolicyVersion = "scheduled-drift-monitor-v0.2.0"
+$expectedPolicyVersion = "scheduled-drift-monitor-v0.3.0"
 
 # Each assertion records a PASS/FAIL line; any failure flips the suite to a non-zero exit. The Type
 # column maps to the eval-plan Layer-2 taxonomy:
@@ -149,7 +149,8 @@ foreach ($file in $goldenFiles) {
   $pv = if ($run.PSObject.Properties["policyVersion"]) { [string]$run.policyVersion } else { "" }
   Assert-Equal -Case $name -Label "mode == stub" -Expected "stub" -Actual $mode
   Assert-Equal -Case $name -Label "quality.evalSource == stub" -Expected "stub" -Actual $evalSource
-  Assert-Equal -Case $name -Label "digest.summarySource == stub" -Expected "stub" -Actual $summarySource
+  $expectSummarySource = if ($expect.PSObject.Properties["summarySource"]) { [string]$expect.summarySource } else { "stub" }
+  Assert-Equal -Case $name -Label "digest.summarySource == expected" -Expected $expectSummarySource -Actual $summarySource
   Assert-Equal -Case $name -Label "reportOnly == true (default)" -Expected $true -Actual $reportOnly
   Assert-Equal -Case $name -Label "policyVersion == $expectedPolicyVersion" -Expected $expectedPolicyVersion -Actual $pv
 
@@ -183,7 +184,18 @@ foreach ($file in $goldenFiles) {
   # digest-integrity: external re-derivation + the workflow's own verdict + the overall pass.
   Assert-DigestMatchesRecord -Case $name -Run $run
   $diPassed = if ($run.PSObject.Properties["digestIntegrity"] -and $run.digestIntegrity.PSObject.Properties["passed"]) { [bool]$run.digestIntegrity.passed } else { $false }
-  Add-Assertion -Case $name -Type "digest-integrity" -Label "workflow digestIntegrity.passed == true" -Ok:($diPassed -eq $true) -Detail "passed=$diPassed"
+  $expectDi = if ($expect.PSObject.Properties["digestIntegrity"]) { [bool]$expect.digestIntegrity } else { $true }
+  Add-Assertion -Case $name -Type "digest-integrity" -Label "workflow digestIntegrity.passed == expected" -Ok:($diPassed -eq $expectDi) -Detail "expected=$expectDi got=$diPassed"
+  # When a scenario injects fabricated prose (expect.digestIntegrity=false), prove the PROSE check is what
+  # caught it (not the METRICS line) — the load-bearing negative for the headline invariant.
+  if (-not $expectDi) {
+    $proseCheck = $null
+    if ($run.PSObject.Properties["digestIntegrity"] -and $run.digestIntegrity.PSObject.Properties["checks"]) {
+      $proseCheck = @($run.digestIntegrity.checks | Where-Object { $_.name -eq "prose-no-fabricated-rate" })[0]
+    }
+    $proseCaught = ($null -ne $proseCheck -and ($proseCheck.ok -eq $false))
+    Add-Assertion -Case $name -Type "digest-integrity" -Label "prose-no-fabricated-rate CAUGHT the fabricated figure" -Ok:$proseCaught -Detail $(if ($proseCheck) { "fabricated='$($proseCheck.parsed)'" } else { "no prose check present" })
+  }
   Assert-Equal -Case $name -Type "exact-match" -Label "run.passed == expected" -Expected ([bool]$expect.passed) -Actual $passed
 
   # masking: no raw secret/PII anywhere in the response.
