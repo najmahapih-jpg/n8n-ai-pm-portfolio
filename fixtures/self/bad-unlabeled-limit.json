@@ -1,0 +1,12 @@
+{
+  "description": "request.limits present but limitsEnforcedBy missing (a silent 'enforced' claim) -> only limits-are-labeled FAILs.",
+  "fakeWorkflowText": "policyVersion demo-v1.0.0 ; webhook node path webhook/demo",
+  "fakeFixtures": [ { "name": "valid-1", "keys": ["a"] } ],
+  "expectFailAssertion": "limits-are-labeled",
+  "contract": {
+    "contractVersion": "demo-v1.0.0",
+    "webhookPath": "webhook/demo",
+    "request": { "accepted": ["a"], "limits": { "bodyBytes": 1024 } },
+    "response": { "required": ["ok"] }
+  }
+}
