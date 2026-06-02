@@ -1,0 +1,7 @@
+{
+  "description": "No Machine-readable contract block (contract is null) -> contract-parses FAILs; the dependent checks also report 'no contract block'. Not only-target.",
+  "fakeWorkflowText": "policyVersion demo-v1.0.0 webhook/demo",
+  "fakeFixtures": [ { "name": "valid-1", "keys": ["a"] } ],
+  "expectFailAssertion": "contract-parses",
+  "expectOnlyTarget": false
+}
