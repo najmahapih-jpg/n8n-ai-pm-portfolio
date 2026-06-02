@@ -1,6 +1,6 @@
 {
   "name": "n8n-scheduled-drift-monitor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Local n8n Workflow-as-Code project: the portfolio's first scheduled (cron) + monitoring workflow. A pluggable drift monitor that (1) keeps Project B's RAG corpus fresh by fingerprinting its allowlisted sources and (2) watches answer-quality drift by re-running Project A's eval over the live SUTs, then emits an integrity-checked digest. Refresh is eval-gated and report-only by default; a deterministic stub default keeps the suite offline and reproducible, with opt-in live HTTP / A-call / Ollama / Supabase paths. Deployed to n8n via the public REST API.",
   "license": "Apache-2.0",
