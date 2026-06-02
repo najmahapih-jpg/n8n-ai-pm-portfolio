@@ -42,7 +42,7 @@ shape. The grading-relevant fields:
 
 ```
 run(config) -> {
-  freshness: { sources:[{chunkId, url, status, ageDays, fingerprintPrev, fingerprintNow}],
+  freshness: { sources:[{chunkIds, url, status, ageDays, fingerprintPrev, fingerprintNow}],
                changed, stale, unreachable, reembedded },
   quality:   { passRate, passRatePrev, passRateDelta, regressed, perRubric, perRubricDelta, evalSource },
   drift:     { any: bool, reasons: [string] },     // union of quality.regressed OR any source changed/stale
@@ -58,9 +58,10 @@ run(config) -> {
 - **Refresh-gating rule:** `reembedded > 0` is reachable **only** when `mode=="live"` ∧ `reportOnly==false`
   ∧ at least one source `status=="changed"`. In every other case (and always in CI) `reembedded==0` and
   no Supabase write path executes.
-- **Digest-integrity rule:** the numbers parsed back out of `digest.markdown` MUST equal the run
-  record's `quality.passRate` / `passRateDelta` / `freshness.changed` / … — recomputed, never trusted
-  from the summarizer.
+- **Digest-integrity rule:** two record-grounded checks — (a) the machine-appended `METRICS …` line is
+  recomputed from the run record and must match exactly; (b) any pass-rate-shaped figure (a percentage or
+  a decimal in [0,1]) in the summarizer's prose must equal a record rate. Never trusted from the
+  summarizer. (Authoritative counts are the METRICS line; bare integers in prose are context.)
 - **Default sources are stub** (`evalSource:"stub"`, `summarySource:"stub"`, stub source-fetch),
   deterministic and offline. Live `workflow`/`ollama`/HTTP are opt-in per request and never touched by CI.
 
@@ -76,8 +77,9 @@ flags, so the suite exercises every branch deterministically:
 | `source-changed` | one source fingerprint differs | source `status:"changed"`, `drift.any:true`, re-curate recommended, `reembedded:0` (report-only) |
 | `source-stale` | one source `retrievedAt` age > window | source `status:"stale"`, `drift.any:true` |
 | `source-unreachable` | stub fetch returns an error sentinel | source `status:"unreachable"`, non-fatal, `drift.any:true` |
-| `refresh-gated-live` | live + non-report-only + a changed source | `reembedded:1` reachable (the ONLY scenario that writes) — exercised by the live suite, not CI |
-| `digest-must-be-real` | any of the above | every metric in `digest.markdown` == run record (integrity) |
+| (host-side re-embed) | live + `-Apply` + a changed source | the workflow's `reembedded` stays `0` (no write node); the actual re-embed is the host loop `Refresh-Sources.ps1` (eval-gated, report-only default) — not a workflow scenario |
+| `digest-must-be-real` | any of the above | the digest's METRICS line == run record (integrity) |
+| `digest-fabricated-prose` | injected prose states a passRate the data does not show | `digestIntegrity.passed:false` — the prose check catches the fabrication (the headline-invariant negative) |
 
 ## Layer-2 behavioural suite (what `verify:live` asserts — stub collectors)
 
@@ -87,8 +89,9 @@ flags, so the suite exercises every branch deterministically:
 | `quality.passRateDelta`, `perRubricDelta`, source `ageDays` | **numeric-range band** | `Assert-NumberBetween` |
 | `quality.regressed` ⟺ `passRateDelta < -driftThreshold` | **branch-shape / relational** | `Assert-DriftFlag` |
 | `drift.any` ⟺ union of quality-regressed ∨ any source changed/stale/unreachable | **relational / union** | `Assert-DriftUnion` |
-| `reportOnly ⇒ reembedded==0` ∧ no write path reached | **negative / absence** | `Assert-NoLiveWrite` |
-| numbers in `digest.markdown` == run record | **relational / membership** | `Assert-DigestMatchesRecord` |
+| `reembedded==0` (structural — no Supabase-write node exists) | **structural / constant** | `Assert-Equal` |
+| METRICS line in `digest.markdown` == run record | **relational / membership** | `Assert-DigestMatchesRecord` |
+| no fabricated pass-rate in summarizer prose | **negative** | `prose-no-fabricated-rate` (workflow check) |
 | audit & digest carry no raw key / no PII | **negative + masking** | `Assert-NoRawPiiLeak` |
 
 These reuse the harness's proven assertion taxonomy (from A/B). The **new** invariants D adds are
