@@ -3,8 +3,8 @@
   "name": "Portfolio - Scheduled Drift Monitor",
   "nodes": [
     {
-      "id": "a3467ae8-19e4-41d6-8de3-8fd3d6ef980b",
-      "name": "Sticky Note a3467ae8",
+      "id": "bb1499c4-d562-4f62-98ab-115717b01c52",
+      "name": "Sticky Note bb1499c4",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -12,14 +12,14 @@
         150
       ],
       "parameters": {
-        "content": "## Scheduled Drift Monitor v0.2.0 (stub default + opt-in live; cron + monitoring — the first scheduled + monitoring workflow in the portfolio). On a SCHEDULE (default weekly) or a manual editor run, two pluggable monitors run and an integrity-checked digest is emitted. Monitor 1 (Corpus Freshness): fingerprints the allowlisted corpus sources of Project B against a pinned SOURCE_MANIFEST -> unchanged|changed|stale|unreachable (serves the RAG periodic refresh for B = B ADR-0004 option C). DETECT-ONLY: no Supabase-write node exists here, so refresh-gating (zero live writes) holds BY CONSTRUCTION; the gated re-embed is a reviewed harness action landing with the live increment. Monitor 2 (Answer-Quality Drift): compares a quality reading to the prior run baseline -> regressed? (a time-series drift, distinct from the single-baseline regressionDelta in A). The two are aggregated (drift.any = quality regressed OR any source changed/stale/unreachable), a digest is summarized FROM the run record, and DIGEST-INTEGRITY is enforced: every number in the digest is recomputed from the record (sibling B citation-integrity transposed to a summary — the summarizer cannot claim a drift the data does not show). STUB-DEFAULT everywhere CI touches (stub is the default + the only path verify:static/json/live touch), so the offline suite stays deterministic; Layer-2 scenarios are driven by per-request injections (stubSources / stubQuality / priorBaseline). The LIVE path (mode:live, opt-in) is WIRED in v0.2.0: live source-fetch (allowlisted URLs, non-browser UA) + live A-eval (Project A grades B as a black-box SUT and returns passRate) + live Ollama llama3.2:3b digest prose — each onError-tolerant (degrades to stub), exercised by verify:drift-live. The digest METRICS line is always pinned from the run record, so digest-integrity holds even under the live LLM. The gated re-embed (delegating to B Ingest-Corpus.ps1) + Monitor 3 remain deferred. policyVersion scheduled-drift-monitor-v0.2.0.",
+        "content": "## Scheduled Drift Monitor v0.3.0 (stub default + opt-in live; cron + monitoring — the first scheduled + monitoring workflow in the portfolio). On a SCHEDULE (default weekly) or a manual editor run, two pluggable monitors run and an integrity-checked digest is emitted. Monitor 1 (Corpus Freshness): checks the allowlisted corpus sources of Project B -> unchanged|changed|stale|unreachable. STUB mode drives the changed verdict from an injected fingerprint; LIVE mode has no persisted prior fingerprint, so it reports reachability + staleness only (real cross-run change-detection is the host loop Refresh-Sources.ps1, persisted SHA-256). Serves the RAG periodic refresh for B = B ADR-0004 option C. DETECT-ONLY: no Supabase-write node exists here, so refresh-gating (zero live writes) holds BY CONSTRUCTION; the gated re-embed is a reviewed harness action landing with the live increment. Monitor 2 (Answer-Quality Drift): compares a quality reading to the prior run baseline -> regressed? (a time-series drift, distinct from the single-baseline regressionDelta in A). The two are aggregated (drift.any = quality regressed OR any source changed/stale/unreachable), a digest is summarized FROM the run record, and DIGEST-INTEGRITY is enforced in TWO record-grounded checks (the summarizer is never trusted): (1) the machine-appended METRICS line is recomputed from the record, and (2) any pass-rate-shaped figure (a percentage or a decimal in [0,1]) in the summarizer prose must equal a record rate — so an LLM that states a passRate the data does not show fails the run (sibling B citation-integrity transposed to a summary; proven by the digest-fabricated-prose negative scenario). STUB-DEFAULT everywhere CI touches (stub is the default + the only path verify:static/json/live touch), so the offline suite stays deterministic; Layer-2 scenarios are driven by per-request injections (stubSources / stubQuality / priorBaseline). The LIVE path (mode:live, opt-in) is WIRED: live source-fetch (allowlisted URLs, non-browser UA) + live A-eval (Project A grades B as a black-box SUT and returns passRate) + live Ollama llama3.2:3b digest prose — each onError-tolerant (degrades to stub), exercised by verify:drift-live. Caller-supplied URL overrides are honored only from the trusted manual/schedule entrypoints; the unauthenticated webhook entrypoint IGNORES them (SSRF guard). The digest METRICS line is always pinned from the run record, so digest-integrity holds even under the live LLM. The gated re-embed (delegating to B Ingest-Corpus.ps1) + Monitor 3 remain deferred. policyVersion scheduled-drift-monitor-v0.3.0.",
         "color": 4,
         "width": 3960,
         "height": 700
       }
     },
     {
-      "id": "f051df50-1a92-4528-ba1e-4d5aaf24ea53",
+      "id": "8b6b0265-6e46-4e9a-8bc2-fdec74451516",
       "name": "Run Weekly (Schedule)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
@@ -44,7 +44,7 @@
       }
     },
     {
-      "id": "63cb19aa-1f1a-4fe6-9b50-926919b53e60",
+      "id": "fc490dcd-100f-45c2-900c-e8184495a672",
       "name": "Normalize Run Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -55,11 +55,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const source = items[0]?.json ?? {};\nconst body = source.body ?? source;\nconst entrypoint = (source.manualExecution === true || body.manualExecution === true)\n  ? 'manual'\n  : (Object.prototype.hasOwnProperty.call(source, 'body') ? 'webhook' : 'schedule');\nconst text = (v) => String(v ?? '').trim();\nconst num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };\n\n// mode: live is NORMALIZED but v0.1.0 DEGRADES it to stub (no live HTTP nodes yet) — a misconfigured\n// request can never hit a live backend in the offline suite. requestedMode preserves the raw ask.\nconst requestedMode = text(body.mode).toLowerCase() === 'live' ? 'live' : 'stub';\nconst mode = requestedMode; // v0.2.0: live is WIRED (opt-in). stub remains the default + the only path CI touches.\n// reportOnly defaults TRUE (detect + recommend, never auto-write B's KB).\nconst reportOnly = body.reportOnly === false ? false : true;\nconst driftThreshold = num(body.driftThreshold, 0.05);\nconst staleAfterDays = num(body.staleAfterDays, 90);\nconst asOf = text(body.asOf) || new Date().toISOString().slice(0, 10);\nconst monitors = Array.isArray(body.monitors) && body.monitors.length ? body.monitors : ['freshness', 'quality'];\n\n// Deterministic Layer-2 scenario injections (the request DRIVES the stub collectors):\n//   stubSources: { <sourceId>: { fingerprintNow?: string, statusHint?: 'unreachable' } }\n//   stubQuality: { passRate?: number, perRubric?: object }   (the current eval reading)\n//   priorBaseline: partial override of the embedded PRIOR_BASELINE\nconst isObj = (v) => v && typeof v === 'object';\nconst stubSources = isObj(body.stubSources) ? body.stubSources : {};\nconst stubQuality = isObj(body.stubQuality) ? body.stubQuality : null;\nconst priorBaseline = isObj(body.priorBaseline) ? body.priorBaseline : null;\n\n// summarySource: the digest prose engine. DEFAULT stub; in live mode default ollama; explicit 'stub' wins.\nconst summarySource = text(body.summarySource).toLowerCase() === 'stub' ? 'stub' : (mode === 'live' ? 'ollama' : 'stub');\n// Live endpoints — the workflow runs INSIDE the n8n container, which reaches host services (incl. the\n// same n8n that hosts Project A) via host.docker.internal. A request may override any of them.\nconst aEvalUrl = text(body.aEvalUrl) || 'http://host.docker.internal:5678/webhook/portfolio/llm-eval-harness';\nconst ragSutUrl = text(body.ragSutUrl) || 'http://host.docker.internal:5678/webhook/portfolio/rag-knowledge-assistant';\nconst ollamaChatUrl = text(body.ollamaChatUrl) || 'http://host.docker.internal:11434/api/chat';\nconst genModel = text(body.genModel) || 'llama3.2:3b';\nconst userAgent = text(body.userAgent) || 'n8n';\n\nreturn [{\n  json: {\n    request: {\n      runId: text(body.runId) || ('run_' + Date.now().toString(36)),\n      requestedAt: text(body.requestedAt) || new Date().toISOString()\n    },\n    runtime: { entrypoint, mode, requestedMode, summarySource, reportOnly, driftThreshold, staleAfterDays, asOf, monitors, aEvalUrl, ragSutUrl, ollamaChatUrl, genModel, userAgent },\n    inject: { stubSources, stubQuality, priorBaseline },\n    sourcePayloadKeys: Object.keys(body)\n  }\n}];"
+        "jsCode": "const source = items[0]?.json ?? {};\nconst body = source.body ?? source;\nconst entrypoint = (source.manualExecution === true || body.manualExecution === true)\n  ? 'manual'\n  : (Object.prototype.hasOwnProperty.call(source, 'body') ? 'webhook' : 'schedule');\nconst text = (v) => String(v ?? '').trim();\nconst num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };\n\n// mode: live is NORMALIZED but v0.1.0 DEGRADES it to stub (no live HTTP nodes yet) — a misconfigured\n// request can never hit a live backend in the offline suite. requestedMode preserves the raw ask.\nconst requestedMode = text(body.mode).toLowerCase() === 'live' ? 'live' : 'stub';\nconst mode = requestedMode; // v0.2.0: live is WIRED (opt-in). stub remains the default + the only path CI touches.\n// reportOnly defaults TRUE (detect + recommend, never auto-write B's KB).\nconst reportOnly = body.reportOnly === false ? false : true;\nconst driftThreshold = num(body.driftThreshold, 0.05);\nconst staleAfterDays = num(body.staleAfterDays, 90);\nconst asOf = text(body.asOf) || new Date().toISOString().slice(0, 10);\nconst monitors = Array.isArray(body.monitors) && body.monitors.length ? body.monitors : ['freshness', 'quality'];\n\n// Deterministic Layer-2 scenario injections (the request DRIVES the stub collectors):\n//   stubSources: { <sourceId>: { fingerprintNow?: string, statusHint?: 'unreachable' } }\n//   stubQuality: { passRate?: number, perRubric?: object }   (the current eval reading)\n//   priorBaseline: partial override of the embedded PRIOR_BASELINE\n//   stubDigestProse: adversarial summarizer prose (a string) routed through the digest path so the\n//     digest-integrity invariant can be tested as a NEGATIVE — prose that states a pass-rate the data\n//     does not show MUST flip digestIntegrity.passed=false.\nconst isObj = (v) => v && typeof v === 'object';\nconst stubSources = isObj(body.stubSources) ? body.stubSources : {};\nconst stubQuality = isObj(body.stubQuality) ? body.stubQuality : null;\nconst priorBaseline = isObj(body.priorBaseline) ? body.priorBaseline : null;\nconst stubDigestProse = typeof body.stubDigestProse === 'string' ? body.stubDigestProse : null;\n\n// summarySource: the digest prose engine. DEFAULT stub; in live mode default ollama; explicit 'stub' wins.\nconst summarySource = text(body.summarySource).toLowerCase() === 'stub' ? 'stub' : (mode === 'live' ? 'ollama' : 'stub');\n// SSRF GUARD: the *Url overrides below drive server-side POSTs from INSIDE the n8n container. The\n// on-demand webhook is unauthenticated (a public surface), so a caller-supplied URL arriving via the\n// 'webhook' entrypoint is IGNORED — only the trusted 'manual'/'schedule' entrypoints may retarget these\n// fetches, so a public caller can never redirect them to an internal/metadata host (169.254.x.x, etc.).\nconst trustOverrides = entrypoint !== 'webhook';\nconst pick = (v, def) => ((trustOverrides && text(v)) ? text(v) : def);\n// Live endpoints — the workflow runs INSIDE the n8n container, which reaches host services (incl. the\n// same n8n that hosts Project A) via host.docker.internal.\nconst aEvalUrl = pick(body.aEvalUrl, 'http://host.docker.internal:5678/webhook/portfolio/llm-eval-harness');\nconst ragSutUrl = pick(body.ragSutUrl, 'http://host.docker.internal:5678/webhook/portfolio/rag-knowledge-assistant');\nconst ollamaChatUrl = pick(body.ollamaChatUrl, 'http://host.docker.internal:11434/api/chat');\nconst genModel = text(body.genModel) || 'llama3.2:3b';\nconst userAgent = text(body.userAgent) || 'n8n';\n\nreturn [{\n  json: {\n    request: {\n      runId: text(body.runId) || ('run_' + Date.now().toString(36)),\n      requestedAt: text(body.requestedAt) || new Date().toISOString()\n    },\n    runtime: { entrypoint, mode, requestedMode, summarySource, reportOnly, driftThreshold, staleAfterDays, asOf, monitors, aEvalUrl, ragSutUrl, ollamaChatUrl, genModel, userAgent },\n    inject: { stubSources, stubQuality, priorBaseline, stubDigestProse },\n    sourcePayloadKeys: Object.keys(body)\n  }\n}];"
       }
     },
     {
-      "id": "d414fb10-5c90-47a6-a5f5-c54bdfec40d6",
+      "id": "fa796dfa-86c5-4a37-8314-6fd9bffc3159",
       "name": "Load Prior Baseline",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -74,7 +74,7 @@
       }
     },
     {
-      "id": "f7760df7-4075-4e04-8e8c-6491800aa507",
+      "id": "9ed5b82b-38c1-4ee6-bc18-92c10378319d",
       "name": "M1 Collect Sources (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -85,11 +85,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const input = items[0].json;\n// SOURCE_MANIFEST — D's pinned snapshot of B's allowlisted corpus sources (sourceId, url, the chunkIds\n// it backs, a content fingerprint = the last-known-good hash, and retrievedAt). Source of truth for the\n// live fetch contract; in stub mode the \"fetched\" fingerprint == the manifest fingerprint (unchanged)\n// unless a scenario injects an override. (Subset of B's 13-chunk corpus, grouped by source url.)\nconst SOURCE_MANIFEST = [\n  { sourceId: 'svpg-ai-pm', url: 'https://www.svpg.com/ai-product-management/', chunkIds: ['pm-more-essential', 'genuine-value'], fingerprint: 'a1b2c3d4', retrievedAt: '2026-05-31' },\n  { sourceId: 'lennys-evals', url: 'https://www.lennysnewsletter.com/p/beyond-vibe-checks-a-pms-complete', chunkIds: ['evals-defining-skill'], fingerprint: 'e5f6a7b8', retrievedAt: '2026-05-31' },\n  { sourceId: 'institutepm-2026', url: 'https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026', chunkIds: ['how-to-learn', 'portfolio-proof', 'three-skill-clusters'], fingerprint: '0c1d2e3f', retrievedAt: '2026-05-31' },\n  { sourceId: 'feishu-yujun', url: 'https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g', chunkIds: ['yujun-growth', 'yujun-user-value'], fingerprint: '4a5b6c7d', retrievedAt: '2026-05-31' },\n  { sourceId: 'woshipm-hanniman', url: 'https://www.woshipm.com/pmd/5396083.html', chunkIds: ['hanniman-humanity'], fingerprint: '8e9f0a1b', retrievedAt: '2026-05-31' },\n  { sourceId: 'hf-llm-course', url: 'https://github.com/mlabonne/llm-course', chunkIds: ['rag-eval-faithfulness'], fingerprint: '2c3d4e5f', retrievedAt: '2026-05-31' }\n];\nif (input.runtime.mode === 'live') {\n  // LIVE M1: GET each allowlisted URL (non-browser UA), fingerprint the body (FNV-1a). A non-2xx /\n  // network error degrades THAT source to unreachable — never crashes the run. fetchSource 'http'.\n  // (Cross-run change detection vs a PERSISTED real fingerprint is the run-history increment; here the\n  // fetched fingerprint is compared to the pinned manifest value to exercise the diff mechanism.)\n  function fnv(v){let h=2166136261;const t=String(v);for(let i=0;i<t.length;i+=1){h^=t.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(16).padStart(8,'0');}\n  const ua = input.runtime.userAgent || 'n8n';\n  const collectedLive = [];\n  for (const s of SOURCE_MANIFEST) {\n    let fingerprintNow = null; let statusHint = null;\n    try {\n      const res = await this.helpers.httpRequest({ method: 'GET', url: s.url, headers: { 'User-Agent': ua, 'Accept': 'text/html,application/xhtml+xml' }, timeout: 20000, returnFullResponse: false });\n      const bodyText = typeof res === 'string' ? res : JSON.stringify(res);\n      fingerprintNow = fnv(bodyText);\n    } catch (e) { statusHint = 'unreachable'; }\n    collectedLive.push({ sourceId: s.sourceId, url: s.url, chunkIds: s.chunkIds, retrievedAt: s.retrievedAt, fingerprintPrev: s.fingerprint, fingerprintNow, statusHint });\n  }\n  return [{ json: { ...input, freshness: { fetchSource: 'http', collected: collectedLive } } }];\n}\n\nconst overrides = input.inject.stubSources || {};\nconst collected = SOURCE_MANIFEST.map((s) => {\n  const o = overrides[s.sourceId] || {};\n  const unreachable = o.statusHint === 'unreachable';\n  return {\n    sourceId: s.sourceId,\n    url: s.url,\n    chunkIds: s.chunkIds,\n    retrievedAt: s.retrievedAt,\n    fingerprintPrev: s.fingerprint,\n    fingerprintNow: unreachable ? null : (typeof o.fingerprintNow === 'string' ? o.fingerprintNow : s.fingerprint),\n    statusHint: o.statusHint || null\n  };\n});\nreturn [{ json: { ...input, freshness: { fetchSource: 'stub', collected } } }];"
+        "jsCode": "const input = items[0].json;\n// SOURCE_MANIFEST — D's pinned snapshot of B's allowlisted corpus sources (sourceId, url, the chunkIds\n// it backs, a content fingerprint = the last-known-good hash, and retrievedAt). Source of truth for the\n// live fetch contract; in stub mode the \"fetched\" fingerprint == the manifest fingerprint (unchanged)\n// unless a scenario injects an override. (Subset of B's 13-chunk corpus, grouped by source url.)\nconst SOURCE_MANIFEST = [\n  { sourceId: 'svpg-ai-pm', url: 'https://www.svpg.com/ai-product-management/', chunkIds: ['pm-more-essential', 'genuine-value'], fingerprint: 'a1b2c3d4', retrievedAt: '2026-05-31' },\n  { sourceId: 'lennys-evals', url: 'https://www.lennysnewsletter.com/p/beyond-vibe-checks-a-pms-complete', chunkIds: ['evals-defining-skill'], fingerprint: 'e5f6a7b8', retrievedAt: '2026-05-31' },\n  { sourceId: 'institutepm-2026', url: 'https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026', chunkIds: ['how-to-learn', 'portfolio-proof', 'three-skill-clusters'], fingerprint: '0c1d2e3f', retrievedAt: '2026-05-31' },\n  { sourceId: 'feishu-yujun', url: 'https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g', chunkIds: ['yujun-growth', 'yujun-user-value'], fingerprint: '4a5b6c7d', retrievedAt: '2026-05-31' },\n  { sourceId: 'woshipm-hanniman', url: 'https://www.woshipm.com/pmd/5396083.html', chunkIds: ['hanniman-humanity'], fingerprint: '8e9f0a1b', retrievedAt: '2026-05-31' },\n  { sourceId: 'hf-llm-course', url: 'https://github.com/mlabonne/llm-course', chunkIds: ['rag-eval-faithfulness'], fingerprint: '2c3d4e5f', retrievedAt: '2026-05-31' }\n];\nif (input.runtime.mode === 'live') {\n  // LIVE M1: GET each allowlisted URL (non-browser UA), fingerprint the body (FNV-1a) and RECORD it.\n  // A non-2xx / network error degrades THAT source to unreachable — never crashes the run. fetchSource 'http'.\n  // NOTE: the workflow has NO persisted prior fingerprint (the embedded manifest value is a stub-mode\n  // baseline, not a real cross-run one), so the live path does NOT derive a 'changed' verdict from it —\n  // doing so would be a guaranteed false alarm on every run. Real cross-run change-detection is the host\n  // loop's job (Refresh-Sources.ps1, persisted SHA-256). Live M1 = reachability + staleness; fingerprintNow\n  // is recorded for the future persisted-baseline increment.\n  function fnv(v){let h=2166136261;const t=String(v);for(let i=0;i<t.length;i+=1){h^=t.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(16).padStart(8,'0');}\n  const ua = input.runtime.userAgent || 'n8n';\n  const collectedLive = [];\n  for (const s of SOURCE_MANIFEST) {\n    let fingerprintNow = null; let statusHint = null;\n    try {\n      const res = await this.helpers.httpRequest({ method: 'GET', url: s.url, headers: { 'User-Agent': ua, 'Accept': 'text/html,application/xhtml+xml' }, timeout: 20000, returnFullResponse: false });\n      const bodyText = typeof res === 'string' ? res : JSON.stringify(res);\n      fingerprintNow = fnv(bodyText);\n    } catch (e) { statusHint = 'unreachable'; }\n    collectedLive.push({ sourceId: s.sourceId, url: s.url, chunkIds: s.chunkIds, retrievedAt: s.retrievedAt, fingerprintPrev: s.fingerprint, fingerprintNow, statusHint });\n  }\n  return [{ json: { ...input, freshness: { fetchSource: 'http', collected: collectedLive } } }];\n}\n\nconst overrides = input.inject.stubSources || {};\nconst collected = SOURCE_MANIFEST.map((s) => {\n  const o = overrides[s.sourceId] || {};\n  const unreachable = o.statusHint === 'unreachable';\n  return {\n    sourceId: s.sourceId,\n    url: s.url,\n    chunkIds: s.chunkIds,\n    retrievedAt: s.retrievedAt,\n    fingerprintPrev: s.fingerprint,\n    fingerprintNow: unreachable ? null : (typeof o.fingerprintNow === 'string' ? o.fingerprintNow : s.fingerprint),\n    statusHint: o.statusHint || null\n  };\n});\nreturn [{ json: { ...input, freshness: { fetchSource: 'stub', collected } } }];"
       }
     },
     {
-      "id": "a040fb99-adcd-4c00-9f3f-69f981ff70a1",
+      "id": "19309888-57eb-400a-a697-dd45adbc3965",
       "name": "M1 Detect Source Drift",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -100,11 +100,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const input = items[0].json;\nconst asOf = input.runtime.asOf;\nconst staleAfterDays = input.runtime.staleAfterDays;\nfunction ageDays(d) {\n  const a = Date.parse(asOf + 'T00:00:00Z');\n  const b = Date.parse(String(d) + 'T00:00:00Z');\n  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;\n  return Math.floor((a - b) / 86400000);\n}\n// Per source: unreachable (no fingerprint) -> changed (fingerprint differs) -> stale (age > window) ->\n// unchanged. The two failure modes the eval-plan guards: a MISSED change (false negative) and a FALSE\n// alarm (false positive) — both deterministic given the injected scenario.\nconst sources = input.freshness.collected.map((s) => {\n  const age = ageDays(s.retrievedAt);\n  let status;\n  if (s.statusHint === 'unreachable' || s.fingerprintNow === null) status = 'unreachable';\n  else if (s.fingerprintNow !== s.fingerprintPrev) status = 'changed';\n  else if (age !== null && age > staleAfterDays) status = 'stale';\n  else status = 'unchanged';\n  return { sourceId: s.sourceId, url: s.url, chunkIds: s.chunkIds, status, ageDays: age, fingerprintPrev: s.fingerprintPrev, fingerprintNow: s.fingerprintNow };\n});\nconst changed = sources.filter((s) => s.status === 'changed').length;\nconst stale = sources.filter((s) => s.status === 'stale').length;\nconst unreachable = sources.filter((s) => s.status === 'unreachable').length;\n// DETECT-ONLY: the workflow recommends which chunks to re-curate but performs ZERO live writes\n// (reembedded is always 0 here) — refresh-gating holds by construction. The gated re-embed is a reviewed\n// harness action (delegating to B's Ingest-Corpus.ps1), landing with the live increment.\nconst reembedRecommended = sources.filter((s) => s.status === 'changed').reduce((acc, s) => acc.concat(s.chunkIds), []);\nreturn [{ json: { ...input, freshness: { fetchSource: input.freshness.fetchSource, sources, changed, stale, unreachable, reembedRecommended, reembedded: 0 } } }];"
+        "jsCode": "const input = items[0].json;\nconst asOf = input.runtime.asOf;\nconst staleAfterDays = input.runtime.staleAfterDays;\nfunction ageDays(d) {\n  const a = Date.parse(asOf + 'T00:00:00Z');\n  const b = Date.parse(String(d) + 'T00:00:00Z');\n  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;\n  return Math.floor((a - b) / 86400000);\n}\n// Per source: unreachable (no fingerprint) -> changed (fingerprint differs) -> stale (age > window) ->\n// unchanged. The two failure modes the eval-plan guards: a MISSED change (false negative) and a FALSE\n// alarm (false positive) — both deterministic given the injected scenario.\n// LIVE vs STUB: the n8n workflow has NO persisted prior fingerprint, so a live content-change verdict\n// would be meaningless (the embedded manifest value is a stub baseline, not a real cross-run one) and\n// would false-alarm on EVERY run. In live mode the 'changed' branch is therefore SKIPPED — live M1\n// reports reachability + staleness only; real cross-run change-detection is the host loop's job\n// (Refresh-Sources.ps1, persisted SHA-256). The 'changed' verdict is exercised by the stub scenarios.\nconst liveFetch = input.freshness.fetchSource === 'http';\nconst sources = input.freshness.collected.map((s) => {\n  const age = ageDays(s.retrievedAt);\n  let status;\n  if (s.statusHint === 'unreachable' || s.fingerprintNow === null) status = 'unreachable';\n  else if (!liveFetch && s.fingerprintNow !== s.fingerprintPrev) status = 'changed';\n  else if (age !== null && age > staleAfterDays) status = 'stale';\n  else status = 'unchanged';\n  return { sourceId: s.sourceId, url: s.url, chunkIds: s.chunkIds, status, ageDays: age, fingerprintPrev: s.fingerprintPrev, fingerprintNow: s.fingerprintNow };\n});\nconst changed = sources.filter((s) => s.status === 'changed').length;\nconst stale = sources.filter((s) => s.status === 'stale').length;\nconst unreachable = sources.filter((s) => s.status === 'unreachable').length;\n// DETECT-ONLY: the workflow recommends which chunks to re-curate but performs ZERO live writes\n// (reembedded is always 0 here) — refresh-gating holds by construction. The gated re-embed is a reviewed\n// harness action (delegating to B's Ingest-Corpus.ps1), landing with the live increment.\nconst reembedRecommended = sources.filter((s) => s.status === 'changed').reduce((acc, s) => acc.concat(s.chunkIds), []);\nreturn [{ json: { ...input, freshness: { fetchSource: input.freshness.fetchSource, sources, changed, stale, unreachable, reembedRecommended, reembedded: 0 } } }];"
       }
     },
     {
-      "id": "ebac6818-4fd5-4b47-baf4-caf712fb0be7",
+      "id": "1df4cebf-26e8-406b-b117-3c334803f366",
       "name": "M2 Collect Eval Reading (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -119,7 +119,7 @@
       }
     },
     {
-      "id": "fa0dd3ce-21cd-4cb2-ab5b-0e3be2b6c4e7",
+      "id": "a7218452-1703-4a96-8bfb-48f3fa68da75",
       "name": "M2 Detect Quality Drift",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -134,7 +134,7 @@
       }
     },
     {
-      "id": "3575d2c1-990a-4fba-9de0-39b60bd46ec4",
+      "id": "d8346b12-6ca6-4dba-9d50-a4783d70262e",
       "name": "Aggregate Run Record",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -149,7 +149,7 @@
       }
     },
     {
-      "id": "4522a033-5f9f-4fff-8f45-b3243b9d0644",
+      "id": "e2758a76-c6ef-4b1f-980e-5bdefaf0f0e9",
       "name": "Summarize Digest (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -160,11 +160,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const input = items[0].json;\nconst q = input.quality;\nconst f = input.freshness;\nconst d = input.drift;\n// DEFAULT stub summarizer: composes the digest DETERMINISTICALLY from the run record (the live path swaps\n// in Ollama llama3.2:3b for the prose). A machine-checkable METRICS line is embedded so the integrity node\n// can parse the digest's numbers back out and prove they match the record (no fabricated drift).\nconst metrics = 'METRICS passRate=' + q.passRate + ' passRateDelta=' + q.passRateDelta + ' regressed=' + q.regressed + ' changed=' + f.changed + ' stale=' + f.stale + ' unreachable=' + f.unreachable + ' driftAny=' + d.any;\nconst headline = d.any ? '检测到漂移' : '无漂移';\nconst lines = [];\nlines.push('# 漂移监控简报 (' + input.runtime.asOf + ')');\nlines.push('');\nlines.push('状态: ' + headline);\nlines.push('');\nlines.push('## 回答质量');\nlines.push('通过率 ' + q.passRate + ' (上期 ' + q.passRatePrev + ', delta ' + q.passRateDelta + ')' + (q.regressed ? ' — 疑似回归' : ''));\nlines.push('');\nlines.push('## 语料新鲜度');\nlines.push('变更 ' + f.changed + ' · 过期 ' + f.stale + ' · 不可达 ' + f.unreachable);\nif (f.reembedRecommended.length) lines.push('建议复审并重嵌入: ' + f.reembedRecommended.join(', '));\nlines.push('');\nlines.push('## 结论');\nlines.push(d.any ? ('发现 ' + d.reasons.length + ' 项漂移信号: ' + d.reasons.join('; ')) : '本期无漂移信号,知识库与质量稳定。');\nlines.push('');\nlines.push(metrics);\nconst stubMarkdown = lines.join('\\n');\nconst titleStr = headline + ' · ' + input.runtime.asOf;\n\nif (input.runtime.summarySource === 'ollama') {\n  // LIVE digest: llama3.2:3b writes the PROSE from a fact sheet; the machine-checkable METRICS line is\n  // STILL appended deterministically from the run record, so DIGEST-INTEGRITY holds no matter what the\n  // model writes (sibling B idiom: model supplies prose, the data supplies the checked facts). onError\n  // -> the deterministic stub digest (still integrity-valid), labelled 'ollama-fallback'.\n  const factSheet = 'passRate=' + q.passRate + ' prev=' + q.passRatePrev + ' delta=' + q.passRateDelta + ' regressed=' + q.regressed + ' changed=' + f.changed + ' stale=' + f.stale + ' unreachable=' + f.unreachable + ' driftAny=' + d.any + ' reasons=' + JSON.stringify(d.reasons);\n  try {\n    const res = await this.helpers.httpRequest({ method: 'POST', url: input.runtime.ollamaChatUrl, headers: { 'Content-Type': 'application/json' }, body: { model: input.runtime.genModel || 'llama3.2:3b', stream: false, options: { temperature: 0 }, messages: [ { role: 'system', content: '你是运维监控助手。只依据提供的事实,用简体中文写一段简洁的漂移监控简报(3-5 句);不要编造任何数字或事实。' }, { role: 'user', content: '本期漂移事实: ' + factSheet } ] }, json: true, timeout: 120000 });\n    const r = (res && typeof res === 'object' && res.body) ? res.body : res;\n    const prose = (r && r.message && typeof r.message.content === 'string') ? r.message.content.trim() : ((r && typeof r.response === 'string') ? r.response.trim() : '');\n    if (prose.length === 0) { throw new Error('empty model output'); }\n    const md = '# 漂移监控简报 (' + input.runtime.asOf + ')\\n\\n' + prose + '\\n\\n' + metrics;\n    return [{ json: { ...input, digest: { title: titleStr, markdown: md, summarySource: 'ollama' } } }];\n  } catch (e) {\n    return [{ json: { ...input, digest: { title: titleStr, markdown: stubMarkdown, summarySource: 'ollama-fallback' } } }];\n  }\n}\n\nreturn [{ json: { ...input, digest: { title: titleStr, markdown: stubMarkdown, summarySource: 'stub' } } }];"
+        "jsCode": "const input = items[0].json;\nconst q = input.quality;\nconst f = input.freshness;\nconst d = input.drift;\n// DEFAULT stub summarizer: composes the digest DETERMINISTICALLY from the run record (the live path swaps\n// in Ollama llama3.2:3b for the prose). A machine-checkable METRICS line is embedded so the integrity node\n// can parse the digest's numbers back out and prove they match the record (no fabricated drift).\nconst metrics = 'METRICS passRate=' + q.passRate + ' passRateDelta=' + q.passRateDelta + ' regressed=' + q.regressed + ' changed=' + f.changed + ' stale=' + f.stale + ' unreachable=' + f.unreachable + ' driftAny=' + d.any;\nconst headline = d.any ? '检测到漂移' : '无漂移';\nconst lines = [];\nlines.push('# 漂移监控简报 (' + input.runtime.asOf + ')');\nlines.push('');\nlines.push('状态: ' + headline);\nlines.push('');\nlines.push('## 回答质量');\nlines.push('通过率 ' + q.passRate + ' (上期 ' + q.passRatePrev + ', delta ' + q.passRateDelta + ')' + (q.regressed ? ' — 疑似回归' : ''));\nlines.push('');\nlines.push('## 语料新鲜度');\nlines.push('变更 ' + f.changed + ' · 过期 ' + f.stale + ' · 不可达 ' + f.unreachable);\nif (f.reembedRecommended.length) lines.push('建议复审并重嵌入: ' + f.reembedRecommended.join(', '));\nlines.push('');\nlines.push('## 结论');\nlines.push(d.any ? ('发现 ' + d.reasons.length + ' 项漂移信号: ' + d.reasons.join('; ')) : '本期无漂移信号,知识库与质量稳定。');\nlines.push('');\nlines.push(metrics);\nconst stubMarkdown = lines.join('\\n');\nconst titleStr = headline + ' · ' + input.runtime.asOf;\n\nif (input.runtime.summarySource === 'ollama') {\n  // LIVE digest: llama3.2:3b writes the PROSE from a fact sheet; the machine-checkable METRICS line is\n  // STILL appended deterministically from the run record, so DIGEST-INTEGRITY holds no matter what the\n  // model writes (sibling B idiom: model supplies prose, the data supplies the checked facts). onError\n  // -> the deterministic stub digest (still integrity-valid), labelled 'ollama-fallback'.\n  const factSheet = 'passRate=' + q.passRate + ' prev=' + q.passRatePrev + ' delta=' + q.passRateDelta + ' regressed=' + q.regressed + ' changed=' + f.changed + ' stale=' + f.stale + ' unreachable=' + f.unreachable + ' driftAny=' + d.any + ' reasons=' + JSON.stringify(d.reasons);\n  try {\n    const res = await this.helpers.httpRequest({ method: 'POST', url: input.runtime.ollamaChatUrl, headers: { 'Content-Type': 'application/json' }, body: { model: input.runtime.genModel || 'llama3.2:3b', stream: false, options: { temperature: 0 }, messages: [ { role: 'system', content: '你是运维监控助手。只依据提供的事实,用简体中文写一段简洁的漂移监控简报(3-5 句);不要编造任何数字或事实。' }, { role: 'user', content: '本期漂移事实: ' + factSheet } ] }, json: true, timeout: 120000 });\n    const r = (res && typeof res === 'object' && res.body) ? res.body : res;\n    const prose = (r && r.message && typeof r.message.content === 'string') ? r.message.content.trim() : ((r && typeof r.response === 'string') ? r.response.trim() : '');\n    if (prose.length === 0) { throw new Error('empty model output'); }\n    const md = '# 漂移监控简报 (' + input.runtime.asOf + ')\\n\\n' + prose + '\\n\\n' + metrics;\n    return [{ json: { ...input, digest: { title: titleStr, markdown: md, summarySource: 'ollama' } } }];\n  } catch (e) {\n    return [{ json: { ...input, digest: { title: titleStr, markdown: stubMarkdown, summarySource: 'ollama-fallback' } } }];\n  }\n}\n\n// Layer-2 adversarial knob: if a scenario injects summarizer prose, route IT (not the deterministic stub\n// body) through the digest — the METRICS line is STILL appended from the record, so this exercises whether\n// digest-integrity catches prose that contradicts the data (the headline-invariant NEGATIVE test).\nif (input.inject && typeof input.inject.stubDigestProse === 'string' && input.inject.stubDigestProse.length) {\n  const injectedMd = '# 漂移监控简报 (' + input.runtime.asOf + ')\\n\\n' + input.inject.stubDigestProse + '\\n\\n' + metrics;\n  return [{ json: { ...input, digest: { title: titleStr, markdown: injectedMd, summarySource: 'stub-injected' } } }];\n}\nreturn [{ json: { ...input, digest: { title: titleStr, markdown: stubMarkdown, summarySource: 'stub' } } }];"
       }
     },
     {
-      "id": "cd197c7e-f070-4dd7-aa97-7c0cf49e4cbc",
+      "id": "1b052dd8-e4e5-47fa-9d32-c049732d6789",
       "name": "Enforce Digest Integrity",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -175,11 +175,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const input = items[0].json;\n// DIGEST-INTEGRITY (the headline invariant, sibling B's citation-integrity transposed to a summary):\n// parse every quantitative claim back out of the digest markdown and require it to EQUAL the run record.\n// A summarizer (stub today, Ollama tomorrow) that states a number the data does not show -> passed=false.\nconst md = String(input.digest.markdown || '');\nconst q = input.quality;\nconst f = input.freshness;\nconst d = input.drift;\nfunction grab(key) {\n  const m = md.match(new RegExp(key + '=([^\\\\s]+)'));\n  return m ? m[1] : null;\n}\nconst checks = [];\nfunction check(name, actual) {\n  const parsed = grab(name);\n  const ok = parsed !== null && parsed === String(actual);\n  checks.push({ name, ok, parsed, actual: String(actual) });\n  return ok;\n}\nlet passed = true;\npassed = check('passRate', q.passRate) && passed;\npassed = check('passRateDelta', q.passRateDelta) && passed;\npassed = check('regressed', q.regressed) && passed;\npassed = check('changed', f.changed) && passed;\npassed = check('stale', f.stale) && passed;\npassed = check('unreachable', f.unreachable) && passed;\npassed = check('driftAny', d.any) && passed;\nreturn [{ json: { ...input, digestIntegrity: { passed, checks }, passed } }];"
+        "jsCode": "const input = items[0].json;\n// DIGEST-INTEGRITY (the headline invariant; sibling B's citation-integrity transposed to a summary).\n// TWO checks, BOTH grounded only in the deterministic run record (the summarizer is never trusted):\n//  (1) METRICS LINE — the machine-appended 'key=value' line must equal the record (it wasn't corrupted).\n//  (2) PROSE CLAIM  — any PASS-RATE-SHAPED figure (a percentage, or a decimal in [0,1]) the summarizer\n//      wrote in prose must equal a rate the record holds, so an LLM (or injected) summary that states a\n//      pass-rate the data does not show -> passed=false. (Pre-v0.3.0 only (1) existed, so a fabricated\n//      number in the prose passed. Authoritative counts are the METRICS line; bare integers are context.)\nconst md = String(input.digest.markdown || '');\nconst q = input.quality;\nconst f = input.freshness;\nconst d = input.drift;\nfunction grab(key) {\n  const m = md.match(new RegExp(key + '=([^\\\\s]+)'));\n  return m ? m[1] : null;\n}\nconst checks = [];\nfunction check(name, actual) {\n  const parsed = grab(name);\n  const ok = parsed !== null && parsed === String(actual);\n  checks.push({ name, ok, parsed, actual: String(actual) });\n  return ok;\n}\nlet passed = true;\npassed = check('passRate', q.passRate) && passed;\npassed = check('passRateDelta', q.passRateDelta) && passed;\npassed = check('regressed', q.regressed) && passed;\npassed = check('changed', f.changed) && passed;\npassed = check('stale', f.stale) && passed;\npassed = check('unreachable', f.unreachable) && passed;\npassed = check('driftAny', d.any) && passed;\n\n// (2) PROSE CLAIM — scan the prose (digest minus the appended METRICS line; ISO dates stripped so the\n// dated title is not read as a metric). Any percentage, or any decimal <= 1, MUST equal a record rate\n// (passRate / passRatePrev / |passRateDelta|), compared numerically (so 1.0 / 1 / 100% all reconcile).\nconst metricsIdx = md.indexOf('METRICS ');\nlet prose = (metricsIdx >= 0 ? md.slice(0, metricsIdx) : md);\nprose = prose.replace(new RegExp('\\\\d{4}-\\\\d{2}-\\\\d{2}', 'g'), ' ');\nconst eqv = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;\nconst rateSet = [q.passRate, q.passRatePrev, Math.abs(q.passRateDelta)];\nconst pctSet = rateSet.map((r) => r * 100);\nconst fabricated = [];\nconst pcts = prose.match(new RegExp('\\\\d+(?:\\\\.\\\\d+)?%', 'g')) || [];\npcts.forEach((tok) => { const v = parseFloat(tok); if (!pctSet.some((p) => eqv(p, v))) fabricated.push(tok); });\nconst decs = prose.match(new RegExp('\\\\d*\\\\.\\\\d+', 'g')) || [];\ndecs.forEach((tok) => { const v = parseFloat(tok); if (v <= 1 && !rateSet.some((r) => eqv(r, v))) fabricated.push(tok); });\nconst proseOk = (fabricated.length === 0);\nchecks.push({ name: 'prose-no-fabricated-rate', ok: proseOk, parsed: fabricated.join(','), actual: '' });\npassed = proseOk && passed;\nreturn [{ json: { ...input, digestIntegrity: { passed, checks }, passed } }];"
       }
     },
     {
-      "id": "4e8dac0b-82db-437f-b167-2e63cf61a234",
+      "id": "87d01c8c-d43d-460c-ac60-9dff921bf169",
       "name": "Create Redacted Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -190,11 +190,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const input = items[0].json;\nfunction hash(value) {\n  let h = 2166136261;\n  const s = String(value);\n  for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\n// Redacted audit: ids + counts + verdicts only — no source urls, no digest prose (masking invariant).\nconst runSeed = input.request.runId + '|' + (input.runtime.asOf || '');\nreturn [{\n  json: {\n    ...input,\n    auditEvent: {\n      auditEventId: 'audit_' + hash(runSeed),\n      runId: input.request.runId,\n      mode: input.runtime.mode,\n      reportOnly: input.runtime.reportOnly,\n      evalSource: input.quality.evalSource,\n      summarySource: input.digest.summarySource,\n      driftAny: input.drift.any,\n      reasonCount: input.drift.reasons.length,\n      changed: input.freshness.changed,\n      stale: input.freshness.stale,\n      unreachable: input.freshness.unreachable,\n      reembedded: input.freshness.reembedded,\n      regressed: input.quality.regressed,\n      passRate: input.quality.passRate,\n      passRateDelta: input.quality.passRateDelta,\n      digestIntegrityPassed: input.digestIntegrity.passed,\n      policyVersion: 'scheduled-drift-monitor-v0.2.0',\n      createdAt: new Date().toISOString()\n    }\n  }\n}];"
+        "jsCode": "const input = items[0].json;\nfunction hash(value) {\n  let h = 2166136261;\n  const s = String(value);\n  for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\n// Redacted audit: ids + counts + verdicts only — no source urls, no digest prose (masking invariant).\nconst runSeed = input.request.runId + '|' + (input.runtime.asOf || '');\nreturn [{\n  json: {\n    ...input,\n    auditEvent: {\n      auditEventId: 'audit_' + hash(runSeed),\n      runId: input.request.runId,\n      mode: input.runtime.mode,\n      reportOnly: input.runtime.reportOnly,\n      evalSource: input.quality.evalSource,\n      summarySource: input.digest.summarySource,\n      driftAny: input.drift.any,\n      reasonCount: input.drift.reasons.length,\n      changed: input.freshness.changed,\n      stale: input.freshness.stale,\n      unreachable: input.freshness.unreachable,\n      reembedded: input.freshness.reembedded,\n      regressed: input.quality.regressed,\n      passRate: input.quality.passRate,\n      passRateDelta: input.quality.passRateDelta,\n      digestIntegrityPassed: input.digestIntegrity.passed,\n      policyVersion: 'scheduled-drift-monitor-v0.3.0',\n      createdAt: new Date().toISOString()\n    }\n  }\n}];"
       }
     },
     {
-      "id": "8f6e4f49-5968-4251-a1e1-fb6d4cc22398",
+      "id": "52e645a5-f53b-4570-afa8-b6f7b82312d7",
       "name": "Build Run Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -205,11 +205,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const input = items[0].json;\n// The run record — the scorer contract shape from docs/eval-plan.md. entrypoint is surfaced at top level\n// so the terminal gate can route manual (editor display) vs scheduled (emit artifact).\nreturn [{\n  json: {\n    runId: input.request.runId,\n    entrypoint: input.runtime.entrypoint,\n    asOf: input.runtime.asOf,\n    mode: input.runtime.mode,\n    requestedMode: input.runtime.requestedMode,\n    reportOnly: input.runtime.reportOnly,\n    monitors: input.runtime.monitors,\n    freshness: {\n      fetchSource: input.freshness.fetchSource,\n      sources: input.freshness.sources,\n      changed: input.freshness.changed,\n      stale: input.freshness.stale,\n      unreachable: input.freshness.unreachable,\n      reembedRecommended: input.freshness.reembedRecommended,\n      reembedded: input.freshness.reembedded\n    },\n    quality: {\n      passRate: input.quality.passRate,\n      passRatePrev: input.quality.passRatePrev,\n      passRateDelta: input.quality.passRateDelta,\n      regressed: input.quality.regressed,\n      perRubric: input.quality.perRubric,\n      perRubricDelta: input.quality.perRubricDelta,\n      evalSource: input.quality.evalSource\n    },\n    drift: input.drift,\n    digest: input.digest,\n    digestIntegrity: input.digestIntegrity,\n    history: { priorRunId: input.baseline.runId, priorAsOf: input.baseline.asOf, baselineUpdated: false },\n    passed: input.passed === true,\n    auditEvent: input.auditEvent,\n    policyVersion: 'scheduled-drift-monitor-v0.2.0',\n    processedAt: new Date().toISOString()\n  }\n}];"
+        "jsCode": "const input = items[0].json;\n// The run record — the scorer contract shape from docs/eval-plan.md. entrypoint is surfaced at top level\n// so the terminal gate can route manual (editor display) vs scheduled (emit artifact).\nreturn [{\n  json: {\n    runId: input.request.runId,\n    entrypoint: input.runtime.entrypoint,\n    asOf: input.runtime.asOf,\n    mode: input.runtime.mode,\n    requestedMode: input.runtime.requestedMode,\n    reportOnly: input.runtime.reportOnly,\n    monitors: input.runtime.monitors,\n    freshness: {\n      fetchSource: input.freshness.fetchSource,\n      sources: input.freshness.sources,\n      changed: input.freshness.changed,\n      stale: input.freshness.stale,\n      unreachable: input.freshness.unreachable,\n      reembedRecommended: input.freshness.reembedRecommended,\n      reembedded: input.freshness.reembedded\n    },\n    quality: {\n      passRate: input.quality.passRate,\n      passRatePrev: input.quality.passRatePrev,\n      passRateDelta: input.quality.passRateDelta,\n      regressed: input.quality.regressed,\n      perRubric: input.quality.perRubric,\n      perRubricDelta: input.quality.perRubricDelta,\n      evalSource: input.quality.evalSource\n    },\n    drift: input.drift,\n    digest: input.digest,\n    digestIntegrity: input.digestIntegrity,\n    history: { priorRunId: input.baseline.runId, priorAsOf: input.baseline.asOf, baselineUpdated: false },\n    passed: input.passed === true,\n    auditEvent: input.auditEvent,\n    policyVersion: 'scheduled-drift-monitor-v0.3.0',\n    processedAt: new Date().toISOString()\n  }\n}];"
       }
     },
     {
-      "id": "7f0f3534-bfa4-4ce1-b45d-977dbb80f5b3",
+      "id": "8d6dc89d-f811-4ceb-b849-07fb1815d6af",
       "name": "Webhook Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -243,7 +243,7 @@
       }
     },
     {
-      "id": "6658e0a9-8068-4ec6-9129-43d7f25542cd",
+      "id": "dae64bde-c429-438b-b855-869433fdaa51",
       "name": "Return Run Record",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -260,7 +260,7 @@
       }
     },
     {
-      "id": "2f2a9441-4f90-473e-8955-13e2b6a0aca5",
+      "id": "742ff799-1bd0-4702-bb8f-493af4a0670e",
       "name": "Manual UI Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -294,7 +294,7 @@
       }
     },
     {
-      "id": "351a5158-81c6-40e6-a785-6fec1f3a8c79",
+      "id": "453ec023-7419-44d3-ae4d-b7e55f8ea359",
       "name": "Show Run Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -309,7 +309,7 @@
       }
     },
     {
-      "id": "02584d91-957b-4ec8-821c-e577c249c0f8",
+      "id": "cc4ee4b2-007d-43ed-82f4-dfb0ef961868",
       "name": "Emit Digest Artifact",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -324,7 +324,7 @@
       }
     },
     {
-      "id": "cb7123cc-1cfe-47b7-ad40-fdb51cf2d53f",
+      "id": "cb2b6e65-8c53-4760-bb50-b8fd394ada9e",
       "name": "Run Demo From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -334,7 +334,7 @@
       ]
     },
     {
-      "id": "a6ca8310-55fc-49b4-bb50-1ecdc72a7338",
+      "id": "f7a4430e-4538-4f52-8f2b-57d525e7e56e",
       "name": "Build Demo Run Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -349,7 +349,7 @@
       }
     },
     {
-      "id": "660596fa-a6c7-4c58-af52-558287180f75",
+      "id": "24a3538b-641c-405d-ae09-12c1edd73066",
       "name": "Receive Run Request (on-demand)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -366,7 +366,7 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "3a3bb7fc-ba82-406e-b6de-92a04f4fb476"
+      "webhookId": "ff8e78ae-f063-4a6a-bea0-e875ca6c895e"
     }
   ],
   "connections": {
