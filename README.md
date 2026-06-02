@@ -84,3 +84,17 @@ npm run verify:live     # connection check -> SDK sync -> 10-case behavioral eva
 ```
 
 Behavioral eval (`scripts/Test-ProductFeedbackWorkflow.ps1`): **10/10 cases pass** against local n8n workflow `6Gc3wmri0tJre07B` — every theme, the churn-risk human-review gate, the low-confidence→fallback path, and prompt-injection resistance (input asking for `theme=praise` resolves to `other`).
+
+## Open Source Health
+
+This repository includes the baseline files needed for public collaboration:
+
+- License: Apache-2.0 (`LICENSE`).
+- Contributions: `CONTRIBUTING.md`.
+- Security policy: `SECURITY.md`.
+- Security and privacy boundaries: `docs/security-boundaries.md`.
+- Workflow contract: `docs/workflow-contract.md`.
+- Conduct: `CODE_OF_CONDUCT.md`.
+- GitHub templates: `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md`.
+
+Before publishing or accepting contributions, run `npm run verify:static`, `npm run verify:json`, and `npm run smoke`; run `npm run verify:live` only when local n8n and required credentials are configured.
