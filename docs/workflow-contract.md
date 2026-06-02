@@ -62,6 +62,7 @@ Example:
 
 ## Operational Limits
 
+- NOTE: the size/string/item limits in this section are **not enforced in-workflow** (the workflow only coerces and trims inputs); they are the caps a deployment gateway should enforce in front of the public webhook.
 - Supported public JSON body size: 64 KB maximum. Deployments should reject larger payloads before invoking the workflow.
 - String limits: email 254 characters, company/domain/name/title fields 256 characters, free-text `message` 8,000 characters, and source/channel fields 64 characters.
 - Item count: one lead per request. `intentSignals`/`signals` may contain up to 20 short string items; larger batches are outside the public contract.
