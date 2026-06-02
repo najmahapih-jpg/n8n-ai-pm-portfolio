@@ -1,0 +1,14 @@
+{
+  "name": "n8n-contract-test-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone offline-capable contract-conformance gate for the n8n Workflow-as-Code portfolio: parses each project's docs/workflow-contract.md '## Machine-readable contract' block and asserts request/response shape against the deployed workflow JSON + fixtures. Offline (CI) by default; opt-in -Live re-POSTs golden requests behind a 404/connection SKIP gate.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "verify:self": "pwsh -NoProfile -File ./scripts/Test-Contract.ps1 -SelfTest",
+    "contract": "pwsh -NoProfile -File ./scripts/Test-Contract.ps1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
