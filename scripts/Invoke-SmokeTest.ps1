@@ -1,41 +1,58 @@
 param(
   [string]$BaseUrl = $env:N8N_API_URL,
-  [string]$WebhookPath = "webhook/portfolio/scheduled-drift-monitor"
+  [string[]]$CaseName = @("all-clear", "quality-regressed", "source-changed"),
+  [switch]$SkipConnectionCheck,
+  [switch]$SkipStaticValidation
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
-  $BaseUrl = "http://localhost:5678"
-}
-$base = $BaseUrl.TrimEnd("/")
-$webhookUrl = "$base/$($WebhookPath.TrimStart('/'))"
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 
-# Three smoke cases proving the headline behaviours offline (stub collectors), via D's on-demand webhook:
-#   all-clear         -> no drift (drift.any:false), report-only (reembedded 0)
-#   quality-regressed -> a flagged quality regression (quality.regressed:true, drift.any:true)
-#   source-changed    -> a flagged changed source (freshness.changed>=1, drift.any:true), no live write
-$cases = @(
-  @{ Name = "all-clear";         Body = '{"mode":"stub","runId":"smoke-all-clear","asOf":"2026-05-31"}' }
-  @{ Name = "quality-regressed"; Body = '{"mode":"stub","runId":"smoke-regressed","asOf":"2026-05-31","stubQuality":{"passRate":0.8}}' }
-  @{ Name = "source-changed";    Body = '{"mode":"stub","runId":"smoke-source-changed","asOf":"2026-05-31","stubSources":{"institutepm-2026":{"fingerprintNow":"deadbeef"}}}' }
-)
+# Run a smoke step and PROPAGATE its exit code. A child `exit N` MUST fail the whole smoke — the pre-fix
+# wrapper printed each case's fields then unconditionally printed "complete" + exit 0, asserting NOTHING
+# (it passed even on HTTP 500). This restores honest pass/fail.
+function Invoke-SmokeStep {
+  param(
+    [string]$Name,
+    [scriptblock]$Action
+  )
 
-Write-Host "Smoke test against $webhookUrl (D's on-demand webhook, OFFLINE stub)"
-Write-Host ""
-
-foreach ($case in $cases) {
-  Write-Host "=== $($case.Name) ==="
-  $response = Invoke-WebRequest -Uri $webhookUrl -Method Post -ContentType "application/json" -Body $case.Body -UseBasicParsing -TimeoutSec 30 -SkipHttpErrorCheck
-  Write-Host "HTTP $($response.StatusCode)"
-  try {
-    $j = $response.Content | ConvertFrom-Json -Depth 100
-    Write-Host ("driftAny={0} regressed={1} changed={2} stale={3} unreachable={4} reembedded={5} digestIntegrity={6} passed={7}" -f `
-      $j.drift.any, $j.quality.regressed, $j.freshness.changed, $j.freshness.stale, $j.freshness.unreachable, $j.freshness.reembedded, $j.digestIntegrity.passed, $j.passed)
-  } catch { Write-Host $response.Content }
-  Write-Host ""
+  Write-Host "==> $Name"
+  & $Action
+  if ($LASTEXITCODE -ne 0) {
+    [Console]::Error.WriteLine("ERROR: smoke step '$Name' failed (exit $LASTEXITCODE).")
+    exit $LASTEXITCODE
+  }
 }
 
-Write-Host "Smoke test complete."
+# Step 1 — offline static validation (no live infra needed; must pass).
+if (-not $SkipStaticValidation) {
+  Invoke-SmokeStep -Name "Offline static validation" -Action {
+    & (Join-Path $repoRoot "scripts\Invoke-StaticValidation.ps1")
+  }
+}
+
+# Step 2 — live availability gate. smoke is a LIVE-LOCAL-n8n tier check (it POSTs to a running n8n), NOT an
+# offline gate. If the live infra (running n8n + N8N_API_KEY/N8N_MCP_TOKEN) is unavailable, SKIP honestly
+# (exit 0, clearly labeled) instead of falsely reporting "passed".
+if (-not $SkipConnectionCheck) {
+  Write-Host "==> Local n8n connection check"
+  & (Join-Path $repoRoot "scripts\Test-N8nConnection.ps1")
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "SKIPPED: live smoke needs a running local n8n + N8N_API_KEY/N8N_MCP_TOKEN (see errors above). Offline static validation passed; the live behavioral cases did not run."
+    exit 0
+  }
+}
+
+# Step 3 — run the ASSERTION-BEARING Layer-2 behavioral suite over the headline drift cases (no-drift,
+# quality regression, changed source). This REPLACES the prior probe that only printed fields and exited 0
+# (asserting nothing). Delegating to the golden-fixture suite actually asserts drift flags, refresh-gating
+# (reembedded==0), and digest-integrity.
+Invoke-SmokeStep -Name "Drift behavioral suite (Layer-2 stub) cases: $($CaseName -join ', ')" -Action {
+  & (Join-Path $repoRoot "scripts\Test-DriftMonitorWorkflow.ps1") -BaseUrl $BaseUrl -CaseName $CaseName
+}
+
+Write-Host "Smoke test passed."
 exit 0
