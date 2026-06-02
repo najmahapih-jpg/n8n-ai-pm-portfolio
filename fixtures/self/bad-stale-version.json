@@ -1,0 +1,12 @@
+{
+  "description": "contractVersion is not present in the deployed workflow text (stale contract) -> only version-matches FAILs.",
+  "fakeWorkflowText": "policyVersion demo-v1.0.0 ; webhook node path webhook/demo",
+  "fakeFixtures": [ { "name": "valid-1", "keys": ["a"] } ],
+  "expectFailAssertion": "version-matches",
+  "contract": {
+    "contractVersion": "demo-v9.9.9",
+    "webhookPath": "webhook/demo",
+    "request": { "accepted": ["a"], "limits": { "bodyBytes": 1024 }, "limitsEnforcedBy": "gateway" },
+    "response": { "required": ["ok"] }
+  }
+}
