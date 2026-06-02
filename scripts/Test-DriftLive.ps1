@@ -104,6 +104,11 @@ foreach ($s in @($run.freshness.sources)) {
   $statusSummary += "$($s.sourceId)=$st"
 }
 Check -Label "every source resolved to a valid status (reachability is environment-dependent)" -Ok:$allValid -Detail ($statusSummary -join ", ")
+# UNMASK the prior false-alarm bug: live M1 has no persisted prior fingerprint, so it must NOT emit a
+# cross-run 'changed' verdict (that would be a guaranteed false positive every run). Real change-detection
+# is the host loop's job (Refresh-Sources.ps1). This fails loudly if the placeholder-fingerprint regression returns.
+$liveChanged = [int]$run.freshness.changed
+Check -Label "live M1 emits NO 'changed' verdict (no persisted baseline; change-detection is the host loop)" -Ok:($liveChanged -eq 0) -Detail "changed=$liveChanged"
 
 Write-Host ""
 Write-Host "== Digest (live Ollama prose) + DIGEST-INTEGRITY =="
