@@ -28,7 +28,7 @@ drift over time** — "eval harness → drift dashboard."
 scheduleTrigger (weekly) ┐
 manualTrigger (demo)     ┤→ Normalize Run Config (mode:"stub" default, reportOnly:true default)
 webhook (on-demand)      ┘   (webhook returns the run record; schedule emits the digest artifact)
-   → Load Prior Baseline (rolling run history)
+   → Load Prior Baseline (single prior baseline; rolling history deferred)
    → Monitor 1 · Corpus Freshness     ← serves B's RAG periodic update
        collect:  fetch B's allowlisted source URLs   (stub snapshot default / live HTTP opt-in)
        drift:    fingerprint diff + staleness → unchanged|changed|stale|unreachable
@@ -42,16 +42,22 @@ webhook (on-demand)      ┘   (webhook returns the run record; schedule emits t
 
 **The eval-gated refresh loop (the senior move):** refresh and quality are one loop — *a source drifts →
 re-embed → re-run A → did quality drift?* D does **not** blindly auto-refresh B's KB; it gates the
-refresh on an eval, so a source change that degrades answer quality is caught **before** it's trusted.
+refresh on an eval. Note: the host-side `Refresh-Sources.ps1` re-embeds into B's Supabase **before**
+the before/after eval gate runs. A quality-lowering re-embed is detected **only after** B's Supabase
+is overwritten — this is a **post-write detective control**, not a preventive one. On gate failure,
+B is left degraded; the operator must re-run B's `Ingest-Corpus.ps1` from the last-known-good corpus
+to restore. (Transactional/shadow-table staging is a deferred enhancement.)
 
 ## Three invariants (the honest core)
 
 1. **Drift-detection correctness** — flags match a *known* fixture scenario; the two failure modes
    *missed drift* (false negative) and *false alarm* (false positive) both fail loudly.
 2. **Refresh-gating** — a re-embed is reachable **only** in `mode:"live"` ∧ `reportOnly:false` ∧ a source
-   actually `changed`; in CI (always report-only) **zero** live writes occur (asserted as a negative).
-3. **Digest-integrity** — every number in the digest is recomputed from the run record, never invented by
-   the summarizer (B's *citation-integrity*, transposed to a summary).
+   actually `changed`; in CI (always report-only) **zero** live writes occur. This holds **by construction**:
+   the 21-node workflow contains no Supabase-write node; the CI assertion `reembedded == 0` is structural,
+   not a behavioral test that could fail. The only write-capable code is the host-side `Refresh-Sources.ps1`
+   (explicitly not in CI).
+3. **Digest-integrity** — enforced by two record-grounded checks: (1) the machine-appended `METRICS passRate=… changed=… …` line is recomputed from the run record; (2) any pass-rate-shaped figure (a percentage or a decimal in [0,1]) in the summarizer's prose must equal a record rate (`passRate` / `passRatePrev` / `|passRateDelta|`), so an LLM that states a passRate the data does not show causes `digestIntegrity.passed=false`. Authoritative counts live in the METRICS line; bare integers in prose are treated as context, not individually re-checked.
 
 ## Modes
 
@@ -90,25 +96,28 @@ Supabase + runs the gate.
 > **Known limitation (honest):** the fingerprint is a raw-body SHA-256, so it is sensitive to *dynamic*
 > page content (CSRF nonces, timestamps) — some sources flip to `changed` between runs even when the
 > substantive content is unchanged (observed: 3/6 of B's sources). The precision fix is to fingerprint a
-> **stable main-text extract** rather than the whole body. The loop's real safety net is the **eval gate**,
-> not fingerprint precision: even a false `changed` only triggers a re-embed that must still pass the
-> before/after quality gate before it is trusted.
+> **stable main-text extract** rather than the whole body. The eval gate is a **post-write detective
+> control**: a false `changed` triggers a re-embed into B's Supabase, and a quality regression is detected
+> only after that overwrite has occurred.
 
 ## Repo layout
 
 ```
-fixtures/requests/   behavior spec (the contract)
-fixtures/sources/    source manifest + pinned snapshots (Monitor 1 stub)   [added with v0.1.0]
-fixtures/eval/       pinned A-response snapshots (Monitor 2 stub)           [added with v0.1.0]
-fixtures/golden/     scenario fixtures (all-clear / regressed / changed / …) + expected flags
-fixtures/baseline/   the rolling baseline the run compares against
-fixtures/history/    pinned run-history snapshots (reproducible drift tests)
-docs/eval-plan.md    the testable contract
-docs/adr/            architecture decision records
-workflows/sdk/       *.workflow.js — the SOURCE OF TRUTH (compiled → canonical → released)
-scripts/             PowerShell harness (compile, sync, validate, secret-scan, tests)
-artifacts/runs/      live run digests (gitignored)
+fixtures/requests/          behavior spec (the contract)
+fixtures/sources/           host source manifest (real SHA-256 fingerprints, used by Refresh-Sources.ps1)
+fixtures/golden/            scenario fixtures (all-clear / regressed / changed / …) + expected flags
+fixtures/baseline/          placeholder for future baseline storage (currently empty)
+fixtures/history/           placeholder for future run-history snapshots (currently empty)
+docs/eval-plan.md           the testable contract
+docs/adr/                   architecture decision records
+workflows/sdk/              *.workflow.js — the SOURCE OF TRUTH (compiled → canonical → released)
+scripts/                    PowerShell harness (compile, sync, validate, secret-scan, tests)
+artifacts/runs/             live run digests (gitignored)
 ```
+
+Note: `fixtures/sources/snapshots/` and `fixtures/eval/` do not exist. The workflow's stub mode uses
+embedded `SOURCE_MANIFEST` and `PRIOR_BASELINE` constants inside the workflow itself, overridable
+per-request via `inject.stubSources` / `inject.stubQuality` / `inject.priorBaseline` / `inject.stubDigestProse`.
 
 ## Roadmap / deferred
 
@@ -119,6 +128,8 @@ artifacts/runs/      live run digests (gitignored)
 - A hosted dashboard view of the run history; automated PR of re-curated provenance.
 
 ## Status
+
+**v0.3.0 — current.** Digest-integrity now enforces a two-check prose rate guard (see invariant 3 above); live Monitor 1 reports reachability + staleness only (cross-run change-detection is the host loop `Refresh-Sources.ps1`); SSRF guard on the webhook entrypoint (caller-supplied URL overrides ignored on unauthenticated webhook); secret scanner extended to `sb_secret_…` / `sb_publishable_…` Supabase key formats. New golden scenario: `fixtures/golden/digest-fabricated-prose.json` (injects prose "通过率 0.99" while record passRate is 0.83 → `digestIntegrity.passed=false`). `verify:drift-live` asserts live M1 emits no `changed` verdict.
 
 **v0.2.0 — live-wired + fully verified.** Contract + the stub-default 21-node pipeline + the Layer-2
 suite + the opt-in **LIVE path** are all done; deployed via the n8n public REST API (no MCP; see A's
@@ -134,3 +145,17 @@ environment — reported honestly as drift). **Never touched the 5 existing work
 - [`n8n-llm-eval-harness`](../n8n-llm-eval-harness) (A) — D's quality reading comes from A's eval.
 - [`n8n-rag-knowledge-assistant`](../n8n-rag-knowledge-assistant) (B) — D keeps B's corpus fresh; B's
   ADR-0004 deferred automated refresh to D.
+
+## Open Source Health
+
+This repository includes the baseline files needed for public collaboration:
+
+- License: Apache-2.0 (`LICENSE`).
+- Contributions: `CONTRIBUTING.md`.
+- Security policy: `SECURITY.md`.
+- Security and privacy boundaries: `docs/security-boundaries.md`.
+- Workflow contract: `docs/workflow-contract.md`.
+- Conduct: `CODE_OF_CONDUCT.md`.
+- GitHub templates: `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md`.
+
+Before publishing or accepting contributions, run `npm run verify:static` and `npm run verify:json` (both offline). `npm run smoke` sends stub payloads to a **running, imported, active local n8n** instance (localhost:5678) — it is not an offline gate; run it only when a local n8n is available. Run `npm run verify:live` only when local n8n and all required credentials are configured.
