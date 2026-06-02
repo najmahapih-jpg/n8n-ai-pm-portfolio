@@ -124,3 +124,17 @@ The stub is the default on every CI path, so `verify:static` / `verify:json` / `
 - [x] Project A grades B as a black-box SUT — A's configurable `sutExtract:"abstained"` (ADR-0005 in A)
   reads B's top-level `abstained` flag and exact-matches it; B's deterministic stub answers in-corpus and
   abstains out-of-corpus, so A's `verify:connected-rag` is a reproducible **2/2 (passRate 1.0)**.
+
+## Open Source Health
+
+This repository includes the baseline files needed for public collaboration:
+
+- License: Apache-2.0 (`LICENSE`).
+- Contributions: `CONTRIBUTING.md`.
+- Security policy: `SECURITY.md`.
+- Security and privacy boundaries: `docs/security-boundaries.md`.
+- Workflow contract: `docs/workflow-contract.md`.
+- Conduct: `CODE_OF_CONDUCT.md`.
+- GitHub templates: `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md`.
+
+Before publishing or accepting contributions, run `npm run verify:static`, `npm run verify:json`, and `npm run smoke`; run `npm run verify:live` only when local n8n and required credentials are configured.
