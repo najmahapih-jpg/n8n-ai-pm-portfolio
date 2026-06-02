@@ -29,7 +29,9 @@
     'eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}'
     '[A-Za-z]:\\Users\\'
     '"\s*:\s*"/(Users|home|etc|var|tmp)/'
-    'https://[a-z0-9]{20}\.supabase\.co'
+    'sb_secret_[A-Za-z0-9_\-]{8,}'
+    'sb_publishable_[A-Za-z0-9_\-]{8,}'
+    'https://[a-z0-9\-]+\.supabase\.co'
   )
 
   RepositorySecretPatterns = @(
@@ -39,6 +41,8 @@
     'eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}'
     '[A-Za-z]:\\Users\\'
     '"\s*:\s*"/(Users|home|etc|var|tmp)/'
-    'https://[a-z0-9]{20}\.supabase\.co'
+    'sb_secret_[A-Za-z0-9_\-]{8,}'
+    'sb_publishable_[A-Za-z0-9_\-]{8,}'
+    'https://[a-z0-9\-]+\.supabase\.co'
   )
 }
