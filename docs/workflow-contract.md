@@ -43,6 +43,7 @@ Example:
 
 ## Operational Limits
 
+- NOTE: the size/string/item limits in this section are **not enforced in-workflow** (the workflow only coerces and trims inputs); they are the caps a deployment gateway should enforce in front of the public webhook.
 - Supported public JSON body size: 64 KB maximum. Deployments should reject larger payloads before invoking the workflow.
 - String limits: feedback text 8,000 characters, source/channel 64 characters, and timestamp strings 64 characters.
 - Item count: one feedback item per request. Batch classification is outside the current public contract.
