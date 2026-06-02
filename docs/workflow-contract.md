@@ -113,6 +113,38 @@ Expected status behavior:
 - Valid payloads: HTTP 200.
 - Feishu delivery failure must not hide the triage result; `feishuDelivery.status` carries the delivery outcome.
 
+## Machine-readable contract
+
+Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`) — the single machine-checkable source for this
+workflow's interface. `request.limits` are **gateway-delegated** (declared, not workflow-enforced; see
+Operational Limits above).
+
+```json
+{
+  "contractVersion": "supportops-triage-v0.3.0-local-feishu",
+  "webhookPath": "webhook/portfolio/support-triage",
+  "request": {
+    "accepted": ["customerEmail", "email", "subject", "title", "message", "description", "plan", "customerTier", "receivedAt", "source", "accountId", "customerId"],
+    "oneOfRequired": [["customerEmail", "email"], ["subject", "title"], ["message", "description"]],
+    "limits": { "bodyBytes": 65536, "subjectChars": 200, "messageChars": 8000 },
+    "limitsEnforcedBy": "gateway"
+  },
+  "response": {
+    "required": ["ok", "ticketId", "traceId", "category", "urgency", "urgencyScore", "routingTeam", "slaHours", "dueAt", "escalationRequired", "handlingPath", "auditEventId", "policyVersion", "feishuDelivery"],
+    "types": { "ok": "boolean", "category": "string", "urgency": "string", "urgencyScore": "number", "routingTeam": "string", "slaHours": "number", "escalationRequired": "boolean", "auditEventId": "string", "policyVersion": "string" }
+  },
+  "errors": [
+    { "when": "missing required field after alias normalization", "status": 400, "responseRequired": ["ok"], "okValue": false }
+  ],
+  "fixtures": {
+    "dir": "fixtures/pin-data",
+    "requestPath": "body",
+    "valid": ["support-triage-enterprise-incident.json", "support-triage-urgent-incident.json", "support-triage-billing.json", "support-triage-account-alias.json", "support-triage-bug.json", "support-triage-general.json"],
+    "errorCases": ["support-triage-missing-field.json"]
+  }
+}
+```
+
 ## External Integrations
 
 - Feishu custom bot webhook: optional outbound notification only.
