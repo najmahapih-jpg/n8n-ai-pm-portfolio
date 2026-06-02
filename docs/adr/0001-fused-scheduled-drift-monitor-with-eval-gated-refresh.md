@@ -79,15 +79,22 @@ shape: *collector → drift comparator → digest section*.
 
 **The eval-gated refresh loop (the senior move).** Refresh and quality are not two unrelated monitors —
 they are a loop: *a source drifts → re-embed → re-run A → did quality drift?* D does **not** blindly
-auto-refresh B's KB; it gates the refresh on an eval, so a source change that degrades answer quality is
-caught as drift **before** it is trusted. This is the portfolio's honest-eval discipline applied to a
-scheduled monitor.
+auto-refresh B's KB. The host-side `Refresh-Sources.ps1` re-embeds first and then runs a before/after
+eval gate, so the gate is **post-write detective, not preventive**: a refresh that lowers answer quality
+is detected and fails loudly (`exit 1`), but B's Supabase has already been overwritten — on gate failure
+the operator must re-run B's `Ingest-Corpus` from the last-known-good corpus to restore it. (A
+transactional shadow-table swap that would make this preventive is a deferred enhancement.) The default
+is report-only (zero writes); the gated `-Apply` write is a deliberate human act. This is the portfolio's
+honest-eval discipline applied to a scheduled monitor.
 
 **Digest-integrity (the new invariant).** The run produces a deterministic **run record**; the digest is
-an LLM (or stub) summary **constrained to the run record's numbers**. Every quantitative claim in the
-digest is recomputed from the record and must match — the digest cannot state a drift the data does not
-show. This is B's *citation-integrity* invariant, transposed from "answer cites a retrieved chunk" to
-"summary cites a computed metric."
+an LLM (or stub) summary constrained to the record. It is enforced in **two record-grounded checks** (the
+summarizer is never trusted): (1) the machine-appended `METRICS …` line is recomputed from the record and
+must match exactly; (2) any **pass-rate-shaped figure** (a percentage, or a decimal in [0,1]) in the
+summarizer's prose must equal a record rate — so an LLM that states a passRate the data does not show
+makes the run fail (authoritative counts live in the METRICS line; bare integers in prose are context).
+Proven by the `digest-fabricated-prose` negative scenario. This is B's *citation-integrity* invariant,
+transposed from "answer cites a retrieved chunk" to "summary cites a computed metric."
 
 **Stub-default everywhere CI touches.** Source fetch, A's eval, the LLM summary, and the Supabase
 re-embed each have a deterministic offline stub as the default; live is per-request opt-in and never
@@ -117,7 +124,7 @@ low-cost mandate. Roadmapped.
 - The source manifest's fingerprints are a snapshot — provenance is only as fresh as the last live run;
   the digest says so honestly rather than implying real-time freshness.
 
-## Implementation note (v0.1.0 skeleton → v0.2.0 live)
+## Implementation note (v0.1.0 skeleton → v0.2.0 live → v0.3.0 hardening)
 **v0.1.0** shipped the stub-default 21-node pipeline + the Layer-2 scenario suite (`all-clear`,
 `quality-regressed`, `source-changed`, `source-stale`, `source-unreachable`, `digest-must-be-real`),
 deployed as `Gjd7wma62zubk3Wy`. **v0.2.0 wired the opt-in LIVE path** behind in-code `mode:live` gates
@@ -131,7 +138,21 @@ host-side as `Refresh-Sources.ps1` (eval-before → fetch + SHA-256 fingerprint 
 `fixtures/sources/manifest.json` → `-Apply` re-embed via B's `Ingest-Corpus.ps1` → eval-after GATE so a
 refresh that lowers B's answer quality fails loudly; report-only default). Known limitation: the
 raw-body fingerprint is dynamic-content-sensitive (a stable main-text extract is the precision fix; the
-eval gate, not fingerprint precision, is the real safety net). STILL DEFERRED: Monitor 3 (feedback-theme
-drift) + the fingerprint-precision upgrade. Deploy via REST `POST /api/v1/workflows` (no n8n MCP; see A's
+eval gate, not fingerprint precision, is the primary quality guard — though it is post-write detective,
+not preventive: see "the eval-gated refresh loop" above). STILL DEFERRED: Monitor 3 (feedback-theme
+drift), the fingerprint-precision upgrade, and a transactional (shadow-table) re-embed that would make
+the eval gate preventive. Deploy via REST `POST /api/v1/workflows` (no n8n MCP; see A's
 ADR-0002); **never touch the 5 existing workflow ids** (`IhmmthDFMKdDbgvp` A · `jZ5Xfml8jbKexYqf` B ·
 `6Gc3wmri0tJre07B` product-feedback · the two others).
+
+**v0.3.0 — honest-eval hardening (review-driven).** (1) Digest-integrity now also checks the summarizer's
+PROSE: any pass-rate-shaped figure must equal a record rate, closing the gap where the integrity node
+parsed only the machine-appended METRICS line — proven by the new `digest-fabricated-prose` negative
+scenario. (2) The live Monitor-1 path no longer derives a cross-run `changed` verdict (it holds no
+persisted prior fingerprint, so the prior placeholder comparison was a guaranteed false alarm); live M1
+reports reachability + staleness only, and `verify:drift-live` asserts it emits no `changed`. Real
+cross-run change-detection remains the host loop's job (persisted SHA-256). (3) Caller-supplied URL
+overrides are ignored on the unauthenticated webhook entrypoint (SSRF guard). (4) The repository secret
+scan now covers Supabase's `sb_secret_` / `sb_publishable_` key formats. (5) Docs were narrowed to match
+the code: the eval gate is post-write detective; the workflow-level refresh-gate is structural (no write
+node), not a tested negative; documented input-size caps are gateway-delegated, not in-workflow.
