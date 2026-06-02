@@ -55,6 +55,7 @@ Example:
 
 ## Operational Limits
 
+- NOTE: the size/string/item limits in this section are **not enforced in-workflow** (the workflow only coerces and trims inputs); they are the caps a deployment gateway should enforce in front of the public webhook.
 - Supported public JSON body size: 32 KB maximum.
 - String limits: query 2,000 characters, request id 128 characters, model names 128 characters, and URL override fields 512 characters in trusted operator mode only.
 - Item count: one query per request. Batch question answering is outside the current public contract.
