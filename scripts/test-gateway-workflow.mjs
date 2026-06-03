@@ -14,6 +14,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifySignature, enforceBodySize, stripSecrets, resolveRoute } from './lib/gateway-core.mjs';
+import { createRequire } from 'node:module';
+// The deployed Code nodes load crypto via require('crypto') (n8n's external runner has no crypto global);
+// provide a real require to the sandbox so the extracted jsCode runs identically here.
+const require = createRequire(import.meta.url);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..');
@@ -36,9 +40,10 @@ const PIPELINE = [NORMALIZE, SIZE, SIGNATURE, STRIP, ROUTE, COMPOSE, BUILD];
 function runNode(name, items, env) {
   const node = nodeByName[name];
   if (!node) { throw new Error('missing Code node in compiled JSON: ' + name); }
-  // Mirror n8n's Code-node sandbox: items[], crypto (node:crypto), Buffer, $env. The body ends in `return`.
-  const fn = new Function('items', 'crypto', 'Buffer', '$env', node.parameters.jsCode);
-  return fn(items, crypto, Buffer, env);
+  // Mirror n8n's Code-node sandbox: items[], Buffer, $env, require. crypto is loaded via require('crypto')
+  // inside the nodes (matching the deployed NODE_FUNCTION_ALLOW_BUILTIN=crypto). The body ends in `return`.
+  const fn = new Function('items', 'Buffer', '$env', 'require', node.parameters.jsCode);
+  return fn(items, Buffer, env, require);
 }
 
 let pass = 0;
