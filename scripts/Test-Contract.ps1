@@ -147,6 +147,9 @@ if ($null -ne $contract -and $contract.PSObject.Properties["fixtures"]) {
   $fx = $contract.fixtures
   $fxDir = Join-Path $repo ([string]$fx.dir)
   $requestPath = if ($fx.PSObject.Properties["requestPath"]) { [string]$fx.requestPath } else { "" }
+  # ignoreKeys: top-level keys in a fixture that are TEST METADATA, not request fields (e.g. golden
+  # fixtures that carry `id` / `expectAbstain` alongside the request) — dropped before the fields check.
+  $ignoreKeys = if ($fx.PSObject.Properties["ignoreKeys"]) { @($fx.ignoreKeys | ForEach-Object { [string]$_ }) } else { @() }
   $named = @()
   if ($fx.PSObject.Properties["valid"]) { foreach ($n in @($fx.valid)) { $named += @{ name = [string]$n; isError = $false } } }
   if ($fx.PSObject.Properties["errorCases"]) { foreach ($n in @($fx.errorCases)) { $named += @{ name = [string]$n; isError = $true } } }
@@ -155,7 +158,7 @@ if ($null -ne $contract -and $contract.PSObject.Properties["fixtures"]) {
     if (-not (Test-Path -LiteralPath $fpath -PathType Leaf)) { Add-Result -Type "shape-conform" -Label "fixture exists: $($entry.name)" -Ok:$false -Detail "not found at $fpath"; continue }
     $fj = Get-Content -LiteralPath $fpath -Raw | ConvertFrom-Json -Depth 100
     $reqObj = if ($requestPath -and $fj.PSObject.Properties[$requestPath]) { $fj.$requestPath } else { $fj }
-    $keys = @($reqObj.PSObject.Properties | ForEach-Object { $_.Name })
+    $keys = @($reqObj.PSObject.Properties | ForEach-Object { $_.Name } | Where-Object { $ignoreKeys -notcontains $_ })
     $requestKeySets += @{ name = $entry.name; keys = $keys }
     if ($entry.isError) { $errorFixtures += @{ name = $entry.name; body = $reqObj } } else { $validFixtures += @{ name = $entry.name; body = $reqObj } }
   }
