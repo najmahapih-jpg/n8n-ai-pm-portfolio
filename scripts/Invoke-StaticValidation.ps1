@@ -1,6 +1,6 @@
 param(
   [int]$MinimumNodes = 10,
-  [string]$ReleaseFile = "interaction-gateway-v0.2.0.json",
+  [string]$ReleaseFile = "interaction-gateway-v0.3.0.json",
   [switch]$SkipRepositorySecretScan
 )
 
