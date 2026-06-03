@@ -96,3 +96,10 @@ JSON via `@n8n/workflow-sdk` (`parseWorkflowCode`), mirroring the drift-monitor 
   `authentication:'none'` at the n8n layer; the auth IS the in-workflow HMAC, so any origin may *attempt* a
   request but only a correctly-signed one is processed. A deployment that fronts the gateway for browsers
   should pin `allowedOrigins` to known callers. TLS, rate-limits, and replay caps remain platform-delegated.
+- **Live deployment surfaced an offline blind spot (the honest-eval payoff).** Deployed + activated via the
+  n8n REST API as id `YKT4FJmC8Xg2G9hs`; `verify:live` proves valid→200 + echoed `traceId` and tampered→401.
+  The FIRST live run failed `crypto is not defined`: n8n's **external task-runner** sandbox exposes no `crypto`
+  global, but the offline harness had injected one — so 133/133 offline was green while the workflow was
+  *undeployable*. Fixed by `require('crypto')` in the Code nodes + `NODE_FUNCTION_ALLOW_BUILTIN=crypto` on the
+  runner, and the harness now injects a real `require` so the differential still pins the deployed copy.
+  Deploy requirements: `GATEWAY_SIGNING_SECRET` + `NODE_FUNCTION_ALLOW_BUILTIN=crypto` in the **runner** env.
