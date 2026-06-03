@@ -160,3 +160,32 @@ npm run smoke
 ```
 
 `npm run verify:live` requires a local n8n runtime and MCP/API credentials.
+
+## Machine-readable contract
+
+Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are **gateway-delegated**.
+
+```json
+{
+  "contractVersion": "lead-intel-v0.1.0",
+  "webhookPath": "webhook/portfolio/lead-intelligence",
+  "request": {
+    "accepted": ["email", "workEmail", "customerEmail", "companyName", "company", "accountName", "message", "requestedProduct", "product", "interest", "intentSignals", "signals", "intent", "fullName", "title", "jobTitle", "companyDomain", "domain", "source", "channel", "industry", "country", "region", "employeeCount", "employees", "companySize", "annualRevenue", "revenue", "plan", "manualGrade", "overrideGrade", "existingLeadId", "receivedAt"],
+    "oneOfRequired": [["email", "workEmail", "customerEmail"], ["companyName", "company", "accountName"]],
+    "limits": { "bodyBytes": 65536, "messageChars": 8000 },
+    "limitsEnforcedBy": "gateway"
+  },
+  "response": {
+    "required": ["ok", "leadId", "companyName", "grade", "priorityScore", "icpFitScore", "intentScore", "route", "followUp", "auditEventId", "policyVersion"],
+    "types": { "ok": "boolean", "grade": "string", "priorityScore": "number", "policyVersion": "string" }
+  },
+  "errors": [
+    { "when": "missing required field", "status": 400, "responseRequired": ["ok"], "okValue": false }
+  ],
+  "fixtures": {
+    "dir": "fixtures/pin-data",
+    "valid": ["lead-competitor-domain.json", "lead-duplicate-domain.json", "lead-duplicate-existing-id.json", "lead-high-intent-low-fit.json", "lead-hot-enterprise.json", "lead-low-intent-newsletter.json", "lead-manual-override.json", "lead-student-low-fit.json"],
+    "errorCases": ["lead-bad-email.json", "lead-missing-company.json"]
+  }
+}
+```
