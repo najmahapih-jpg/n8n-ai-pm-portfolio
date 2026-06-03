@@ -33,7 +33,22 @@ target) so a rejection cannot leak through.
 Mirrors the digest-integrity / citation-integrity guards: build a known-good signed payload and assert
 `verifySignature` returns ok; flip one byte and assert it returns reject; feed `stripSecrets` an object
 with a planted `sb_secret_…` and assert it is removed; feed `resolveRoute` a non-allowlisted intent and
-assert rejection. This proves the four security functions actually fire (the gate can't no-op).
+assert rejection. This proves the four security functions actually fire (the gate can't no-op). It also
+asserts the fail-closed negatives (empty secret, non-finite clock) and a secret hidden in a string array.
+**Built: `scripts/test-gateway-core.mjs` (`verify:gateway`) — 20/20.**
+
+### Compiled-workflow proof (the deployed copy, not just the library) — `verify:workflow`
+n8n Code nodes cannot import `gateway-core.mjs`, so the deployed security logic is necessarily a COPY
+(inline `jsCode`). `verify:gateway` proves the *library*; `scripts/test-gateway-workflow.mjs` proves the
+*deployed workflow*: it loads the **compiled** canonical JSON, extracts each Code node's body, runs the 12
+golden scenarios through the real pipeline, **and** differentially pins the **four security gates**
+(size / signature / strip / route) to `gateway-core.mjs` on identical inputs — verdicts, reason strings,
+and the whole-body strip output. So the deployed security logic can't silently drift from the audited core
+— a divergence turns the gate red. (The two composition nodes — route-decision and response-shaping — have
+no core counterpart and are pinned by the behavioral scenarios + the per-fixture status-code assertions.)
+**Built — 133 assertions across the 13 scenarios, 0 failures, fully offline.** (The harness runs our own
+version-controlled `jsCode` via `new Function`; no untrusted input is interpolated — it is the deliberate
+"run the deployed code" pattern, not a code-injection surface.)
 
 ## Opt-in live tier (`-Live`, not in CI)
 
@@ -45,9 +60,11 @@ the deployed gateway webhook, and assert the response wraps the sibling's real t
 
 | Script | Tier | In CI |
 | --- | --- | --- |
-| `npm run verify:static` | Layer 1 | yes |
-| `npm run verify:gateway` | Layer 2 (pure functions + routing decision, offline stub) | yes |
-| `npm run verify:live` | opt-in live routing to a deployed sibling | no |
+| `npm run verify:static` | Layer 1 (PS/JSON parse, secret scan, registry, JSON shape) + both Node self-tests | yes |
+| `npm run verify:gateway` | Layer 2a — pure functions in isolation (20/20) | yes |
+| `npm run verify:workflow` | Layer 2b — the COMPILED jsCode vs the 13 golden scenarios + a differential vs the 4 security gates (133 assertions) | yes |
+| `npm run verify:json` | offline workflow-JSON shape (node floor, connections, structured secret scan) | yes |
+| `npm run verify:live` | opt-in live edge proof against the deployed gateway (signs a request; SKIPs honestly) | no |
 
 ## Invariants (the testable core)
 
