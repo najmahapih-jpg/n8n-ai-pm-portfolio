@@ -83,9 +83,9 @@ JSON via `@n8n/workflow-sdk` (`parseWorkflowCode`), mirroring the drift-monitor 
   property this ADR commits to. Honesty over expedience.
 - **The deployed copy is held to the audited core BY TEST.** n8n Code nodes can't import `gateway-core.mjs`,
   so the security logic is necessarily a copy. `scripts/test-gateway-workflow.mjs` extracts each Code node's
-  body from the *compiled* JSON, runs the 13 golden scenarios against it, **and** asserts node-output ≡
+  body from the *compiled* JSON, runs the 14 golden scenarios against it, **and** asserts node-output ≡
   core-output on identical inputs for the four security gates — verdicts, reason strings, and the whole-body
-  strip (133 assertions). A future edit that lets the n8n copy drift from the 20/20-proven library turns the
+  strip (144 assertions). A future edit that lets the n8n copy drift from the 20/20-proven library turns the
   gate red. (The harness uses `new Function` over our **own** version-controlled jsCode — no untrusted input
   is interpolated; it is the deliberate "run the deployed code" pattern.)
 - **`stripSecrets` runs over the WHOLE envelope, and security primitives fail CLOSED.** A secret-shaped
@@ -103,3 +103,25 @@ JSON via `@n8n/workflow-sdk` (`parseWorkflowCode`), mirroring the drift-monitor 
   *undeployable*. Fixed by `require('crypto')` in the Code nodes + `NODE_FUNCTION_ALLOW_BUILTIN=crypto` on the
   runner, and the harness now injects a real `require` so the differential still pins the deployed copy.
   Deploy requirements: `GATEWAY_SIGNING_SECRET` + `NODE_FUNCTION_ALLOW_BUILTIN=crypto` in the **runner** env.
+
+## Implementation note (v0.2.0, 2026-06-03) — real in-process sibling routing
+
+v0.2.0 implements the ADR's Execute-Workflow routing and proves it live. The gateway grew to **17 nodes**: after
+`resolveRoute`, an IF gate (`Live Route To Sibling?`) branches — for a **callable** target (one with a known
+`executeWorkflowTrigger` id in `TARGET_WORKFLOW_IDS`) when `mode==='live'` OR intent `gateway-selftest`, it routes
+`Prepare Sibling Input → Execute Sibling (in-process) → Merge Sibling Result → Respond`; otherwise the decision path.
+The sibling receives ONLY the secret-stripped clean payload + intent + `traceId` (never the rawBody/signature);
+`Merge Sibling Result` re-attaches the gateway metadata via `$('Prepare Sibling Input')`.
+
+- **Proven live** against `gateway-selftest-sibling` (id `yqjMTU3XHwBT8b0L`, a 3-node sub-workflow in this repo):
+  a signed `gateway-selftest` request returns `result.executed:true` with the sibling's real output; a business
+  intent (`support-triage`) returns `executed:false` (decision-only) — the gating is correct.
+- **n8n 2.x findings (caught live, in an isolated throwaway caller before touching the gateway):** (1)
+  `executeWorkflow` is **typeVersion 1.2** with a **resourceLocator** `workflowId` (`{ __rl, value, mode:'id' }`);
+  (2) a referenced sub-workflow must be **published (active)** in n8n 2.x — activating suffices even for an
+  `executeWorkflowTrigger`-only workflow.
+- **Business siblings deliberately NOT modified.** Each is on its own toolchain (e.g. support-triage uses the n8n
+  MCP); rebuilding them through the gateway's standalone compiler would risk their committed canonicals. The
+  dedicated callable sibling proves the mechanism; wiring each business sibling is the same pattern, per-repo.
+- **HTTP-to-webhook routing stays rejected** — the in-process Execute-Workflow path keeps the
+  no-secret-over-HTTP property this ADR commits to (and the payload is secret-stripped regardless).
