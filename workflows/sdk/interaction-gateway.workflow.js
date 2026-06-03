@@ -64,6 +64,7 @@ const buildDemoRequest = node({
 // Signs with the same secret the verifier reads ($env.GATEWAY_SIGNING_SECRET, else '' when unset) so the
 // demo round-trips locally without configuration. Not part of the offline suite (which drives Normalize
 // directly from golden fixtures).
+const crypto = require('crypto');
 function envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }
 const secret = envGet('GATEWAY_SIGNING_SECRET') != null ? String(envGet('GATEWAY_SIGNING_SECRET')) : '';
 const payload = { subject: 'Login button does nothing on mobile', message: 'Tapping sign-in is unresponsive on iOS Safari.' };
@@ -182,6 +183,8 @@ const verifySignature = node({
       language: 'javaScript',
       jsCode: `// Mirrors gateway-core.verifySignature: timing-safe HMAC-SHA256 over (timestamp + "." + rawBody) with
 // a replay window. The secret comes from env/credential ONLY — never from the request, never into state.
+// crypto is required (n8n's external task-runner does not expose it as a global) — deploy needs NODE_FUNCTION_ALLOW_BUILTIN=crypto.
+const crypto = require('crypto');
 const g = items[0].json.gateway;
 function envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }
 const secret = envGet('GATEWAY_SIGNING_SECRET') != null ? String(envGet('GATEWAY_SIGNING_SECRET')) : '';
@@ -225,6 +228,7 @@ const stripSecrets = node({
 // string VALUE (incl. a bare string array element) looks secret. Always runs (even on a rejected request)
 // so a secret is NEVER forwarded, echoed, or reflected into the traceId / audit. The cleaned intent + the
 // requestId-derived traceId are finalised HERE, so a secret-shaped intent/requestId cannot leak.
+const crypto = require('crypto');
 const g = items[0].json.gateway;
 const SECRET_VALUE_PATTERNS = [
   /sk-[A-Za-z0-9]{8,}/,
