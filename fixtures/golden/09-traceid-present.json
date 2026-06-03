@@ -1,0 +1,7 @@
+{
+  "id": "traceid-present",
+  "description": "Any accepted request carries a generated traceId, echoed to the response. With a requestId present the traceId is deterministically derived as gw-<requestId>.",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 65536 },
+  "request": { "intent": "rag", "payload": { "query": "what is an AI PM" }, "requestId": "req-trace-001", "timestamp": 1000000, "sign": true },
+  "expect": { "statusCode": 200, "ok": true, "routedTo": ["rag"], "traceIdNonEmpty": true, "traceId": "gw-req-trace-001" }
+}
