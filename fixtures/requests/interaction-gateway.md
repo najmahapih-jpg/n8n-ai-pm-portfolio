@@ -1,9 +1,9 @@
 # Requirement spec — interaction-gateway
 
-Status: **implemented v0.1.0** — authored eval-first (spec → eval-plan → ADR → build), then built. Date:
-2026-06-03. The security controls + routing decision are proven OFFLINE (`verify:gateway` 20/20 +
-`verify:workflow` 13 scenarios / 133 assertions incl. a differential vs the core, run against the compiled jsCode); live
-Execute-Workflow sibling execution is the opt-in next increment.
+Status: **implemented v0.2.0** — authored eval-first (spec → eval-plan → ADR → build), then built + deployed +
+live-verified. Date: 2026-06-03. The security controls are proven OFFLINE (`verify:gateway` 20/20 +
+`verify:workflow` 14 scenarios / 144 assertions incl. a differential vs the core, run against the compiled jsCode);
+**v0.2.0 implements REAL in-process Execute-Workflow sibling routing**, proven live against a callable sibling.
 
 ## Why this exists
 
