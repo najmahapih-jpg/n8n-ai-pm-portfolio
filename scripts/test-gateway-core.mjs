@@ -21,6 +21,8 @@ check('sig-tampered: body changed after signing -> 401', !verifySignature(body +
 check('sig-missing: no X-Signature -> 401', !verifySignature(body, ts, '', secret, ts).ok);
 check('sig-expired: timestamp outside replay window -> 401', !verifySignature(body, ts, sig, secret, ts + 1000, 300).ok);
 check('sig-wrong-secret -> 401', !verifySignature(body, ts, sig, 'other-secret', ts).ok);
+check('sig-empty-secret -> reject (fail closed, not forgeable)', !verifySignature(body, ts, sig, '', ts).ok);
+check('sig-nonfinite-now -> reject (fail closed, no replay bypass)', !verifySignature(body, ts, sig, secret, NaN).ok);
 
 // --- body size ---
 check('body-oversize: over cap -> 413', !enforceBodySize(body, 8).ok);
@@ -43,6 +45,8 @@ check('secret-strip: no sb_secret_ in cleaned output', !cleanStr.includes('sb_se
 check('secret-strip: no sk- token in cleaned output', !/sk-[A-Za-z0-9]{8}/.test(cleanStr));
 check('secret-strip: no Bearer token in cleaned output', !/Bearer\s+[A-Za-z0-9]/.test(cleanStr));
 check('secret-strip: non-secret field preserved', clean.payload.subject === 'hi');
+const arrDirty = stripSecrets({ notes: ['hello', 'paste sk-ABCDEFGH12345678 here'] });
+check('secret-strip: secret inside a string-array element removed', arrDirty.stripped.length >= 1 && !JSON.stringify(arrDirty.clean).includes('sk-ABCDEFGH1'), `stripped: ${arrDirty.stripped.join(', ')}`);
 
 // --- routing (SSRF-closed-by-construction) ---
 check('intent-valid -> exactly 1 target', resolveRoute('support-triage').targets.length === 1);
