@@ -196,3 +196,30 @@ npm run smoke
 ```
 
 Live gates are opt-in: `verify:judge`, `verify:connected`, `verify:connected-rag`, and `verify:bench`.
+
+## Machine-readable contract
+
+Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are **gateway-delegated**.
+
+```json
+{
+  "contractVersion": "eval-harness-v0.6.0",
+  "webhookPath": "webhook/portfolio/llm-eval-harness",
+  "request": {
+    "accepted": ["golden", "cases", "dataset", "runId", "requestedAt", "sutMode", "mode", "sutExtract", "sutModels", "judgeSource", "judgeModel", "baseline", "baselineSource", "regressionTolerance", "priceTable", "sutWebhookUrl", "sutModelUrl"],
+    "oneOfRequired": [["golden", "cases", "dataset"]],
+    "limits": { "bodyBytes": 262144, "inputChars": 8000 },
+    "limitsEnforcedBy": "gateway"
+  },
+  "response": {
+    "required": ["ok", "runId", "sutMode", "sutModels", "judgeSource", "judgeTrust", "passed", "total", "passedCount", "passRate", "perRubricMean", "perModel", "bench", "regressionDelta", "calibration", "results"],
+    "types": { "ok": "boolean", "passed": "boolean", "passRate": "number" }
+  },
+  "errors": [],
+  "fixtures": {
+    "dir": "fixtures/golden",
+    "valid": ["bench-model-slice.json", "connected-product-feedback.json", "connected-rag.json", "echo-fail.json", "echo-pass.json"],
+    "errorCases": []
+  }
+}
+```
