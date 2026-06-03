@@ -445,7 +445,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const input = items[0].json;\nconst response = {\n  ok: true,\n  ticketId: input.ticketId,\n  traceId: input.traceId,\n  category: input.category,\n  urgency: input.urgency,\n  urgencyScore: input.urgencyScore,\n  routingTeam: input.routingTeam,\n  slaHours: input.slaHours,\n  dueAt: input.dueAt,\n  escalationRequired: input.escalation.required,\n  handlingPath: input.handlingPath,\n  summary: input.subject + ' - ' + input.messagePreview,\n  auditEventId: input.auditEventId,\n  policyVersion: input.policyVersion\n};\nreturn [{ json: { statusCode: 200, response, auditEvent: input.auditEvent } }];"
+        "jsCode": "const input = items[0].json;\nconst response = {\n  ok: true,\n  ticketId: input.ticketId,\n  traceId: input.traceId,\n  category: input.category,\n  urgency: input.urgency,\n  urgencyScore: input.urgencyScore,\n  routingTeam: input.routingTeam,\n  slaHours: input.slaHours,\n  dueAt: input.dueAt,\n  escalationRequired: input.escalation.required,\n  handlingPath: input.handlingPath,\n  summary: input.subject + ' - ' + input.messagePreview,\n  auditEventId: input.auditEventId,\n  policyVersion: input.policyVersion,\n  feishuDelivery: {\n    configured: input.feishuDelivery?.configured ?? false,\n    signed: input.feishuDelivery?.signed ?? false,\n    status: input.feishuDelivery?.status ?? 'skipped',\n    statusCode: input.feishuDelivery?.statusCode ?? null,\n    reason: input.feishuDelivery?.reason ?? 'standard handling path; no Feishu notification attempted'\n  }\n};\nreturn [{ json: { statusCode: 200, response, auditEvent: input.auditEvent } }];"
       }
     },
     {
