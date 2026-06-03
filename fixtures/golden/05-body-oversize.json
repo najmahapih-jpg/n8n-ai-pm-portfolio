@@ -1,0 +1,7 @@
+{
+  "id": "body-oversize",
+  "description": "Raw body exceeds the byte cap (8 bytes) -> 413; checked BEFORE crypto; NOT routed.",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 8 },
+  "request": { "intent": "support-triage", "payload": { "subject": "this body is far larger than eight bytes" }, "timestamp": 1000000, "sign": true },
+  "expect": { "statusCode": 413, "ok": false, "notRouted": true }
+}
