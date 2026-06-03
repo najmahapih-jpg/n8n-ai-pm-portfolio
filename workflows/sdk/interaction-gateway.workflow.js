@@ -17,14 +17,14 @@ import { workflow, node, trigger, sticky, ifElse, expr } from '@n8n/workflow-sdk
 // Each gate computes its verdict in JS and only FLIPS the first failure (statusCode 401/413/422); the
 // response code lives in the Code-node output (testable offline), and the respond node merely echoes it.
 //
-// STUB-DEFAULT for the security pipeline; v0.2.0 IMPLEMENTS live Execute-Workflow sibling routing: a callable
-// target (one that exposes an executeWorkflowTrigger) is invoked IN-PROCESS (no secret over HTTP) and its real
-// result wrapped — proven live against gateway-selftest-sibling. Business intents stay decision-only until each
-// gets a trigger. SSRF is closed BY CONSTRUCTION: callers name an intent, never a URL,
+// The security pipeline runs for EVERY request; v0.3.0 routes a CALLABLE intent (one with an executeWorkflowTrigger
+// + a known id in TARGET_WORKFLOW_IDS) IN-PROCESS via a DYNAMIC Execute-Workflow (no secret over HTTP) and wraps
+// its real result — proven live against the gateway-selftest-sibling AND the real product-feedback SUT. Other
+// intents stay decision-only until wired. SSRF is closed BY CONSTRUCTION: callers name an intent, never a URL,
 // and security CONFIG (secret, body cap, replay window, live-mode) comes only from env/credential — a
 // webhook caller can neither loosen a cap nor force live routing.
 
-const POLICY_VERSION = 'interaction-gateway-v0.2.0';
+const POLICY_VERSION = 'interaction-gateway-v0.3.0';
 
 const receiveSignedRequest = trigger({
   type: 'n8n-nodes-base.webhook',
@@ -307,7 +307,7 @@ const ALLOWLIST = {
 // target -> n8n workflow id, ONLY for targets that expose an executeWorkflowTrigger (callable IN-PROCESS via
 // Execute Workflow). Business targets stay decision-only until each gets a trigger (tracked per-sibling); the
 // selftest sibling is the proven live target. Single-target live execution only in v0.2.0.
-const TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L' };
+const TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B' };
 function resolve(intent, allowlist) {
   if (!intent || typeof intent !== 'string') return { ok: false, targets: [], reason: 'missing intent' };
   const targets = allowlist[intent];
@@ -437,7 +437,7 @@ const liveRouteGate = ifElse({
         options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
         conditions: [{
           id: 'live-callable',
-          leftValue: expr('{{ $json.gateway.accepted === true && $json.gateway.targetCallable === true && ($json.gateway.mode === "live" || $json.gateway.request.intent === "gateway-selftest") }}'),
+          leftValue: expr('{{ $json.gateway.accepted === true && $json.gateway.targetCallable === true }}'),
           operator: { type: 'boolean', operation: 'true', singleValue: true },
           rightValue: true
         }],
@@ -461,12 +461,18 @@ const prepareSiblingInput = node({
 // sibling — never the rawBody, signature, or gateway internals. __gw carries the response metadata we re-attach
 // after the call (the Execute Workflow node replaces the item with the sibling's output).
 const g = items[0].json.gateway;
-return [{ json: {
+const clean = g.cleanPayload || {};
+// Shape the in-process call so DIFFERENT siblings can read it: the clean payload fields are SPREAD at top level
+// (business siblings like product-feedback read e.g. body.feedbackText), AND kept under a 'payload' key (the
+// selftest sibling reads src.payload). __targetId drives the dynamic Execute-Workflow workflowId; __gw carries
+// the response metadata re-attached after the call. Never the rawBody/signature.
+return [{ json: Object.assign({}, clean, {
+  payload: clean,
   intent: g.request.intent,
   traceId: g.traceId,
-  payload: g.cleanPayload,
+  __targetId: g.targetId,
   __gw: { traceId: g.traceId, intent: g.request.intent, routedTo: g.routedTo, policyVersion: g.policyVersion }
-} }];`
+}) }];`
     }
   }
 });
@@ -479,7 +485,7 @@ const executeSibling = node({
     position: [2580, 180],
     parameters: {
       source: 'database',
-      workflowId: { __rl: true, value: 'yqjMTU3XHwBT8b0L', mode: 'id', cachedResultName: 'Portfolio - Gateway Selftest Sibling' },
+      workflowId: { __rl: true, value: '={{ $json.__targetId }}', mode: 'id' },
       mode: 'once',
       options: {}
     }
@@ -542,9 +548,9 @@ const overview = sticky(
   'resolveRoute (fixed intent -> allowlist; callers never name a URL -> SSRF-closed) -> 422. The status code ' +
   'is decided in JS (testable offline) and the respond node only echoes it. SECURITY CONFIG (secret, body ' +
   'cap, replay window, live-mode) comes from env/credential ONLY — a webhook caller can neither loosen a cap ' +
-  'nor force live routing. v0.2.0 IMPLEMENTS live Execute-Workflow sibling routing: a callable target ' +
-  '(executeWorkflowTrigger) is invoked IN-PROCESS (no secret over HTTP) and its real result wrapped (proven ' +
-  'live vs gateway-selftest-sibling); business intents stay decision-only until wired. Every routed call + the response carry a ' +
+  'nor force live routing. v0.3.0 routes a CALLABLE intent IN-PROCESS via a DYNAMIC Execute-Workflow (no secret ' +
+  'over HTTP) and wraps its real result — proven live vs the selftest sibling AND the real product-feedback SUT; ' +
+  'non-callable intents stay decision-only. Every routed call + the response carry a ' +
   'generated traceId (the cross-workflow trace metadata the review flagged as absent). policyVersion ' +
   'interaction-gateway-v0.1.0.',
   [receiveSignedRequest, runFromUi, buildDemoRequest, normalizeRequest, enforceBodySize, verifySignature, stripSecrets, resolveRoute, routeToSiblings, buildResponse, respond],
