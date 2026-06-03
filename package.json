@@ -6,6 +6,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "verify:self": "pwsh -NoProfile -File ./scripts/Test-Contract.ps1 -SelfTest",
+    "verify:portfolio": "pwsh -NoProfile -File ./scripts/Test-PortfolioContracts.ps1",
     "contract": "pwsh -NoProfile -File ./scripts/Test-Contract.ps1"
   },
   "engines": {
