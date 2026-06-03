@@ -1,0 +1,13 @@
+{
+  "name": "n8n-interaction-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generic signed-webhook interaction gateway for the n8n Workflow-as-Code portfolio: HMAC-verifies + normalizes + secret-strips a request and routes it (Execute Workflow, no secret forwarding) to allowlisted sibling workflows by intent, with trace propagation. Design phase; pure security functions + workflow not yet implemented.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "verify:gateway": "node ./scripts/test-gateway-core.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
