@@ -1,7 +1,9 @@
 # Requirement spec — interaction-gateway
 
-Status: **design (P2)** — authored before implementation, per the portfolio's eval-first rule
-(spec → eval-plan → ADR → build). Date: 2026-06-02.
+Status: **implemented v0.1.0** — authored eval-first (spec → eval-plan → ADR → build), then built. Date:
+2026-06-03. The security controls + routing decision are proven OFFLINE (`verify:gateway` 20/20 +
+`verify:workflow` 13 scenarios / 133 assertions incl. a differential vs the core, run against the compiled jsCode); live
+Execute-Workflow sibling execution is the opt-in next increment.
 
 ## Why this exists
 
@@ -67,8 +69,11 @@ running n8n** (the stub-default offline gate). The Code nodes are thin wrappers 
 
 ## Routing model
 
-- gateway → sibling uses the **Execute Workflow** (in-process sub-workflow) pattern reused from
-  lead-intelligence — data passes n8n-internally, so **no secret forwarding over HTTP by construction**.
+- gateway → sibling uses the **Execute Workflow** (in-process sub-workflow) pattern — data passes
+  n8n-internally, so **no secret forwarding over HTTP by construction**. **v0.1.0 status:** the routing
+  **decision** (intent → allowlisted targets, with the forwarded clean payload + `traceId`) is built and
+  offline-proven; live Execute-Workflow **execution** is the opt-in next increment (each target must expose
+  an `executeWorkflowTrigger` — none do yet; HTTP-to-webhook routing was rejected to keep the no-HTTP property).
 - The allowlist is a fixed `intent → workflow` map (the known sibling ids); a caller can NEVER name an
   arbitrary URL/host.
 - **Fan-out:** an intent may map to >1 target (e.g. `feedback-then-grade` → product-feedback → eval-harness);
