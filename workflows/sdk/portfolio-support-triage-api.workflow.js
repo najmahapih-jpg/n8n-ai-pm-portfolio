@@ -897,7 +897,14 @@ const response = {
   handlingPath: input.handlingPath,
   summary: input.subject + ' - ' + input.messagePreview,
   auditEventId: input.auditEventId,
-  policyVersion: input.policyVersion
+  policyVersion: input.policyVersion,
+  feishuDelivery: {
+    configured: input.feishuDelivery?.configured ?? false,
+    signed: input.feishuDelivery?.signed ?? false,
+    status: input.feishuDelivery?.status ?? 'skipped',
+    statusCode: input.feishuDelivery?.statusCode ?? null,
+    reason: input.feishuDelivery?.reason ?? 'standard handling path; no Feishu notification attempted'
+  }
 };
 return [{ json: { statusCode: 200, response, auditEvent: input.auditEvent } }];`
     }
