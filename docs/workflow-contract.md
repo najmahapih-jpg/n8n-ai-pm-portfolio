@@ -3,13 +3,13 @@
 ## Workflow
 
 - Name: `Portfolio - Scheduled Drift Monitor`
-- Version: `0.2.0`
+- Version: `0.3.0`
 - Primary entry point: schedule trigger, weekly default
 - On-demand entry point: `POST /webhook/portfolio/scheduled-drift-monitor`
 - Editor entry point: manual trigger demo
 - Default mode: deterministic stub collectors and stub digest
 - Source of truth: `workflows/sdk/scheduled-drift-monitor.workflow.js`
-- Release snapshot: `workflows/releases/scheduled-drift-monitor-v0.2.0.json`
+- Release snapshot: `workflows/releases/scheduled-drift-monitor-v0.3.0.json`
 
 ## Purpose
 
@@ -129,7 +129,7 @@ Webhook runs return the structured run record:
   },
   "notified": false,
   "auditEventId": "audit_...",
-  "policyVersion": "scheduled-drift-monitor-v0.2.0"
+  "policyVersion": "scheduled-drift-monitor-v0.3.0"
 }
 ```
 
@@ -186,4 +186,32 @@ Opt-in live gates (require a running, imported, ACTIVE n8n):
 npm run smoke             # stub PAYLOAD, but POSTs to the live webhook — needs n8n up + workflow active
 npm run verify:live       # sync + Layer-2 behavioral suite
 npm run verify:drift-live # also needs live A / B / Ollama paths
+```
+
+## Machine-readable contract
+
+Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are **gateway-delegated**
+(declared, not workflow-enforced; see Operational Limits above).
+
+```json
+{
+  "contractVersion": "scheduled-drift-monitor-v0.3.0",
+  "webhookPath": "webhook/portfolio/scheduled-drift-monitor",
+  "request": {
+    "accepted": ["mode", "reportOnly", "monitors", "driftThreshold", "staleAfterDays", "asOf", "runId", "requestedAt", "summarySource", "stubSources", "stubQuality", "priorBaseline", "stubDigestProse", "aEvalUrl", "ragSutUrl", "ollamaChatUrl", "genModel", "userAgent", "manualExecution"],
+    "limits": { "bodyBytes": 262144 },
+    "limitsEnforcedBy": "gateway"
+  },
+  "response": {
+    "required": ["runId", "entrypoint", "asOf", "mode", "requestedMode", "reportOnly", "monitors", "freshness", "quality", "drift", "digest", "digestIntegrity", "history", "passed", "auditEvent", "policyVersion", "processedAt"],
+    "types": { "mode": "string", "reportOnly": "boolean", "passed": "boolean", "policyVersion": "string" }
+  },
+  "errors": [],
+  "fixtures": {
+    "dir": "fixtures/golden",
+    "requestPath": "request",
+    "valid": ["all-clear.json", "quality-regressed.json", "source-changed.json", "source-stale.json", "source-unreachable.json", "digest-must-be-real.json"],
+    "errorCases": []
+  }
+}
 ```
