@@ -123,3 +123,33 @@ npm run smoke
 ```
 
 Live verification requires local n8n and MCP credentials.
+
+## Machine-readable contract
+
+Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are **gateway-delegated**.
+
+```json
+{
+  "contractVersion": "feedback-intel-v0.1.0",
+  "webhookPath": "webhook/portfolio/product-feedback-intelligence",
+  "request": {
+    "accepted": ["feedbackText", "text", "message", "comment", "reportedCount", "count", "source", "channel", "submittedAt", "createdAt", "classifierMode"],
+    "oneOfRequired": [["feedbackText", "text", "message", "comment"]],
+    "limits": { "bodyBytes": 65536, "feedbackChars": 8000 },
+    "limitsEnforcedBy": "gateway"
+  },
+  "response": {
+    "required": ["ok", "status", "needsHumanReview", "feedbackId", "theme", "sentiment", "urgency", "priorityScore", "classifierSource", "safeExcerpt", "auditEventId", "policyVersion"],
+    "types": { "ok": "boolean", "needsHumanReview": "boolean", "priorityScore": "number", "policyVersion": "string" }
+  },
+  "errors": [
+    { "when": "missing feedback field", "status": 400, "responseRequired": ["ok"], "okValue": false },
+    { "when": "empty feedback text", "status": 422, "responseRequired": ["ok"], "okValue": false }
+  ],
+  "fixtures": {
+    "dir": "fixtures/pin-data",
+    "valid": ["feedback-bug-negative.json", "feedback-churn-risk.json", "feedback-feature-request.json", "feedback-low-confidence-fallback.json", "feedback-performance.json", "feedback-praise.json", "feedback-pricing.json", "feedback-prompt-injection.json", "feedback-usability.json"],
+    "errorCases": ["feedback-missing-text.json"]
+  }
+}
+```
