@@ -18,10 +18,11 @@
       "canonical": "workflows\\canonical\\product-feedback-intelligence.canonical.json",
       "release": "workflows\\releases\\product-feedback-intelligence-v0.2.0.json",
       "request": "fixtures\\requests\\product-feedback-intelligence.md",
-      "trigger": "manual + webhook",
+      "trigger": "manual + webhook + executeWorkflowTrigger (callable sub-workflow)",
       "integrations": [
         "n8n Manual Trigger",
         "n8n Webhook",
+        "n8n Execute Workflow Trigger (passthrough) -- callable IN-PROCESS by the interaction-gateway (YKT4FJmC8Xg2G9hs); feeds the SAME Normalize Feedback Payload pipeline, webhook contract unchanged",
         "Deterministic stub classifier (default)",
         "Live Ollama classifier (llama3.2:3b, per-request)",
         "Redacted audit"
@@ -49,9 +50,10 @@
         "feedback-bug-negative"
       ],
       "localOnly": true,
-      "nodeCount": 28,
+      "nodeCount": 29,
       "nodeTypes": [
         "n8n-nodes-base.code",
+        "n8n-nodes-base.executeWorkflowTrigger",
         "n8n-nodes-base.httpRequest",
         "n8n-nodes-base.if",
         "n8n-nodes-base.manualTrigger",
@@ -60,7 +62,7 @@
         "n8n-nodes-base.webhook"
       ],
       "complexity": "advanced",
-      "notes": "v0.2.0 wires a live Ollama classifier path (HTTP to host.docker.internal:11434, model llama3.2:3b), selected per request via classifierMode='ollama' and verified end-to-end. The deterministic stub remains the default so CI and the 10-fixture behavioral eval stay offline and reproducible (still 10/10). The confidence gate falls back to the keyword classifier on low-confidence or invalid model output."
+      "notes": "v0.2.0 wires a live Ollama classifier path (HTTP to host.docker.internal:11434, model llama3.2:3b), selected per request via classifierMode='ollama' and verified end-to-end. The deterministic stub remains the default so CI and the 10-fixture behavioral eval stay offline and reproducible (still 10/10). The confidence gate falls back to the keyword classifier on low-confidence or invalid model output. 2026-06-03: ADDED an executeWorkflowTrigger (passthrough) so the interaction-gateway (YKT4FJmC8Xg2G9hs) can route to this SUT IN-PROCESS via Execute Workflow (proven live: signed 'product-feedback' intent -> real theme/sentiment/urgency back). The trigger is ADDITIVE -- it feeds the same Normalize Feedback Payload node the webhook does, and the webhook contract was regression-tested after redeploy (theme=bug / theme=praise, unchanged). Canonical is now 29 nodes (28 + the trigger). DEPLOY NOTE: this repo's primary toolchain is the n8n MCP (validate_workflow/update_workflow); since no MCP was connected this session, the workflow.js was compiled via the standalone @n8n/workflow-sdk compiler (it reproduced the 28 nodes exactly, then +1 trigger) and deployed via the public REST API (PUT + activate). Re-syncing via the MCP path remains valid (the SDK source is the source of truth)."
     }
   ]
 }
