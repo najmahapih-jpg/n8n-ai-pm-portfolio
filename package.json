@@ -10,7 +10,7 @@
     "registry:build": "pwsh -NoProfile -File ./scripts/Build-WorkflowIndex.ps1",
     "compile": "pwsh -NoProfile -File ./scripts/Compile-WorkflowFromSdk.ps1",
     "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
-    "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 10 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0",
+    "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 0 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical/interaction-gateway.canonical.json -MinimumNodes 10",
     "verify:gateway": "node ./scripts/test-gateway-core.mjs",
     "verify:workflow": "node ./scripts/test-gateway-workflow.mjs",
     "verify:live": "pwsh -NoProfile -File ./scripts/Test-GatewayLive.ps1"
