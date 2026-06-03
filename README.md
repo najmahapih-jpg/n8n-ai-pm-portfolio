@@ -5,10 +5,10 @@ authenticated entry point that verifies → normalizes → routes a request to t
 so each business workflow keeps its clean JSON contract and the gateway owns the production-edge controls
 (HMAC signature, body-size cap, secret-stripping, intent allowlist, trace propagation).
 
-> **Status: implemented v0.1.0 (2026-06-03).** The SDK workflow + pure security core are built and proven
-> OFFLINE: `verify:gateway` (20/20 pure core) and `verify:workflow` (13 golden scenarios / 133 assertions incl. a differential
-> vs the core, run against the COMPILED jsCode), plus `verify:static` / `verify:json`. Live Execute-Workflow
-> sibling **execution** is the opt-in next increment; v0.1.0 proves the security controls + the routing decision.
+> **Status: implemented v0.2.0 (2026-06-03).** The SDK workflow + pure security core are built and proven
+> OFFLINE: `verify:gateway` (20/20 pure core) and `verify:workflow` (14 golden scenarios / 144 assertions incl. a differential
+> vs the core, run against the COMPILED jsCode), plus `verify:static` / `verify:json`. **v0.2.0 adds REAL
+> in-process sibling routing** (Execute Workflow) — proven live; business intents stay decision-only until wired.
 > **Deployed + live-verified 2026-06-03** (n8n id `YKT4FJmC8Xg2G9hs`, active): `verify:live` passes — valid→200 + echoed `traceId`, tampered→401.
 
 ## Why generic-signed-webhook first (not Feishu)
@@ -47,19 +47,23 @@ signature-reject · oversized-body-reject · secret-strip · non-allowlisted-int
 
 ## Status & roadmap
 
-**Done (v0.1.0):**
+**Done (v0.1.0 → v0.2.0):**
 1. ✅ The four pure functions (`scripts/lib/gateway-core.mjs`) + offline self-test (`verify:gateway`, 20/20).
-2. ✅ The SDK workflow (`workflows/sdk/interaction-gateway.workflow.js`, 12 nodes): normalize → enforceBodySize
-   → verifySignature → stripSecrets → resolveRoute → route-decision → respond, with a generated `traceId`.
-3. ✅ `verify:workflow` — runs the **compiled** jsCode against 13 golden scenarios **and** differentially pins
+2. ✅ The SDK workflow (`workflows/sdk/interaction-gateway.workflow.js`, 17 nodes): normalize → enforceBodySize
+   → verifySignature → stripSecrets → resolveRoute → (live Execute-Workflow | route-decision) → respond, with `traceId`.
+3. ✅ `verify:workflow` — runs the **compiled** jsCode against 14 golden scenarios **and** differentially pins
    the four security gates against the core (verdicts, reasons, whole-body strip), so the deployed logic can't
    silently drift. Plus `verify:static` / `verify:json`.
 4. ✅ Opt-in `verify:live` (`scripts/Test-GatewayLive.ps1`) — signs a real request to the deployed gateway,
    SKIPping honestly when n8n / the secret / the webhook is absent.
+5. ✅ **v0.2.0 — REAL in-process sibling routing.** An allowlisted intent is routed via **Execute Workflow** to a
+   callable sibling (`gateway-selftest-sibling`, id `yqjMTU3XHwBT8b0L`, in this repo) and its real result wrapped —
+   proven live (`executed:true`; the clean payload + `traceId` passed in-process, no secret over HTTP). Business
+   intents stay decision-only until each exposes an `executeWorkflowTrigger` (the same pattern, per-repo).
 
 **Deferred (next increments):**
-- Live **Execute Workflow** sibling execution (each target must expose an `executeWorkflowTrigger`; the ADR
-  rejected HTTP-to-webhook routing to preserve the no-secret-over-HTTP property) + live fan-out.
+- Wire the **business** siblings (support-triage, product-feedback, rag, eval, drift) with an `executeWorkflowTrigger`
+  each (on their own toolchains) + live fan-out (multi-target). The mechanism is proven; this is per-sibling rollout.
 - Thin Feishu/Slack/Teams inbound adapters onto this generic signed core.
 - Rate limiting (gateway/platform-delegated, documented).
 
