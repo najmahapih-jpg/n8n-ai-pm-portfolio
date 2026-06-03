@@ -725,6 +725,17 @@ const overview = sticky(
   { color: 4 }
 );
 
+// Callable as a sub-workflow by the interaction-gateway via Execute Workflow (in-process, no HTTP). Feeds the
+// SAME Normalize Feedback Payload pipeline as the webhook, so the webhook contract is unchanged. Passthrough:
+// the gateway sends { feedbackText, reportedCount?, source?, ... } directly (no `.body` wrapper, which Normalize
+// already tolerates via `source.body ?? source`). When invoked as a sub-workflow, respondToWebhook is a no-op and
+// the caller receives the last node's output (the Build*Response object carrying `.response`).
+const calledByGateway = trigger({
+  type: 'n8n-nodes-base.executeWorkflowTrigger',
+  version: 1.1,
+  config: { name: 'Called By Gateway (Execute Workflow)', position: [160, 760], parameters: { inputSource: 'passthrough' } }
+});
+
 export default workflow('product-feedback-intelligence', 'Portfolio - Product Feedback Intelligence API')
   .add(overview)
   .add(runDemoFromUi)
@@ -783,4 +794,6 @@ export default workflow('product-feedback-intelligence', 'Portfolio - Product Fe
     )
   )
   .add(receiveFeedback)
+  .to(normalizeFeedback)
+  .add(calledByGateway)
   .to(normalizeFeedback);
