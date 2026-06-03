@@ -83,9 +83,9 @@ JSON via `@n8n/workflow-sdk` (`parseWorkflowCode`), mirroring the drift-monitor 
   property this ADR commits to. Honesty over expedience.
 - **The deployed copy is held to the audited core BY TEST.** n8n Code nodes can't import `gateway-core.mjs`,
   so the security logic is necessarily a copy. `scripts/test-gateway-workflow.mjs` extracts each Code node's
-  body from the *compiled* JSON, runs the 14 golden scenarios against it, **and** asserts node-output ≡
+  body from the *compiled* JSON, runs the 15 golden scenarios against it, **and** asserts node-output ≡
   core-output on identical inputs for the four security gates — verdicts, reason strings, and the whole-body
-  strip (144 assertions). A future edit that lets the n8n copy drift from the 20/20-proven library turns the
+  strip (155 assertions). A future edit that lets the n8n copy drift from the 20/20-proven library turns the
   gate red. (The harness uses `new Function` over our **own** version-controlled jsCode — no untrusted input
   is interpolated; it is the deliberate "run the deployed code" pattern.)
 - **`stripSecrets` runs over the WHOLE envelope, and security primitives fail CLOSED.** A secret-shaped
@@ -125,3 +125,21 @@ The sibling receives ONLY the secret-stripped clean payload + intent + `traceId`
   dedicated callable sibling proves the mechanism; wiring each business sibling is the same pattern, per-repo.
 - **HTTP-to-webhook routing stays rejected** — the in-process Execute-Workflow path keeps the
   no-secret-over-HTTP property this ADR commits to (and the payload is secret-stripped regardless).
+
+## Implementation note (v0.3.0, 2026-06-03) — a real business sibling, wired
+
+v0.3.0 wires the first REAL business sibling and makes routing dynamic. `TARGET_WORKFLOW_IDS` now maps both
+`gateway-selftest-sibling` and `product-feedback` (id `6Gc3wmri0tJre07B`) to their n8n ids; the gate keys on
+**callability alone** (`accepted && targetCallable`) — a target executes iff it has a wired id — so no `mode`
+flag/restart is needed, and non-callable business intents stay decision-only. The `Execute Sibling` node's
+`workflowId` is now a **dynamic resourceLocator** (`={{ $json.__targetId }}`), and `Prepare Sibling Input`
+spreads the clean payload at top level (so business siblings read `feedbackText` etc.) while keeping a `payload`
+key (for the selftest sibling) — one shape that serves multiple sibling input contracts.
+
+- **Proven live:** a signed `product-feedback` request routes IN-PROCESS to the real SUT and returns its genuine
+  classification (`theme/sentiment/urgency/priorityScore`); the selftest sibling still works via the dynamic id.
+- **The SUT was not regressed.** product-feedback (a SUT graded by the eval harness) got the `executeWorkflowTrigger`
+  ADDITIVELY (it feeds the same `Normalize Feedback Payload` the webhook does); its webhook contract was
+  regression-tested after deploy (`theme=bug` / `theme=praise`) and is byte-unchanged. It is on the n8n-MCP
+  toolchain; since no MCP was connected this session, it was compiled via the standalone `@n8n/workflow-sdk`
+  compiler (which reproduced its 28 nodes exactly before the +1 trigger) and deployed via REST PUT.
