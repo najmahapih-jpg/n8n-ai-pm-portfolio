@@ -5,10 +5,11 @@ authenticated entry point that verifies → normalizes → routes a request to t
 so each business workflow keeps its clean JSON contract and the gateway owns the production-edge controls
 (HMAC signature, body-size cap, secret-stripping, intent allowlist, trace propagation).
 
-> **Status: implemented v0.2.0 (2026-06-03).** The SDK workflow + pure security core are built and proven
-> OFFLINE: `verify:gateway` (20/20 pure core) and `verify:workflow` (14 golden scenarios / 144 assertions incl. a differential
-> vs the core, run against the COMPILED jsCode), plus `verify:static` / `verify:json`. **v0.2.0 adds REAL
-> in-process sibling routing** (Execute Workflow) — proven live; business intents stay decision-only until wired.
+> **Status: implemented v0.3.0 (2026-06-03).** The SDK workflow + pure security core are built and proven
+> OFFLINE: `verify:gateway` (20/20 pure core) and `verify:workflow` (15 golden scenarios / 155 assertions incl. a differential
+> vs the core, run against the COMPILED jsCode), plus `verify:static` / `verify:json`. **v0.3.0 routes a callable
+> intent IN-PROCESS via dynamic Execute Workflow to TWO live siblings — incl. the REAL product-feedback SUT**
+> (`executed:true`, theme/sentiment/urgency back); non-callable intents stay decision-only.
 > **Deployed + live-verified 2026-06-03** (n8n id `YKT4FJmC8Xg2G9hs`, active): `verify:live` passes — valid→200 + echoed `traceId`, tampered→401.
 
 ## Why generic-signed-webhook first (not Feishu)
@@ -51,7 +52,7 @@ signature-reject · oversized-body-reject · secret-strip · non-allowlisted-int
 1. ✅ The four pure functions (`scripts/lib/gateway-core.mjs`) + offline self-test (`verify:gateway`, 20/20).
 2. ✅ The SDK workflow (`workflows/sdk/interaction-gateway.workflow.js`, 17 nodes): normalize → enforceBodySize
    → verifySignature → stripSecrets → resolveRoute → (live Execute-Workflow | route-decision) → respond, with `traceId`.
-3. ✅ `verify:workflow` — runs the **compiled** jsCode against 14 golden scenarios **and** differentially pins
+3. ✅ `verify:workflow` — runs the **compiled** jsCode against 15 golden scenarios **and** differentially pins
    the four security gates against the core (verdicts, reasons, whole-body strip), so the deployed logic can't
    silently drift. Plus `verify:static` / `verify:json`.
 4. ✅ Opt-in `verify:live` (`scripts/Test-GatewayLive.ps1`) — signs a real request to the deployed gateway,
