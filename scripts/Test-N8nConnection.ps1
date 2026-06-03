@@ -69,8 +69,12 @@ if (-not $SkipApiCheck) {
       }
     } catch {
       $statusCode = $null
-      if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
-        $statusCode = [int]$_.Exception.Response.StatusCode
+      # StrictMode-safe: a connection-refused error (HttpRequestException) has no `.Response` property, so
+      # accessing it directly throws "property 'Response' cannot be found". Probe it inside try/catch.
+      $exResponse = $null
+      try { $exResponse = $_.Exception.Response } catch { $exResponse = $null }
+      if ($exResponse -and $exResponse.StatusCode) {
+        $statusCode = [int]$exResponse.StatusCode
       }
       if ($statusCode) {
         Add-Failure "n8n API key check failed with HTTP $statusCode."
