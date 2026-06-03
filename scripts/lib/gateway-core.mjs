@@ -25,11 +25,17 @@ const SECRET_KEY_NAMES = /(secret|token|apikey|api_key|password|signingsecret|we
 
 // (1) verifySignature — timing-safe HMAC-SHA256 over `timestamp + "." + rawBody`, with a replay window.
 export function verifySignature(rawBody, timestamp, signatureHeader, secret, nowSeconds, windowSeconds = 300) {
+  // Fail CLOSED on the controls the whole design rests on: an unset secret (HMAC with an empty key is a
+  // valid construction an attacker can forge) and a non-finite clock (Math.abs(NaN) > w is false, which
+  // would otherwise SKIP the replay check and accept an ancient signature).
+  if (secret === undefined || secret === null || secret === '') return { ok: false, reason: 'gateway secret not configured' };
   if (!signatureHeader) return { ok: false, reason: 'missing signature' };
   if (timestamp === undefined || timestamp === null || timestamp === '') return { ok: false, reason: 'missing timestamp' };
   const ts = Number(timestamp);
   if (!Number.isFinite(ts)) return { ok: false, reason: 'bad timestamp' };
-  if (Math.abs(Number(nowSeconds) - ts) > windowSeconds) return { ok: false, reason: 'expired timestamp (replay window)' };
+  const now = Number(nowSeconds);
+  if (!Number.isFinite(now)) return { ok: false, reason: 'bad now' };
+  if (Math.abs(now - ts) > windowSeconds) return { ok: false, reason: 'expired timestamp (replay window)' };
   const expected = 'sha256=' + crypto.createHmac('sha256', String(secret)).update(ts + '.' + String(rawBody)).digest('hex');
   const a = Buffer.from(String(signatureHeader));
   const b = Buffer.from(expected);
@@ -48,11 +54,19 @@ export function enforceBodySize(rawBody, maxBytes) {
 export function stripSecrets(obj, valuePatterns = SECRET_VALUE_PATTERNS, keyNames = SECRET_KEY_NAMES) {
   const stripped = [];
   function walk(node, path) {
-    if (Array.isArray(node)) return node.map((v, i) => walk(v, `${path}[${i}]`));
+    if (Array.isArray(node)) return node.map((v, i) => {
+      const itemPath = `${path}[${i}]`;
+      // a secret can hide in a bare string array element (e.g. payload.notes[1]), not only in a property value
+      if (typeof v === 'string' && valuePatterns.some((p) => p.test(v))) { stripped.push(itemPath); return '[stripped]'; }
+      return walk(v, itemPath);
+    });
     if (node && typeof node === 'object') {
       const out = {};
       for (const [k, v] of Object.entries(node)) {
         const keyPath = path ? `${path}.${k}` : k;
+        // a secret can also hide in the KEY position (e.g. { "sk-…": "x" }) and would otherwise be reflected
+        // back via Object.keys(...) (forwardedPayloadKeys). Redact the whole entry under a sanitized key.
+        if (valuePatterns.some((p) => p.test(k))) { stripped.push((path ? `${path}.` : '') + '[stripped-key]'); out['[stripped-key]'] = '[stripped]'; continue; }
         if (keyNames.test(k)) { stripped.push(keyPath); out[k] = '[stripped]'; continue; }
         if (typeof v === 'string' && valuePatterns.some((p) => p.test(v))) { stripped.push(keyPath); out[k] = '[stripped]'; continue; }
         out[k] = walk(v, keyPath);
