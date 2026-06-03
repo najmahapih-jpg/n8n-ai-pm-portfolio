@@ -1,6 +1,6 @@
 # ADR-0001 — A generic, signed-webhook interaction gateway with a pure-function security core
 
-Date: 2026-06-02 · Status: Accepted (design phase, pre-implementation)
+Date: 2026-06-02 (implementation note 2026-06-03) · Status: Accepted; **implemented v0.1.0**
 
 ## Context
 
@@ -59,6 +59,40 @@ routing depends on sibling workflows being deployed + active.
 ## Adoption sequence
 
 1. Build the four pure functions + their offline assertions (the hard-acceptance negatives).
-2. Build the 21-ish node workflow (verify → size → strip → resolve-route → Execute-Workflow(s) → respond).
+2. Build the 21-ish node workflow (verify → size → strip → resolve-route → Execute-Workflow(s) → respond). *(Superseded by the Implementation Note below: built as a 12-node linear pipeline, decision-only routing, size-before-signature.)*
 3. Wire `verify:static` / `verify:gateway` (offline) + opt-in `verify:live` (routes to a live sibling).
 4. Later: thin Feishu/Slack inbound adapters that translate onto this generic signed core.
+
+## Implementation note (v0.1.0, 2026-06-03)
+
+Built as a **12-node** SDK workflow (`workflows/sdk/interaction-gateway.workflow.js`), compiled to canonical
+JSON via `@n8n/workflow-sdk` (`parseWorkflowCode`), mirroring the drift-monitor toolchain.
+
+- **Pipeline order is size-before-signature** (the decision above listed signature first): an oversized body
+  is rejected (413) *before* spending crypto. Each gate computes its verdict in JS and only the first failure
+  flips the status (401/413/422); the `respondToWebhook` node merely echoes the JS-decided `statusCode`, so
+  the contract-critical codes are proven offline, independent of n8n's live respond plumbing.
+- **A linear pipeline, not IF-gated branches.** Because the status is decided in JS, the response needs no
+  runtime branch; an IF-gated live-vs-stub split is a future increment. This keeps the workflow inspectable
+  without decorative dead nodes.
+- **Routing is a DECISION in v0.1.0, not execution.** The eval-plan Layer-2 scope ("pure functions + routing
+  decision, NO sibling execution") is fully met and offline-proven. Live **Execute Workflow** execution is
+  deferred because **no current sibling exposes an `executeWorkflowTrigger`** (they are webhook-triggered);
+  adding one per target is a small, separate increment. **HTTP-to-webhook routing was rejected** even though
+  it would "work" sooner — it would forward over HTTP and break the *no-secret-over-HTTP-by-construction*
+  property this ADR commits to. Honesty over expedience.
+- **The deployed copy is held to the audited core BY TEST.** n8n Code nodes can't import `gateway-core.mjs`,
+  so the security logic is necessarily a copy. `scripts/test-gateway-workflow.mjs` extracts each Code node's
+  body from the *compiled* JSON, runs the 13 golden scenarios against it, **and** asserts node-output ≡
+  core-output on identical inputs for the four security gates — verdicts, reason strings, and the whole-body
+  strip (133 assertions). A future edit that lets the n8n copy drift from the 20/20-proven library turns the
+  gate red. (The harness uses `new Function` over our **own** version-controlled jsCode — no untrusted input
+  is interpolated; it is the deliberate "run the deployed code" pattern.)
+- **`stripSecrets` runs over the WHOLE envelope, and security primitives fail CLOSED.** A secret-shaped
+  `intent`/`requestId` (client-controlled, echoed/reflected into the trace id + audit) is redacted before
+  use; an unset signing secret or a non-finite clock is a hard reject (an empty HMAC key is forgeable, and
+  `Math.abs(NaN) > w` would otherwise skip the replay check). These are pinned by negative self-tests.
+- **Open CORS is an intentional trade-off for a signed M2M edge.** The webhook sets `allowedOrigins:'*'` +
+  `authentication:'none'` at the n8n layer; the auth IS the in-workflow HMAC, so any origin may *attempt* a
+  request but only a correctly-signed one is processed. A deployment that fronts the gateway for browsers
+  should pin `allowedOrigins` to known callers. TLS, rate-limits, and replay caps remain platform-delegated.
