@@ -2,10 +2,21 @@
   "name": "n8n-interaction-gateway",
   "version": "0.1.0",
   "private": true,
-  "description": "Generic signed-webhook interaction gateway for the n8n Workflow-as-Code portfolio: HMAC-verifies + normalizes + secret-strips a request and routes it (Execute Workflow, no secret forwarding) to allowlisted sibling workflows by intent, with trace propagation. Design phase; pure security functions + workflow not yet implemented.",
+  "description": "Generic signed-webhook interaction gateway for the n8n Workflow-as-Code portfolio: one authenticated POST edge that HMAC-verifies, size-limits, secret-strips, and routes a request by allowlisted intent to sibling workflow(s), with trace propagation. v0.1.0 ships the SDK workflow + pure security core, with the security controls + routing DECISION proven OFFLINE (verify:gateway 17/17 + verify:workflow 9 scenarios incl. a differential vs the core). Live Execute-Workflow sibling execution is opt-in (requires each target to expose an executeWorkflowTrigger).",
   "license": "Apache-2.0",
+  "type": "module",
   "scripts": {
-    "verify:gateway": "node ./scripts/test-gateway-core.mjs"
+    "hooks:install": "pwsh -NoProfile -File ./scripts/Install-GitHooks.ps1",
+    "registry:build": "pwsh -NoProfile -File ./scripts/Build-WorkflowIndex.ps1",
+    "compile": "pwsh -NoProfile -File ./scripts/Compile-WorkflowFromSdk.ps1",
+    "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
+    "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 10 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0",
+    "verify:gateway": "node ./scripts/test-gateway-core.mjs",
+    "verify:workflow": "node ./scripts/test-gateway-workflow.mjs",
+    "verify:live": "pwsh -NoProfile -File ./scripts/Test-GatewayLive.ps1"
+  },
+  "dependencies": {
+    "@n8n/workflow-sdk": "0.15.1"
   },
   "engines": {
     "node": ">=20"
