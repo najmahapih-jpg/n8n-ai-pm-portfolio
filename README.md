@@ -9,6 +9,7 @@ so each business workflow keeps its clean JSON contract and the gateway owns the
 > OFFLINE: `verify:gateway` (20/20 pure core) and `verify:workflow` (13 golden scenarios / 133 assertions incl. a differential
 > vs the core, run against the COMPILED jsCode), plus `verify:static` / `verify:json`. Live Execute-Workflow
 > sibling **execution** is the opt-in next increment; v0.1.0 proves the security controls + the routing decision.
+> **Deployed + live-verified 2026-06-03** (n8n id `YKT4FJmC8Xg2G9hs`, active): `verify:live` passes — valid→200 + echoed `traceId`, tampered→401.
 
 ## Why generic-signed-webhook first (not Feishu)
 
@@ -61,5 +62,20 @@ signature-reject · oversized-body-reject · secret-strip · non-allowlisted-int
   rejected HTTP-to-webhook routing to preserve the no-secret-over-HTTP property) + live fan-out.
 - Thin Feishu/Slack/Teams inbound adapters onto this generic signed core.
 - Rate limiting (gateway/platform-delegated, documented).
+
+## Deploying
+
+Deployed via the n8n public REST API (`POST /api/v1/workflows` + `/activate`), like the sibling projects — it
+creates a NEW workflow id (never touching existing ones). Two runtime requirements, because this n8n runs JS
+Code nodes in an **external task-runner**:
+
+1. **`GATEWAY_SIGNING_SECRET`** must be set in the **runner's** environment (where the Code nodes execute),
+   not only the main n8n process. The client signs with the same value.
+2. **`NODE_FUNCTION_ALLOW_BUILTIN=crypto`** — the Code nodes `require('crypto')` for HMAC; the runner sandbox
+   blocks `require` by default (the first live run failed `crypto is not defined`, which offline could not catch).
+
+Both are set on the `n8n` and `n8n-runners` services in the n8n docker-compose. `verify:live`
+(`scripts/Test-GatewayLive.ps1`) signs a real request and asserts valid→200 + `traceId` and tampered→401,
+SKIPping honestly (exit 0, labeled) when n8n / the secret / the webhook is absent.
 
 License: Apache-2.0.
