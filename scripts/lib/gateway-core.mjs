@@ -10,7 +10,8 @@ export const DEFAULT_ALLOWLIST = {
   'rag': ['rag'],
   'eval': ['eval-harness'],
   'drift': ['scheduled-drift-monitor'],
-  'feedback-then-grade': ['product-feedback', 'eval-harness']
+  'feedback-then-grade': ['product-feedback', 'eval-harness'],
+  'gateway-selftest': ['gateway-selftest-sibling']
 };
 
 // Default secret patterns (value-side) + sensitive key names (key-side). Mirrors the portfolio scanner.
