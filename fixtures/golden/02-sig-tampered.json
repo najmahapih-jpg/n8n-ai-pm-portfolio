@@ -1,0 +1,7 @@
+{
+  "id": "sig-tampered",
+  "description": "Body changed AFTER signing (rawBody no longer matches the signed bytes) -> 401; request NOT routed.",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 65536 },
+  "request": { "intent": "support-triage", "payload": { "subject": "legit" }, "timestamp": 1000000, "sign": true, "tamperAfterSign": " " },
+  "expect": { "statusCode": 401, "ok": false, "notRouted": true, "traceIdNonEmpty": true }
+}
