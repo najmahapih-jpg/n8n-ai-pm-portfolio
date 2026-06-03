@@ -1,0 +1,303 @@
+{
+  "id": "interaction-gateway",
+  "name": "Portfolio - Interaction Gateway",
+  "nodes": [
+    {
+      "id": "ded7f6f8-b7ed-4495-aa38-6bd9f54fcf3c",
+      "name": "Sticky Note ded7f6f8",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        130,
+        270
+      ],
+      "parameters": {
+        "content": "## Interaction Gateway v0.1.0 (generic SIGNED-webhook edge; stub-default + opt-in live). One authenticated POST entry point that VERIFIES -> SIZE-LIMITS -> SECRET-STRIPS -> ROUTES a request to allowlisted sibling workflow(s) by INTENT, so each business workflow keeps its clean JSON contract and the gateway owns the production-edge controls. The four security functions are the single source of truth in scripts/lib/gateway-core.mjs (verify:gateway 20/20); the Code nodes here MIRROR them inline, and scripts/test-gateway-workflow.mjs extracts the COMPILED Code-node bodies, runs 13 golden scenarios, and differentially pins the four security gates (size/signature/strip/route — verdicts, reasons, whole-body strip) to the .mjs, so the deployed security logic cannot silently drift. Pipeline order is size-before-signature on purpose (reject an oversized body before spending crypto): enforceBodySize -> 413, verifySignature (timing-safe HMAC over timestamp + \".\" + rawBody + replay window) -> 401, stripSecrets (key-name + value-pattern redaction; never forwarded/echoed/logged), resolveRoute (fixed intent -> allowlist; callers never name a URL -> SSRF-closed) -> 422. The status code is decided in JS (testable offline) and the respond node only echoes it. SECURITY CONFIG (secret, body cap, replay window, live-mode) comes from env/credential ONLY — a webhook caller can neither loosen a cap nor force live routing. STUB-DEFAULT: v0.1.0 proves verify + size + strip + the ROUTING DECISION offline; live Execute-Workflow sibling execution (in-process, no secret over HTTP) is the opt-in next increment (requires each target to expose an executeWorkflowTrigger). Every routed call + the response carry a generated traceId (the cross-workflow trace metadata the review flagged as absent). policyVersion interaction-gateway-v0.1.0.",
+        "color": 4,
+        "width": 2460,
+        "height": 500
+      }
+    },
+    {
+      "id": "00344872-da0a-47b5-af9a-cf7bf27baed0",
+      "name": "Receive Signed Request (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        180,
+        320
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/interaction-gateway",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true,
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "8378716e-46d9-4b1e-9180-688e6409a295"
+    },
+    {
+      "id": "26b8aea8-feb7-479f-8f82-81bfd744c4ef",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Parse the signed envelope and initialise the gateway state. SECURITY CONFIG is read from env only\n// (never the untrusted body): a webhook caller cannot loosen the body cap, widen the replay window, or\n// force live routing. The shared secret is NEVER copied into the state object (so it is never echoed/logged).\nconst src = items[0].json || {};\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nfunction hget(h, name){ if (!h) return undefined; const lower = name.toLowerCase(); for (const k of Object.keys(h)) { if (k.toLowerCase() === lower) return h[k]; } return undefined; }\nfunction num(v, d){ const n = Number(v); return Number.isFinite(n) ? n : d; }\n\nconst isDemo = src.__demo === true;\nconst entrypoint = isDemo ? 'manual' : 'webhook';\nconst headers = src.headers || {};\n// Exact-bytes rawBody for HMAC: prefer n8n's raw body; if the webhook delivered the body as an unparsed\n// STRING (e.g. a text/plain post so n8n preserves the exact signed bytes), use it verbatim; only as a last\n// resort re-serialize a parsed object (which a signer must then match). See docs/security-boundaries.md.\nlet rawBody;\nif (typeof src.rawBody === 'string') { rawBody = src.rawBody; }\nelse if (typeof src.body === 'string') { rawBody = src.body; }\nelse if (src.body != null) { rawBody = JSON.stringify(src.body); }\nelse { rawBody = ''; }\nlet body = {};\ntry { body = (src.body && typeof src.body === 'object') ? src.body : JSON.parse(rawBody || '{}'); } catch (e) { body = {}; }\n\nconst timestamp = hget(headers, 'x-timestamp');\nconst signatureHeader = hget(headers, 'x-signature') || '';\nconst maxBytes = num(envGet('GATEWAY_MAX_BODY_BYTES'), 65536);\nconst windowSeconds = num(envGet('GATEWAY_REPLAY_WINDOW_SECONDS'), 300);\nconst now = num(envGet('GATEWAY_NOW_SECONDS'), Math.floor(Date.now() / 1000));\nconst mode = String(envGet('GATEWAY_MODE') || '').toLowerCase() === 'live' ? 'live' : 'stub';\n\nconst intent = (body && typeof body.intent === 'string') ? body.intent : '';\nconst requestId = (body && typeof body.requestId === 'string' && body.requestId) ? body.requestId : '';\nconst payload = (body && typeof body.payload === 'object' && body.payload) ? body.payload : {};\n\n// intent / requestId / payload are UNTRUSTED here. The Strip node strips the WHOLE envelope (g.body) and\n// finalises the ECHOED intent + the traceId from the CLEANED values, so a secret-shaped intent or requestId\n// can never be reflected into the response, the audit event, or the trace id. traceId + cleanPayload are\n// therefore deferred to Strip (set to '' / {} here).\nconst gateway = {\n  policyVersion: 'interaction-gateway-v0.1.0',\n  traceId: '',\n  entrypoint: entrypoint,\n  mode: mode,\n  config: { maxBytes: maxBytes, windowSeconds: windowSeconds },\n  request: { intent: intent, requestId: requestId },\n  body: body,\n  rawBody: rawBody,\n  timestamp: (timestamp == null ? '' : String(timestamp)),\n  signatureHeader: String(signatureHeader),\n  payload: payload,\n  now: now,\n  accepted: true,\n  statusCode: 200,\n  error: null,\n  stages: {},\n  routedTo: [],\n  stripped: [],\n  cleanPayload: {}\n};\nreturn [{ json: { gateway: gateway } }];"
+      }
+    },
+    {
+      "id": "86a231cf-73d9-4278-88c4-2f1c2b38ecec",
+      "name": "Enforce Body Size (413)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Mirrors gateway-core.enforceBodySize. Runs FIRST so an oversized body is rejected before crypto.\nconst g = items[0].json.gateway;\nconst bytes = Buffer.byteLength(g.rawBody == null ? '' : g.rawBody, 'utf8');\ng.stages.size = { ok: bytes <= g.config.maxBytes, bytes: bytes };\nif (g.accepted && bytes > g.config.maxBytes) {\n  g.accepted = false;\n  g.statusCode = 413;\n  g.error = 'payload too large: ' + bytes + ' bytes exceeds cap ' + g.config.maxBytes;\n}\nreturn [{ json: { gateway: g } }];"
+      }
+    },
+    {
+      "id": "d29df74d-0a04-4367-a17e-3826aa9d1f5c",
+      "name": "Verify Signature (401)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Mirrors gateway-core.verifySignature: timing-safe HMAC-SHA256 over (timestamp + \".\" + rawBody) with\n// a replay window. The secret comes from env/credential ONLY — never from the request, never into state.\nconst g = items[0].json.gateway;\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nconst secret = envGet('GATEWAY_SIGNING_SECRET') != null ? String(envGet('GATEWAY_SIGNING_SECRET')) : '';\nfunction verify(rawBody, timestamp, signatureHeader, secret, nowSeconds, windowSeconds) {\n  if (secret === undefined || secret === null || secret === '') return { ok: false, reason: 'gateway secret not configured' };\n  if (!signatureHeader) return { ok: false, reason: 'missing signature' };\n  if (timestamp === undefined || timestamp === null || timestamp === '') return { ok: false, reason: 'missing timestamp' };\n  const ts = Number(timestamp);\n  if (!Number.isFinite(ts)) return { ok: false, reason: 'bad timestamp' };\n  const now = Number(nowSeconds);\n  if (!Number.isFinite(now)) return { ok: false, reason: 'bad now' };\n  if (Math.abs(now - ts) > windowSeconds) return { ok: false, reason: 'expired timestamp (replay window)' };\n  const expected = 'sha256=' + crypto.createHmac('sha256', String(secret)).update(ts + '.' + String(rawBody)).digest('hex');\n  const a = Buffer.from(String(signatureHeader));\n  const b = Buffer.from(expected);\n  if (a.length !== b.length) return { ok: false, reason: 'signature mismatch' };\n  return crypto.timingSafeEqual(a, b) ? { ok: true, reason: 'ok' } : { ok: false, reason: 'signature mismatch' };\n}\nconst v = verify(g.rawBody, g.timestamp, g.signatureHeader, secret, g.now, g.config.windowSeconds);\ng.stages.signature = { ok: v.ok, reason: v.reason };\nif (g.accepted && !v.ok) {\n  g.accepted = false;\n  g.statusCode = 401;\n  g.error = 'unauthorized: ' + v.reason;\n}\nreturn [{ json: { gateway: g } }];"
+      }
+    },
+    {
+      "id": "2e598a14-e1f2-4f38-b766-9b3649dc3b70",
+      "name": "Strip Secrets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Mirrors gateway-core.stripSecrets, run over the WHOLE envelope. Redacts any field whose KEY name or\n// string VALUE (incl. a bare string array element) looks secret. Always runs (even on a rejected request)\n// so a secret is NEVER forwarded, echoed, or reflected into the traceId / audit. The cleaned intent + the\n// requestId-derived traceId are finalised HERE, so a secret-shaped intent/requestId cannot leak.\nconst g = items[0].json.gateway;\nconst SECRET_VALUE_PATTERNS = [\n  /sk-[A-Za-z0-9]{8,}/,\n  /sb_secret_[A-Za-z0-9_-]{8,}/,\n  /sb_publishable_[A-Za-z0-9_-]{8,}/,\n  /Bearer\\s+[A-Za-z0-9._-]{10,}/i,\n  /eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}/\n];\nconst SECRET_KEY_NAMES = /(secret|token|apikey|api_key|password|signingsecret|webhookurl|authorization|credential)/i;\nfunction valueIsSecret(s) { return typeof s === 'string' && SECRET_VALUE_PATTERNS.some(function (p) { return p.test(s); }); }\nfunction strip(obj) {\n  const stripped = [];\n  function walk(node, path) {\n    if (Array.isArray(node)) return node.map(function (v, i) {\n      const itemPath = path + '[' + i + ']';\n      if (valueIsSecret(v)) { stripped.push(itemPath); return '[stripped]'; }\n      return walk(v, itemPath);\n    });\n    if (node && typeof node === 'object') {\n      const out = {};\n      for (const entry of Object.entries(node)) {\n        const k = entry[0];\n        const v = entry[1];\n        const keyPath = path ? path + '.' + k : k;\n        if (valueIsSecret(k)) { stripped.push((path ? path + '.' : '') + '[stripped-key]'); out['[stripped-key]'] = '[stripped]'; continue; }\n        if (SECRET_KEY_NAMES.test(k)) { stripped.push(keyPath); out[k] = '[stripped]'; continue; }\n        if (valueIsSecret(v)) { stripped.push(keyPath); out[k] = '[stripped]'; continue; }\n        out[k] = walk(v, keyPath);\n      }\n      return out;\n    }\n    return node;\n  }\n  return { clean: walk(obj, ''), stripped: stripped };\n}\nconst r = strip(g.body || {});\ng.body = r.clean;\ng.cleanBody = r.clean;\ng.stripped = r.stripped;\ng.request.intent = (typeof r.clean.intent === 'string') ? r.clean.intent : '';\ng.request.requestId = (typeof r.clean.requestId === 'string') ? r.clean.requestId : '';\ng.cleanPayload = (r.clean.payload && typeof r.clean.payload === 'object') ? r.clean.payload : {};\ng.payload = g.cleanPayload;\nconst safeRequestId = /^[A-Za-z0-9._-]{1,64}$/.test(g.request.requestId) ? g.request.requestId : '';\ng.traceId = 'gw-' + (safeRequestId ? safeRequestId : crypto.createHash('sha256').update(String(g.now) + '.' + String(g.rawBody)).digest('hex').slice(0, 16));\ng.stages.strip = { strippedCount: r.stripped.length };\nreturn [{ json: { gateway: g } }];"
+      }
+    },
+    {
+      "id": "6770e871-db9c-437f-b292-60b38f40457e",
+      "name": "Resolve Route (422)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Mirrors gateway-core.resolveRoute: map an intent to 1+ allowlisted sibling targets; reject unknown /\n// non-allowlisted. Callers never supply a URL/host (SSRF-closed by construction). A multi-target intent\n// (feedback-then-grade) is a fan-out composition.\nconst g = items[0].json.gateway;\nconst ALLOWLIST = {\n  'support-triage': ['support-triage'],\n  'product-feedback': ['product-feedback'],\n  'rag': ['rag'],\n  'eval': ['eval-harness'],\n  'drift': ['scheduled-drift-monitor'],\n  'feedback-then-grade': ['product-feedback', 'eval-harness']\n};\nfunction resolve(intent, allowlist) {\n  if (!intent || typeof intent !== 'string') return { ok: false, targets: [], reason: 'missing intent' };\n  const targets = allowlist[intent];\n  if (!Array.isArray(targets) || targets.length === 0) return { ok: false, targets: [], reason: 'non-allowlisted intent: ' + intent };\n  return { ok: true, targets: targets.slice(), reason: 'ok' };\n}\nconst r = resolve(g.request.intent, ALLOWLIST);\ng.stages.route = { ok: r.ok, reason: r.reason };\nif (g.accepted) {\n  if (r.ok) {\n    g.routedTo = r.targets;\n  } else {\n    g.accepted = false;\n    g.statusCode = 422;\n    g.error = 'unprocessable: ' + r.reason;\n    g.routedTo = [];\n  }\n}\nreturn [{ json: { gateway: g } }];"
+      }
+    },
+    {
+      "id": "97589c0a-520d-47d8-8473-db3314d11003",
+      "name": "Route To Siblings (decision)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// STUB-DEFAULT routing DECISION. v0.1.0 proves verify + size + strip + route-decision offline. Sibling\n// EXECUTION is the opt-in live tier (n8n Execute Workflow, in-process, no secret over HTTP) which requires\n// each target to expose an executeWorkflowTrigger — tracked as the next increment, not faked here. We record\n// where the CLEAN payload (secrets already stripped) would be forwarded, with the generated traceId on every\n// routed call — never a fabricated sibling result.\nconst g = items[0].json.gateway;\nconst perTarget = (g.routedTo || []).map(function (t) {\n  return { target: t, forwarded: g.accepted === true, executed: false, mode: g.mode, traceId: g.traceId };\n});\ng.routing = {\n  mode: g.mode,\n  executed: false,\n  note: 'routing decision only; live Execute-Workflow sibling execution is the opt-in next increment',\n  perTarget: perTarget,\n  forwardedPayloadKeys: Object.keys(g.cleanPayload || {})\n};\nreturn [{ json: { gateway: g } }];"
+      }
+    },
+    {
+      "id": "e7cc9fc7-955d-4988-8d84-40d40e45a5a9",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Final shaping for BOTH outcomes (accepted -> 200 wrap; rejected -> 4xx error). The status code was\n// decided by the gates upstream and lives here in JS (testable offline); the respond node only echoes it.\n// The redacted audit event carries ids/counts/verdicts only — never the payload or any secret.\nconst g = items[0].json.gateway;\nlet body;\nif (g.accepted === true) {\n  body = {\n    ok: true,\n    traceId: g.traceId,\n    intent: g.request.intent,\n    routedTo: g.routedTo,\n    result: g.routing,\n    policyVersion: g.policyVersion\n  };\n} else {\n  body = {\n    ok: false,\n    error: g.error || 'rejected',\n    traceId: g.traceId,\n    intent: g.request.intent || null,\n    policyVersion: g.policyVersion\n  };\n}\nconst audit = {\n  auditEventId: g.traceId,\n  entrypoint: g.entrypoint,\n  intent: g.request.intent || null,\n  accepted: g.accepted === true,\n  statusCode: g.statusCode,\n  routedTo: g.routedTo || [],\n  strippedCount: (g.stripped || []).length,\n  stages: Object.keys(g.stages || {})\n};\nreturn [{ json: { statusCode: g.statusCode, body: body, audit: audit } }];"
+      }
+    },
+    {
+      "id": "e8b3c23e-145f-484d-9ffe-e826de5edd84",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2340,
+        320
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "id": "b6c5cd1f-9be8-4b50-84c7-303fa9624bbe",
+      "name": "Run Demo From n8n UI",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        180,
+        620
+      ]
+    },
+    {
+      "id": "06913524-bb4c-43d3-8241-29be5a3a32f9",
+      "name": "Build Signed Demo Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        620
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Editor demo: construct a VALIDLY-SIGNED envelope so a manual n8n run shows a full accepted round-trip.\n// Signs with the same secret the verifier reads ($env.GATEWAY_SIGNING_SECRET, else '' when unset) so the\n// demo round-trips locally without configuration. Not part of the offline suite (which drives Normalize\n// directly from golden fixtures).\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nconst secret = envGet('GATEWAY_SIGNING_SECRET') != null ? String(envGet('GATEWAY_SIGNING_SECRET')) : '';\nconst payload = { subject: 'Login button does nothing on mobile', message: 'Tapping sign-in is unresponsive on iOS Safari.' };\nconst bodyObj = { intent: 'support-triage', payload: payload, requestId: 'demo-0001' };\nconst rawBody = JSON.stringify(bodyObj);\nconst ts = Math.floor(Date.now() / 1000);\nconst sig = 'sha256=' + crypto.createHmac('sha256', secret).update(ts + '.' + rawBody).digest('hex');\nreturn [{ json: { __demo: true, rawBody: rawBody, body: bodyObj, headers: { 'x-timestamp': String(ts), 'x-signature': sig } } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Receive Signed Request (POST)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Enforce Body Size (413)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enforce Body Size (413)": {
+      "main": [
+        [
+          {
+            "node": "Verify Signature (401)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Signature (401)": {
+      "main": [
+        [
+          {
+            "node": "Strip Secrets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Strip Secrets": {
+      "main": [
+        [
+          {
+            "node": "Resolve Route (422)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Route (422)": {
+      "main": [
+        [
+          {
+            "node": "Route To Siblings (decision)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route To Siblings (decision)": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Demo From n8n UI": {
+      "main": [
+        [
+          {
+            "node": "Build Signed Demo Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Signed Demo Request": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
