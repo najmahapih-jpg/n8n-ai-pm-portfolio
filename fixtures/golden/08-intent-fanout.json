@@ -1,0 +1,7 @@
+{
+  "id": "intent-fanout",
+  "description": "An intent mapping to 2 allowlisted targets -> routedTo.length == 2 (fan-out composition, the orchestrator piece folded into the gateway).",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 65536 },
+  "request": { "intent": "feedback-then-grade", "payload": { "feedback": "the export button is too small" }, "timestamp": 1000000, "sign": true },
+  "expect": { "statusCode": 200, "ok": true, "routedTo": ["product-feedback", "eval-harness"], "routedToLength": 2, "traceIdNonEmpty": true }
+}
