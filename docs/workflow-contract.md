@@ -169,3 +169,31 @@ npm run smoke
 ```
 
 `npm run verify:rag-live` is opt-in and requires Supabase/Ollama runtime configuration.
+
+## Machine-readable contract
+
+Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are **gateway-delegated**.
+The golden fixtures carry test metadata (`id`, `expect*`) alongside the request, declared via `ignoreKeys`.
+
+```json
+{
+  "contractVersion": "rag-knowledge-assistant-v0.3.0",
+  "webhookPath": "webhook/portfolio/rag-knowledge-assistant",
+  "request": {
+    "accepted": ["query", "requestId"],
+    "limits": { "bodyBytes": 32768, "queryChars": 2000 },
+    "limitsEnforcedBy": "gateway"
+  },
+  "response": {
+    "required": ["abstained", "citations", "retrieval", "retrievalSource", "generationSource", "passed", "policyVersion"],
+    "types": { "abstained": "boolean", "passed": "boolean", "policyVersion": "string" }
+  },
+  "errors": [],
+  "fixtures": {
+    "dir": "fixtures/golden",
+    "ignoreKeys": ["id", "description", "expectAbstain", "expectAnswerContains", "expectCiteChunkIds", "exercises", "_note"],
+    "valid": ["adversarial-injection.json", "citation-must-be-real.json", "in-corpus-direct.json", "in-corpus-paraphrased.json", "out-of-corpus.json", "partial-corpus.json"],
+    "errorCases": []
+  }
+}
+```
