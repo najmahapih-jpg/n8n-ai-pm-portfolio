@@ -3,8 +3,8 @@
   "name": "Portfolio - Interaction Gateway",
   "nodes": [
     {
-      "id": "ded7f6f8-b7ed-4495-aa38-6bd9f54fcf3c",
-      "name": "Sticky Note ded7f6f8",
+      "id": "cf251fd7-884c-41d2-8721-a38540528f42",
+      "name": "Sticky Note cf251fd7",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -19,7 +19,7 @@
       }
     },
     {
-      "id": "00344872-da0a-47b5-af9a-cf7bf27baed0",
+      "id": "83657ac1-f484-4e98-ab72-9ed6e23d025c",
       "name": "Receive Signed Request (POST)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -37,10 +37,10 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "8378716e-46d9-4b1e-9180-688e6409a295"
+      "webhookId": "a8c8ff50-da72-4f7a-b6c9-d9a23d0cb486"
     },
     {
-      "id": "26b8aea8-feb7-479f-8f82-81bfd744c4ef",
+      "id": "44780512-2156-4d60-b6db-20a13da373e1",
       "name": "Normalize Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -55,7 +55,7 @@
       }
     },
     {
-      "id": "86a231cf-73d9-4278-88c4-2f1c2b38ecec",
+      "id": "3add414f-db5d-48dd-bee1-d57905eaf693",
       "name": "Enforce Body Size (413)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -70,7 +70,7 @@
       }
     },
     {
-      "id": "d29df74d-0a04-4367-a17e-3826aa9d1f5c",
+      "id": "628353a8-cceb-4084-be23-c5080212cbc0",
       "name": "Verify Signature (401)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -81,11 +81,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Mirrors gateway-core.verifySignature: timing-safe HMAC-SHA256 over (timestamp + \".\" + rawBody) with\n// a replay window. The secret comes from env/credential ONLY — never from the request, never into state.\nconst g = items[0].json.gateway;\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nconst secret = envGet('GATEWAY_SIGNING_SECRET') != null ? String(envGet('GATEWAY_SIGNING_SECRET')) : '';\nfunction verify(rawBody, timestamp, signatureHeader, secret, nowSeconds, windowSeconds) {\n  if (secret === undefined || secret === null || secret === '') return { ok: false, reason: 'gateway secret not configured' };\n  if (!signatureHeader) return { ok: false, reason: 'missing signature' };\n  if (timestamp === undefined || timestamp === null || timestamp === '') return { ok: false, reason: 'missing timestamp' };\n  const ts = Number(timestamp);\n  if (!Number.isFinite(ts)) return { ok: false, reason: 'bad timestamp' };\n  const now = Number(nowSeconds);\n  if (!Number.isFinite(now)) return { ok: false, reason: 'bad now' };\n  if (Math.abs(now - ts) > windowSeconds) return { ok: false, reason: 'expired timestamp (replay window)' };\n  const expected = 'sha256=' + crypto.createHmac('sha256', String(secret)).update(ts + '.' + String(rawBody)).digest('hex');\n  const a = Buffer.from(String(signatureHeader));\n  const b = Buffer.from(expected);\n  if (a.length !== b.length) return { ok: false, reason: 'signature mismatch' };\n  return crypto.timingSafeEqual(a, b) ? { ok: true, reason: 'ok' } : { ok: false, reason: 'signature mismatch' };\n}\nconst v = verify(g.rawBody, g.timestamp, g.signatureHeader, secret, g.now, g.config.windowSeconds);\ng.stages.signature = { ok: v.ok, reason: v.reason };\nif (g.accepted && !v.ok) {\n  g.accepted = false;\n  g.statusCode = 401;\n  g.error = 'unauthorized: ' + v.reason;\n}\nreturn [{ json: { gateway: g } }];"
+        "jsCode": "// Mirrors gateway-core.verifySignature: timing-safe HMAC-SHA256 over (timestamp + \".\" + rawBody) with\n// a replay window. The secret comes from env/credential ONLY — never from the request, never into state.\n// crypto is required (n8n's external task-runner does not expose it as a global) — deploy needs NODE_FUNCTION_ALLOW_BUILTIN=crypto.\nconst crypto = require('crypto');\nconst g = items[0].json.gateway;\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nconst secret = envGet('GATEWAY_SIGNING_SECRET') != null ? String(envGet('GATEWAY_SIGNING_SECRET')) : '';\nfunction verify(rawBody, timestamp, signatureHeader, secret, nowSeconds, windowSeconds) {\n  if (secret === undefined || secret === null || secret === '') return { ok: false, reason: 'gateway secret not configured' };\n  if (!signatureHeader) return { ok: false, reason: 'missing signature' };\n  if (timestamp === undefined || timestamp === null || timestamp === '') return { ok: false, reason: 'missing timestamp' };\n  const ts = Number(timestamp);\n  if (!Number.isFinite(ts)) return { ok: false, reason: 'bad timestamp' };\n  const now = Number(nowSeconds);\n  if (!Number.isFinite(now)) return { ok: false, reason: 'bad now' };\n  if (Math.abs(now - ts) > windowSeconds) return { ok: false, reason: 'expired timestamp (replay window)' };\n  const expected = 'sha256=' + crypto.createHmac('sha256', String(secret)).update(ts + '.' + String(rawBody)).digest('hex');\n  const a = Buffer.from(String(signatureHeader));\n  const b = Buffer.from(expected);\n  if (a.length !== b.length) return { ok: false, reason: 'signature mismatch' };\n  return crypto.timingSafeEqual(a, b) ? { ok: true, reason: 'ok' } : { ok: false, reason: 'signature mismatch' };\n}\nconst v = verify(g.rawBody, g.timestamp, g.signatureHeader, secret, g.now, g.config.windowSeconds);\ng.stages.signature = { ok: v.ok, reason: v.reason };\nif (g.accepted && !v.ok) {\n  g.accepted = false;\n  g.statusCode = 401;\n  g.error = 'unauthorized: ' + v.reason;\n}\nreturn [{ json: { gateway: g } }];"
       }
     },
     {
-      "id": "2e598a14-e1f2-4f38-b766-9b3649dc3b70",
+      "id": "6bfda2c6-184b-47f6-82f0-b24dee5f0efe",
       "name": "Strip Secrets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -96,11 +96,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Mirrors gateway-core.stripSecrets, run over the WHOLE envelope. Redacts any field whose KEY name or\n// string VALUE (incl. a bare string array element) looks secret. Always runs (even on a rejected request)\n// so a secret is NEVER forwarded, echoed, or reflected into the traceId / audit. The cleaned intent + the\n// requestId-derived traceId are finalised HERE, so a secret-shaped intent/requestId cannot leak.\nconst g = items[0].json.gateway;\nconst SECRET_VALUE_PATTERNS = [\n  /sk-[A-Za-z0-9]{8,}/,\n  /sb_secret_[A-Za-z0-9_-]{8,}/,\n  /sb_publishable_[A-Za-z0-9_-]{8,}/,\n  /Bearer\\s+[A-Za-z0-9._-]{10,}/i,\n  /eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}/\n];\nconst SECRET_KEY_NAMES = /(secret|token|apikey|api_key|password|signingsecret|webhookurl|authorization|credential)/i;\nfunction valueIsSecret(s) { return typeof s === 'string' && SECRET_VALUE_PATTERNS.some(function (p) { return p.test(s); }); }\nfunction strip(obj) {\n  const stripped = [];\n  function walk(node, path) {\n    if (Array.isArray(node)) return node.map(function (v, i) {\n      const itemPath = path + '[' + i + ']';\n      if (valueIsSecret(v)) { stripped.push(itemPath); return '[stripped]'; }\n      return walk(v, itemPath);\n    });\n    if (node && typeof node === 'object') {\n      const out = {};\n      for (const entry of Object.entries(node)) {\n        const k = entry[0];\n        const v = entry[1];\n        const keyPath = path ? path + '.' + k : k;\n        if (valueIsSecret(k)) { stripped.push((path ? path + '.' : '') + '[stripped-key]'); out['[stripped-key]'] = '[stripped]'; continue; }\n        if (SECRET_KEY_NAMES.test(k)) { stripped.push(keyPath); out[k] = '[stripped]'; continue; }\n        if (valueIsSecret(v)) { stripped.push(keyPath); out[k] = '[stripped]'; continue; }\n        out[k] = walk(v, keyPath);\n      }\n      return out;\n    }\n    return node;\n  }\n  return { clean: walk(obj, ''), stripped: stripped };\n}\nconst r = strip(g.body || {});\ng.body = r.clean;\ng.cleanBody = r.clean;\ng.stripped = r.stripped;\ng.request.intent = (typeof r.clean.intent === 'string') ? r.clean.intent : '';\ng.request.requestId = (typeof r.clean.requestId === 'string') ? r.clean.requestId : '';\ng.cleanPayload = (r.clean.payload && typeof r.clean.payload === 'object') ? r.clean.payload : {};\ng.payload = g.cleanPayload;\nconst safeRequestId = /^[A-Za-z0-9._-]{1,64}$/.test(g.request.requestId) ? g.request.requestId : '';\ng.traceId = 'gw-' + (safeRequestId ? safeRequestId : crypto.createHash('sha256').update(String(g.now) + '.' + String(g.rawBody)).digest('hex').slice(0, 16));\ng.stages.strip = { strippedCount: r.stripped.length };\nreturn [{ json: { gateway: g } }];"
+        "jsCode": "// Mirrors gateway-core.stripSecrets, run over the WHOLE envelope. Redacts any field whose KEY name or\n// string VALUE (incl. a bare string array element) looks secret. Always runs (even on a rejected request)\n// so a secret is NEVER forwarded, echoed, or reflected into the traceId / audit. The cleaned intent + the\n// requestId-derived traceId are finalised HERE, so a secret-shaped intent/requestId cannot leak.\nconst crypto = require('crypto');\nconst g = items[0].json.gateway;\nconst SECRET_VALUE_PATTERNS = [\n  /sk-[A-Za-z0-9]{8,}/,\n  /sb_secret_[A-Za-z0-9_-]{8,}/,\n  /sb_publishable_[A-Za-z0-9_-]{8,}/,\n  /Bearer\\s+[A-Za-z0-9._-]{10,}/i,\n  /eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}/\n];\nconst SECRET_KEY_NAMES = /(secret|token|apikey|api_key|password|signingsecret|webhookurl|authorization|credential)/i;\nfunction valueIsSecret(s) { return typeof s === 'string' && SECRET_VALUE_PATTERNS.some(function (p) { return p.test(s); }); }\nfunction strip(obj) {\n  const stripped = [];\n  function walk(node, path) {\n    if (Array.isArray(node)) return node.map(function (v, i) {\n      const itemPath = path + '[' + i + ']';\n      if (valueIsSecret(v)) { stripped.push(itemPath); return '[stripped]'; }\n      return walk(v, itemPath);\n    });\n    if (node && typeof node === 'object') {\n      const out = {};\n      for (const entry of Object.entries(node)) {\n        const k = entry[0];\n        const v = entry[1];\n        const keyPath = path ? path + '.' + k : k;\n        if (valueIsSecret(k)) { stripped.push((path ? path + '.' : '') + '[stripped-key]'); out['[stripped-key]'] = '[stripped]'; continue; }\n        if (SECRET_KEY_NAMES.test(k)) { stripped.push(keyPath); out[k] = '[stripped]'; continue; }\n        if (valueIsSecret(v)) { stripped.push(keyPath); out[k] = '[stripped]'; continue; }\n        out[k] = walk(v, keyPath);\n      }\n      return out;\n    }\n    return node;\n  }\n  return { clean: walk(obj, ''), stripped: stripped };\n}\nconst r = strip(g.body || {});\ng.body = r.clean;\ng.cleanBody = r.clean;\ng.stripped = r.stripped;\ng.request.intent = (typeof r.clean.intent === 'string') ? r.clean.intent : '';\ng.request.requestId = (typeof r.clean.requestId === 'string') ? r.clean.requestId : '';\ng.cleanPayload = (r.clean.payload && typeof r.clean.payload === 'object') ? r.clean.payload : {};\ng.payload = g.cleanPayload;\nconst safeRequestId = /^[A-Za-z0-9._-]{1,64}$/.test(g.request.requestId) ? g.request.requestId : '';\ng.traceId = 'gw-' + (safeRequestId ? safeRequestId : crypto.createHash('sha256').update(String(g.now) + '.' + String(g.rawBody)).digest('hex').slice(0, 16));\ng.stages.strip = { strippedCount: r.stripped.length };\nreturn [{ json: { gateway: g } }];"
       }
     },
     {
-      "id": "6770e871-db9c-437f-b292-60b38f40457e",
+      "id": "f4536407-f1e7-4a0c-b869-f7440548e9d4",
       "name": "Resolve Route (422)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -115,7 +115,7 @@
       }
     },
     {
-      "id": "97589c0a-520d-47d8-8473-db3314d11003",
+      "id": "b1fedfc5-8e1e-46b3-b347-14ecc5d5046d",
       "name": "Route To Siblings (decision)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -130,7 +130,7 @@
       }
     },
     {
-      "id": "e7cc9fc7-955d-4988-8d84-40d40e45a5a9",
+      "id": "6bd40fb2-eb59-48f7-8392-926d6a0a38ed",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -145,7 +145,7 @@
       }
     },
     {
-      "id": "e8b3c23e-145f-484d-9ffe-e826de5edd84",
+      "id": "1a32338f-49a6-4032-b104-4b888ef3bb19",
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -162,7 +162,7 @@
       }
     },
     {
-      "id": "b6c5cd1f-9be8-4b50-84c7-303fa9624bbe",
+      "id": "5497422f-14bc-433c-8df4-0de2fd98cc42",
       "name": "Run Demo From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -172,7 +172,7 @@
       ]
     },
     {
-      "id": "06913524-bb4c-43d3-8241-29be5a3a32f9",
+      "id": "28438782-8aa6-461b-a67b-4702f46422d8",
       "name": "Build Signed Demo Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -183,7 +183,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Editor demo: construct a VALIDLY-SIGNED envelope so a manual n8n run shows a full accepted round-trip.\n// Signs with the same secret the verifier reads ($env.GATEWAY_SIGNING_SECRET, else '' when unset) so the\n// demo round-trips locally without configuration. Not part of the offline suite (which drives Normalize\n// directly from golden fixtures).\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nconst secret = envGet('GATEWAY_SIGNING_SECRET') != null ? String(envGet('GATEWAY_SIGNING_SECRET')) : '';\nconst payload = { subject: 'Login button does nothing on mobile', message: 'Tapping sign-in is unresponsive on iOS Safari.' };\nconst bodyObj = { intent: 'support-triage', payload: payload, requestId: 'demo-0001' };\nconst rawBody = JSON.stringify(bodyObj);\nconst ts = Math.floor(Date.now() / 1000);\nconst sig = 'sha256=' + crypto.createHmac('sha256', secret).update(ts + '.' + rawBody).digest('hex');\nreturn [{ json: { __demo: true, rawBody: rawBody, body: bodyObj, headers: { 'x-timestamp': String(ts), 'x-signature': sig } } }];"
+        "jsCode": "// Editor demo: construct a VALIDLY-SIGNED envelope so a manual n8n run shows a full accepted round-trip.\n// Signs with the same secret the verifier reads ($env.GATEWAY_SIGNING_SECRET, else '' when unset) so the\n// demo round-trips locally without configuration. Not part of the offline suite (which drives Normalize\n// directly from golden fixtures).\nconst crypto = require('crypto');\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nconst secret = envGet('GATEWAY_SIGNING_SECRET') != null ? String(envGet('GATEWAY_SIGNING_SECRET')) : '';\nconst payload = { subject: 'Login button does nothing on mobile', message: 'Tapping sign-in is unresponsive on iOS Safari.' };\nconst bodyObj = { intent: 'support-triage', payload: payload, requestId: 'demo-0001' };\nconst rawBody = JSON.stringify(bodyObj);\nconst ts = Math.floor(Date.now() / 1000);\nconst sig = 'sha256=' + crypto.createHmac('sha256', secret).update(ts + '.' + rawBody).digest('hex');\nreturn [{ json: { __demo: true, rawBody: rawBody, body: bodyObj, headers: { 'x-timestamp': String(ts), 'x-signature': sig } } }];"
       }
     }
   ],
