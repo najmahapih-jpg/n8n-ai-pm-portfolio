@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "slug": "gateway-selftest-sibling",
+  "title": "Portfolio - Gateway Selftest Sibling",
+  "description": "A minimal, REAL n8n sub-workflow the interaction-gateway invokes via Execute Workflow (in-process, no HTTP, no secret forwarding) to PROVE live sibling routing end-to-end. executeWorkflowTrigger (passthrough) -> a Code node that does a small genuine task (deterministic keyword urgency classification) and returns an acknowledgement to the caller as its last node's output. Wiring the real business siblings is the SAME executeWorkflowTrigger pattern, applied per-repo on each sibling's own toolchain.",
+  "owner": "portfolio",
+  "department": "Product",
+  "version": "0.1.0",
+  "status": "live-tested",
+  "project": "n8n-interaction-gateway",
+  "lastWriter": "n8n public REST API",
+  "n8nWorkflowId": "yqjMTU3XHwBT8b0L",
+  "source": "gateway-selftest-sibling.workflow.js",
+  "canonical": "gateway-selftest-sibling.canonical.json",
+  "release": "",
+  "request": "",
+  "trigger": "executeWorkflowTrigger (callable sub-workflow)",
+  "integrations": [
+    "n8n Execute Workflow Trigger (passthrough) — invoked in-process by interaction-gateway (YKT4FJmC8Xg2G9hs)",
+    "Deterministic keyword urgency classification (a small real task, not a no-op echo)"
+  ],
+  "tags": [ "gateway", "sub-workflow", "execute-workflow", "selftest", "workflow-as-code" ],
+  "fixtures": [],
+  "smokeCases": [],
+  "localOnly": true,
+  "buildMechanism": "sdk-standalone (@n8n/workflow-sdk 0.15.1) compiled via scripts/lib/compile-sdk.mjs, deployed via the n8n public REST API. Must be ACTIVE/published in n8n 2.x for the gateway's Execute Workflow node to reference it.",
+  "notes": "v0.1.0 — the gateway's live-routing proof target. 3 nodes (sticky + executeWorkflowTrigger + code). Active (n8n 2.x requires a referenced sub-workflow to be published). Proven 2026-06-03: the gateway signed-routes intent 'gateway-selftest' to this sibling in-process (executed:true), passing the secret-stripped clean payload + traceId, and wraps the real result. The business siblings get the same executeWorkflowTrigger per-repo (deferred).",
+  "updatedAt": "2026-06-03T00:00:00Z"
+}
