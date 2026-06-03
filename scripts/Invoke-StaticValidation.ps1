@@ -1,6 +1,6 @@
 param(
   [int]$MinimumNodes = 10,
-  [string]$ReleaseFile = "interaction-gateway-v0.1.0.json",
+  [string]$ReleaseFile = "interaction-gateway-v0.2.0.json",
   [switch]$SkipRepositorySecretScan
 )
 
@@ -70,8 +70,13 @@ Invoke-ValidationStep -Name "Workflow registry freshness" -Action {
   & (Join-Path $repoRoot "scripts\Build-WorkflowIndex.ps1") -Check
 }
 
-Invoke-ValidationStep -Name "Canonical workflow JSON validation" -Action {
-  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\canonical") -MinimumNodes $MinimumNodes
+Invoke-ValidationStep -Name "Canonical workflow JSON validation (shape, all)" -Action {
+  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\canonical") -MinimumNodes 0
+}
+
+Invoke-ValidationStep -Name "Gateway canonical node floor" -Action {
+  # The node floor applies to the GATEWAY workflow; the selftest sibling is intentionally tiny (3 nodes).
+  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\canonical\interaction-gateway.canonical.json") -MinimumNodes $MinimumNodes
 }
 
 Invoke-ValidationStep -Name "Release workflow JSON validation" -Action {
