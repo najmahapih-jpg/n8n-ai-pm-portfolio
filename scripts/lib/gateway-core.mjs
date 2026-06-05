@@ -11,7 +11,8 @@ export const DEFAULT_ALLOWLIST = {
   'eval': ['eval-harness'],
   'drift': ['scheduled-drift-monitor'],
   'feedback-then-grade': ['product-feedback', 'eval-harness'],
-  'gateway-selftest': ['gateway-selftest-sibling']
+  'gateway-selftest': ['gateway-selftest-sibling'],
+  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling']
 };
 
 // Default secret patterns (value-side) + sensitive key names (key-side). Mirrors the portfolio scanner.
