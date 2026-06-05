@@ -51,6 +51,8 @@ the gateway + siblings being deployed (they are). Long-horizon planning beyond `
 ## Adoption sequence
 
 1. ✅ Pure agent core (`scripts/lib/agent-core.mjs`) + the offline trajectory eval (`verify:agent`, 39/39).
-2. The SDK workflow (the n8n agent loop wrapping the core) + `verify:static` / `verify:json`.
+2. ✅ The SDK workflow (the n8n agent loop, an `Agent Loop` Code node mirroring the core) + `verify:static` /
+   `verify:json` + `verify:workflow` (24/24, a differential asserting the deployed loop == the core) — DEPLOYED +
+   live-verified as n8n id `fIAHA00y4Rft2BrC` (bug task → rag→support-triage; unsafe task → refused).
 3. Live LLM planner (Ollama) graded by the same rubric + a stub-vs-LLM calibration guard.
 4. Live tool execution via the deployed interaction-gateway (sign → route → observe → synthesize).
