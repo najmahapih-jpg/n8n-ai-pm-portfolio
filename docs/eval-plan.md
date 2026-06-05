@@ -48,17 +48,29 @@ with the SAME `scoreTrajectory` rubric, reporting a stub-vs-LLM **calibration** 
   architecture clears the threshold; it SKIPs cleanly when Ollama is unreachable.
 
 The OFFLINE gates already prove the prompt/parse/loop/rubric plumbing, so the only new variable here is the real
-model's output. **Still deferred — live tool execution**: the agent signs requests and routes to the **deployed
-interaction-gateway** (real support-triage / rag / product-feedback / … results) instead of stub tools.
+model's output.
+
+**Live tool execution — BUILT + RUN** (`verify:tools`): the agent's `callTool` SIGNS each request (HMAC over the
+exact bytes) and routes an allowlisted INTENT to the **deployed interaction-gateway**, which executes the real
+sibling in-process and returns the real result (no secret over HTTP beyond the HMAC; the agent never names a URL —
+SSRF-closed at the gateway). With the deterministic keyword planner (so the TOOL layer is the only variable), the
+agent drove **3 real siblings** under the same rubric — a bug ran the live 2-step `rag → support-triage` route, and
+`product-feedback` returned a real `theme=performance, sentiment=neutral` classification; refusals held with ZERO
+gateway calls. HONEST finding: `support-triage` executed but returned its own **400** — the agent's `{subject,
+message}` payload doesn't match that sibling's input contract (`callTool` reports a sibling 4xx as `ok:false`, never
+fabricated; aligning the agent's per-tool payloads to each sibling's contract is the next follow-up). The signing +
+request wiring + response parsing are themselves offline-pinned by `verify:gateway-client` (stub fetch).
 
 ## Gates
 
 | Script | Tier | In CI |
 | --- | --- | --- |
-| `npm run verify:agent` | Layer 2 — pure-core trajectory self-test (39/39) | yes |
+| `npm run verify:agent` | Layer 2 — pure-core trajectory self-test (59/59) | yes |
 | `npm run verify:workflow` | Layer 2b — the COMPILED Agent Loop vs the golden tasks + a differential vs the core (24/24) | yes |
-| `npm run verify:static` | Layer 1 (PS/JSON parse, secret scan, registry, JSON shape) + both Node self-tests | yes |
+| `npm run verify:gateway-client` | Layer 2c — the gateway tool executor offline: signing + wiring + parsing + failure handling (16/16, stub fetch) | yes |
+| `npm run verify:static` | Layer 1 (PS/JSON parse, secret scan, registry, JSON shape) + the Node self-tests | yes |
 | `npm run verify:llm` | Layer 3 — live LLM planner, same rubric (llama3.2:3b: free-form 2/6 LOW, classifier 6/6 HIGH); opt-in, SKIPs without Ollama | no |
+| `npm run verify:tools` | Layer 3 — live gateway tool execution (agent signs → real siblings; 3 clean executions, same rubric); opt-in, SKIPs without n8n/secret | no |
 
 ## Why this is honest
 
