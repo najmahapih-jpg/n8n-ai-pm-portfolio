@@ -1033,6 +1033,16 @@ const overview = sticky(
   { color: 4 }
 );
 
+// Callable as a sub-workflow by the interaction-gateway via Execute Workflow (in-process, no HTTP). Feeds the
+// SAME Normalize Request pipeline as the webhook (which already tolerates passthrough via `source.body ?? source`),
+// so the webhook contract is unchanged. The gateway sends { query, ... } directly. respondToWebhook is a no-op
+// in a sub-workflow call; the caller receives the last node's output (Build Response, carrying `.response`).
+const calledByGateway = trigger({
+  type: 'n8n-nodes-base.executeWorkflowTrigger',
+  version: 1.1,
+  config: { name: 'Called By Gateway (Execute Workflow)', position: [160, 760], parameters: { inputSource: 'passthrough' } }
+});
+
 export default workflow('rag-knowledge-assistant', 'Portfolio - RAG Knowledge Assistant API')
   .add(overview)
   .add(runDemoFromUi)
@@ -1092,4 +1102,6 @@ export default workflow('rag-knowledge-assistant', 'Portfolio - RAG Knowledge As
     )
   )
   .add(receiveQuery)
+  .to(normalizeRequest)
+  .add(calledByGateway)
   .to(normalizeRequest);
