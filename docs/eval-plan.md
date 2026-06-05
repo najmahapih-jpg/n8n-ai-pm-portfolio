@@ -45,8 +45,9 @@ Guardrail negatives: non-allowlisted-tool BLOCKED (0 executed) · max-steps boun
 
 | Script | Tier | In CI |
 | --- | --- | --- |
-| `npm run verify:agent` | Layer 2 — trajectory self-test (39/39) | yes |
-| `npm run verify:static` | Layer 1 (arrives with the workflow) | yes |
+| `npm run verify:agent` | Layer 2 — pure-core trajectory self-test (39/39) | yes |
+| `npm run verify:workflow` | Layer 2b — the COMPILED Agent Loop vs the golden tasks + a differential vs the core (24/24) | yes |
+| `npm run verify:static` | Layer 1 (PS/JSON parse, secret scan, registry, JSON shape) + both Node self-tests | yes |
 | `npm run verify:live` | Layer 3 — live LLM planner + live gateway tools (opt-in) | no |
 
 ## Why this is honest
