@@ -83,9 +83,9 @@ JSON via `@n8n/workflow-sdk` (`parseWorkflowCode`), mirroring the drift-monitor 
   property this ADR commits to. Honesty over expedience.
 - **The deployed copy is held to the audited core BY TEST.** n8n Code nodes can't import `gateway-core.mjs`,
   so the security logic is necessarily a copy. `scripts/test-gateway-workflow.mjs` extracts each Code node's
-  body from the *compiled* JSON, runs the 15 golden scenarios against it, **and** asserts node-output ≡
+  body from the *compiled* JSON, runs the 16 golden scenarios against it, **and** asserts node-output ≡
   core-output on identical inputs for the four security gates — verdicts, reason strings, and the whole-body
-  strip (155 assertions). A future edit that lets the n8n copy drift from the 20/20-proven library turns the
+  strip (166 assertions). A future edit that lets the n8n copy drift from the 20/20-proven library turns the
   gate red. (The harness uses `new Function` over our **own** version-controlled jsCode — no untrusted input
   is interpolated; it is the deliberate "run the deployed code" pattern.)
 - **`stripSecrets` runs over the WHOLE envelope, and security primitives fail CLOSED.** A secret-shaped
@@ -125,6 +125,25 @@ The sibling receives ONLY the secret-stripped clean payload + intent + `traceId`
   dedicated callable sibling proves the mechanism; wiring each business sibling is the same pattern, per-repo.
 - **HTTP-to-webhook routing stays rejected** — the in-process Execute-Workflow path keeps the
   no-secret-over-HTTP property this ADR commits to (and the payload is secret-stripped regardless).
+
+## Implementation note (v0.4.0, 2026-06-03) — live multi-target fan-out
+
+v0.4.0 delivers the composition feature the plan folded in from the standalone "orchestrator": one intent may
+fan out to **N** callable siblings, executed **in-process** and collected **per-target**. `resolveRoute` now
+resolves `targetIds` (an array of `{target, id}`); `targetCallable` is true iff EVERY resolved target has a wired
+id (fan-out is all-or-nothing live). `Prepare Sibling Input` emits **one item per target**; `Execute Sibling`
+runs in **mode `each`** (one sub-workflow call per item, dynamic `workflowId`); `Merge Sibling Result` correlates
+each output back to its target via `$('Prepare Sibling Input').all()[i]` and returns a unified
+`result.perTarget` array (`fanout: N>1`). Single-target intents are the 1-entry case of the same shape.
+
+- **Proven live:** a signed `feedback-multi` intent fans out to **product-feedback + gateway-selftest-sibling**
+  in one request — `result.perTarget` carries both real outputs (product-feedback `theme=bug/urgency=high`; the
+  selftest sibling's keyword urgency). Single-target `product-feedback` returns `fanout:false`, `perTarget` length 1.
+- The mechanism (`executeWorkflow` mode `each` + index correlation) was de-risked in an isolated throwaway before
+  the gateway change. Fan-out to **heterogeneous** business siblings (different input contracts) is the caller's
+  responsibility to feed; the demo pair both consume feedback fields. The offline suite covers the fan-out
+  routing DECISION (fixture `intent-feedback-multi`); live execution is proven by `verify:live` (executeWorkflow
+  cannot run offline).
 
 ## Implementation note (v0.3.0, 2026-06-03) — a real business sibling, wired
 
