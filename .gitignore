@@ -1,0 +1,15 @@
+# Local orchestration / tool state
+.omc/
+
+# Node
+node_modules/
+
+# Environment / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Build / run artifacts
+artifacts/
+workflows/generated/
+*.log
