@@ -17,14 +17,15 @@ import { workflow, node, trigger, sticky, ifElse, expr } from '@n8n/workflow-sdk
 // Each gate computes its verdict in JS and only FLIPS the first failure (statusCode 401/413/422); the
 // response code lives in the Code-node output (testable offline), and the respond node merely echoes it.
 //
-// The security pipeline runs for EVERY request; v0.3.0 routes a CALLABLE intent (one with an executeWorkflowTrigger
-// + a known id in TARGET_WORKFLOW_IDS) IN-PROCESS via a DYNAMIC Execute-Workflow (no secret over HTTP) and wraps
-// its real result — proven live against the gateway-selftest-sibling AND the real product-feedback SUT. Other
-// intents stay decision-only until wired. SSRF is closed BY CONSTRUCTION: callers name an intent, never a URL,
+// The security pipeline runs for EVERY request; v0.4.0 routes a CALLABLE intent IN-PROCESS via a DYNAMIC
+// Execute-Workflow (no secret over HTTP) and wraps the real result(s) — incl. MULTI-TARGET FAN-OUT (one intent →
+// N callable siblings via executeWorkflow mode 'each', results collected per-target). Proven live vs the selftest
+// sibling, the real product-feedback SUT, and a 2-sibling fan-out. Non-callable intents stay decision-only.
+// SSRF is closed BY CONSTRUCTION: callers name an intent, never a URL,
 // and security CONFIG (secret, body cap, replay window, live-mode) comes only from env/credential — a
 // webhook caller can neither loosen a cap nor force live routing.
 
-const POLICY_VERSION = 'interaction-gateway-v0.3.0';
+const POLICY_VERSION = 'interaction-gateway-v0.4.0';
 
 const receiveSignedRequest = trigger({
   type: 'n8n-nodes-base.webhook',
@@ -141,7 +142,7 @@ const gateway = {
   error: null,
   stages: {},
   routedTo: [],
-  targetId: null,
+  targetIds: [],
   targetCallable: false,
   stripped: [],
   cleanPayload: {}
@@ -302,7 +303,8 @@ const ALLOWLIST = {
   'eval': ['eval-harness'],
   'drift': ['scheduled-drift-monitor'],
   'feedback-then-grade': ['product-feedback', 'eval-harness'],
-  'gateway-selftest': ['gateway-selftest-sibling']
+  'gateway-selftest': ['gateway-selftest-sibling'],
+  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling']
 };
 // target -> n8n workflow id, ONLY for targets that expose an executeWorkflowTrigger (callable IN-PROCESS via
 // Execute Workflow). Business targets stay decision-only until each gets a trigger (tracked per-sibling); the
@@ -319,15 +321,15 @@ g.stages.route = { ok: r.ok, reason: r.reason };
 if (g.accepted) {
   if (r.ok) {
     g.routedTo = r.targets;
-    const firstId = (r.targets.length === 1) ? TARGET_WORKFLOW_IDS[r.targets[0]] : null;
-    g.targetId = firstId || null;
-    g.targetCallable = !!g.targetId;
+    g.targetIds = r.targets.map(function (t) { return { target: t, id: TARGET_WORKFLOW_IDS[t] || null }; });
+    // callable iff EVERY resolved target has a wired executeWorkflowTrigger id (live fan-out is all-or-nothing)
+    g.targetCallable = g.targetIds.length > 0 && g.targetIds.every(function (x) { return !!x.id; });
   } else {
     g.accepted = false;
     g.statusCode = 422;
     g.error = 'unprocessable: ' + r.reason;
     g.routedTo = [];
-    g.targetId = null;
+    g.targetIds = [];
     g.targetCallable = false;
   }
 }
@@ -462,17 +464,21 @@ const prepareSiblingInput = node({
 // after the call (the Execute Workflow node replaces the item with the sibling's output).
 const g = items[0].json.gateway;
 const clean = g.cleanPayload || {};
-// Shape the in-process call so DIFFERENT siblings can read it: the clean payload fields are SPREAD at top level
-// (business siblings like product-feedback read e.g. body.feedbackText), AND kept under a 'payload' key (the
-// selftest sibling reads src.payload). __targetId drives the dynamic Execute-Workflow workflowId; __gw carries
-// the response metadata re-attached after the call. Never the rawBody/signature.
-return [{ json: Object.assign({}, clean, {
-  payload: clean,
-  intent: g.request.intent,
-  traceId: g.traceId,
-  __targetId: g.targetId,
-  __gw: { traceId: g.traceId, intent: g.request.intent, routedTo: g.routedTo, policyVersion: g.policyVersion }
-}) }];`
+const gwMeta = { traceId: g.traceId, intent: g.request.intent, routedTo: g.routedTo, policyVersion: g.policyVersion };
+// Emit ONE item per callable target -> Execute Sibling (mode 'each') invokes each IN-PROCESS; Merge collects
+// per-target. Each item spreads the clean payload at top level (business siblings read e.g. feedbackText) AND
+// keeps a 'payload' key (the selftest sibling reads src.payload) -- one shape, multiple sibling contracts.
+// __targetId drives the dynamic workflowId; __targetName + __gw are re-read after the call. Never rawBody/signature.
+return (g.targetIds || []).map(function (t) {
+  return { json: Object.assign({}, clean, {
+    payload: clean,
+    intent: g.request.intent,
+    traceId: g.traceId,
+    __targetId: t.id,
+    __targetName: t.target,
+    __gw: gwMeta
+  }) };
+});`
     }
   }
 });
@@ -486,7 +492,7 @@ const executeSibling = node({
     parameters: {
       source: 'database',
       workflowId: { __rl: true, value: '={{ $json.__targetId }}', mode: 'id' },
-      mode: 'once',
+      mode: 'each',
       options: {}
     }
   }
@@ -503,17 +509,23 @@ const mergeSiblingResult = node({
       language: 'javaScript',
       jsCode: `// Execute Workflow replaced the item with the sibling's output. Re-attach the gateway metadata (from
 // Prepare Sibling Input) and wrap the REAL sibling result — executed:true, in-process, no secret over HTTP.
-const result = items[0].json;
-const gw = $('Prepare Sibling Input').first().json.__gw;
+// The Execute Workflow node (mode 'each') produced one output item PER target, in input order. Correlate each
+// back to its target via $('Prepare Sibling Input').all()[i], and collect per-target -- executed:true, in-process,
+// no HTTP. A single-target intent yields a 1-entry perTarget; a fan-out intent yields N.
+const prep = $('Prepare Sibling Input').all();
+const gw = (prep[0] && prep[0].json.__gw) || {};
+const perTarget = items.map(function (it, i) {
+  return { target: (prep[i] && prep[i].json.__targetName) || ('idx' + i), result: it.json };
+});
 const body = {
   ok: true,
   traceId: gw.traceId,
   intent: gw.intent,
   routedTo: gw.routedTo,
-  result: { mode: 'live', executed: true, sibling: result },
+  result: { mode: 'live', executed: true, fanout: perTarget.length > 1, perTarget: perTarget },
   policyVersion: gw.policyVersion
 };
-const audit = { auditEventId: gw.traceId, intent: gw.intent, routedTo: gw.routedTo, executed: true, statusCode: 200 };
+const audit = { auditEventId: gw.traceId, intent: gw.intent, routedTo: gw.routedTo, executed: true, targets: perTarget.length, statusCode: 200 };
 return [{ json: { statusCode: 200, body: body, audit: audit } }];`
     }
   }
@@ -548,9 +560,9 @@ const overview = sticky(
   'resolveRoute (fixed intent -> allowlist; callers never name a URL -> SSRF-closed) -> 422. The status code ' +
   'is decided in JS (testable offline) and the respond node only echoes it. SECURITY CONFIG (secret, body ' +
   'cap, replay window, live-mode) comes from env/credential ONLY — a webhook caller can neither loosen a cap ' +
-  'nor force live routing. v0.3.0 routes a CALLABLE intent IN-PROCESS via a DYNAMIC Execute-Workflow (no secret ' +
-  'over HTTP) and wraps its real result — proven live vs the selftest sibling AND the real product-feedback SUT; ' +
-  'non-callable intents stay decision-only. Every routed call + the response carry a ' +
+  'nor force live routing. v0.4.0 routes a CALLABLE intent IN-PROCESS via a DYNAMIC Execute-Workflow (no secret ' +
+  'over HTTP) and wraps the real result(s) — incl. MULTI-TARGET FAN-OUT (one intent -> N siblings, results ' +
+  'per-target); proven live vs the selftest sibling, the product-feedback SUT, and a 2-sibling fan-out. Every routed call + the response carry a ' +
   'generated traceId (the cross-workflow trace metadata the review flagged as absent). policyVersion ' +
   'interaction-gateway-v0.1.0.',
   [receiveSignedRequest, runFromUi, buildDemoRequest, normalizeRequest, enforceBodySize, verifySignature, stripSecrets, resolveRoute, routeToSiblings, buildResponse, respond],
