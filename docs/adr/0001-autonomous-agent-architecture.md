@@ -1,6 +1,6 @@
 # ADR-0001 — An eval-first autonomous agent whose tools are the portfolio (via the signed gateway)
 
-Date: 2026-06-05 · Status: Accepted (design + pure core)
+Date: 2026-06-05 · Status: Accepted (design + core + SDK workflow + live LLM planner)
 
 ## Context
 
@@ -54,5 +54,9 @@ the gateway + siblings being deployed (they are). Long-horizon planning beyond `
 2. ✅ The SDK workflow (the n8n agent loop, an `Agent Loop` Code node mirroring the core) + `verify:static` /
    `verify:json` + `verify:workflow` (24/24, a differential asserting the deployed loop == the core) — DEPLOYED +
    live-verified as n8n id `fIAHA00y4Rft2BrC` (bug task → rag→support-triage; unsafe task → refused).
-3. Live LLM planner (Ollama) graded by the same rubric + a stub-vs-LLM calibration guard.
+3. ✅ Live LLM planner (`verify:llm`, Ollama `llama3.2:3b`) graded by the same rubric + a stub-vs-LLM calibration
+   guard. Head-to-head finding: **free-form** step planning **2/6 (trust low)** — the small model cannot track
+   multi-step state (re-calls tools to max-steps); **LLM-classifier + deterministic `routeByClass`** **6/6 (trust
+   high)**, incl. the 2-step `rag → support-triage`. "LLM understands, code controls" — and the gate caught the
+   weak architecture without loosening the rubric.
 4. Live tool execution via the deployed interaction-gateway (sign → route → observe → synthesize).
