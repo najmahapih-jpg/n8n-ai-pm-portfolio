@@ -7,9 +7,9 @@ import { workflow, node, trigger, sticky, expr } from '@n8n/workflow-sdk';
 // reached via the signed interaction-gateway. The agent-core is the single source of truth (verify:agent 39/39);
 // the Agent Loop Code node MIRRORS it inline (n8n Code nodes can't import the .mjs), and scripts/test-agent-workflow.mjs
 // extracts the COMPILED Agent Loop body, runs the golden tasks through it, AND differentially checks it vs the core
-// — so the deployed copy can't silently drift. STUB-DEFAULT: v0.1.0 runs the deterministic keyword planner over
-// STUB tools (byte-stable trajectory). A live LLM planner + live gateway tool execution are the opt-in next
-// increments. Guardrails (refusal / non-allowlisted-tool / max-steps / no-fabricated-result) are proven negatives.
+// — so the deployed copy can't silently drift. STUB-DEFAULT: runs the deterministic keyword planner over STUB
+// tools (byte-stable, differential-pinned). OPT-IN agentMode=live runs a REAL LLM classifier planner (Ollama) +
+// signed gateway tools from this node. Guardrails (refusal / non-allowlisted-tool / max-steps / no-fabricated-result) are proven negatives.
 
 const POLICY_VERSION = 'autonomous-agent-v0.1.0';
 
@@ -59,7 +59,12 @@ if (typeof task === 'string') task = { text: task };
 if (!task || typeof task !== 'object') task = {};
 const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 const maxSteps = num(envGet('AGENT_MAX_STEPS'), 4);
-return [{ json: { task: { subject: String(task.subject || ''), text: String(task.text || task.message || '') }, config: { maxSteps: maxSteps }, entrypoint: entrypoint, policyVersion: '${POLICY_VERSION}' } }];`
+// agentMode is an opt-in request flag: 'live' runs the real LLM planner + signed gateway tools; default 'stub' is
+// the deterministic, differential-pinned path. A caller can request live; it cannot widen maxSteps (env only).
+const agentMode = (body.agentMode === 'live' || src.agentMode === 'live') ? 'live' : 'stub';
+const normTask = { subject: String(task.subject || ''), text: String(task.text || task.message || '') };
+const email = task.customerEmail || task.email; if (email) normTask.customerEmail = String(email);
+return [{ json: { task: normTask, config: { maxSteps: maxSteps, agentMode: agentMode }, entrypoint: entrypoint, policyVersion: '${POLICY_VERSION}' } }];`
     }
   }
 });
@@ -74,8 +79,8 @@ const agentLoop = node({
       mode: 'runOnceForAllItems',
       language: 'javaScript',
       jsCode: `// MIRRORS scripts/lib/agent-core.mjs (the audited source of truth, verify:agent 39/39). The bounded tool-use
-// loop + deterministic keyword planner + refusal/allowlist/max-steps/no-fabricated guardrails. STUB tools here;
-// live gateway tool execution is the opt-in next increment.
+// loop + deterministic keyword planner + refusal/allowlist/max-steps/no-fabricated guardrails. STUB tools by
+// default; agentMode=live runs a REAL LLM classifier planner (Ollama) + signed gateway tools from this node.
 const TOOL_ALLOWLIST = ['support-triage', 'product-feedback', 'rag', 'eval', 'drift'];
 function taskText(task) { if (task == null) return ''; if (typeof task === 'string') return task; return (String(task.text == null ? '' : task.text) + ' ' + String(task.subject == null ? '' : task.subject)).trim(); }
 function taskSubject(task) { if (task && typeof task === 'object' && task.subject) return String(task.subject); return taskText(task).slice(0, 60); }
@@ -145,9 +150,90 @@ function runAgentLoop(task, opts) {
   }
   return { refused: false, stopReason: 'guardrail:max-steps', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'max-steps' };
 }
+// ---- LIVE machinery (opt-in agentMode:'live'); the STUB path above stays the differential-pinned default ----
+const OLLAMA_URL = 'http://host.docker.internal:11434/api/chat';
+const GATEWAY_URL = 'http://n8n:5678/webhook/portfolio/interaction-gateway';
+const LLM_MODEL = 'llama3.2:3b';
+function buildClassifyPrompt(task) {
+  return ['Classify the support task into EXACTLY ONE label:', '  - "bug": something is broken / crashing / erroring / down / not working.', '  - "question": a how / what / why information request.', '  - "feedback": product feedback, a complaint, or a feature wish.', '  - "none": a greeting / status / chit-chat with no actionable request.', 'TASK subject: ' + JSON.stringify(taskSubject(task)), 'TASK text: ' + JSON.stringify(taskText(task)), 'Reply with ONE JSON object and nothing else: {"label":"bug|question|feedback|none"}'].join('\\n');
+}
+function parseLabel(text) {
+  const raw = String(text == null ? '' : text); let obj = null; const m = raw.match(/\\{[\\s\\S]*\\}/);
+  if (m) { try { obj = JSON.parse(m[0]); } catch (e) { obj = null; } }
+  const label = obj && obj.label != null ? String(obj.label).toLowerCase().trim() : '';
+  return ['bug', 'question', 'feedback', 'none'].indexOf(label) >= 0 ? label : 'none';
+}
+function routeByClass(label, task, history) {
+  const called = history.map(function (h) { return h.intent; });
+  if (label === 'bug') {
+    if (called.indexOf('rag') < 0) return { action: 'call', intent: 'rag', args: { query: 'known issue: ' + taskText(task).slice(0, 120) } };
+    if (called.indexOf('support-triage') < 0) return { action: 'call', intent: 'support-triage', args: { customerEmail: taskEmail(task), subject: taskSubject(task), message: taskText(task) } };
+    return { action: 'finish', answer: synthesize('bug', history) };
+  }
+  if (label === 'feedback') { if (called.indexOf('product-feedback') < 0) return { action: 'call', intent: 'product-feedback', args: { feedbackText: taskText(task) } }; return { action: 'finish', answer: synthesize('feedback', history) }; }
+  if (label === 'question') { if (called.indexOf('rag') < 0) return { action: 'call', intent: 'rag', args: { query: taskText(task) } }; return { action: 'finish', answer: synthesize('question', history) }; }
+  return { action: 'finish', answer: 'No actionable signal detected; no tool was appropriate.' };
+}
+async function llmClassify(task, helpers) {
+  const res = await helpers.httpRequest({ method: 'POST', url: OLLAMA_URL, body: { model: LLM_MODEL, messages: [{ role: 'user', content: buildClassifyPrompt(task) }], stream: false, format: 'json', options: { temperature: 0 } }, json: true });
+  const content = res && res.message && res.message.content != null ? res.message.content : (typeof res === 'string' ? res : JSON.stringify(res));
+  return parseLabel(content);
+}
+function summarizeTarget(target, tr) {
+  const r = (tr && tr.response) ? tr.response : tr; const parts = [];
+  ['theme', 'sentiment', 'urgency', 'priorityScore', 'routingTeam', 'abstained', 'passed', 'passRate'].forEach(function (k) { if (r && r[k] != null) parts.push(k + '=' + r[k]); });
+  if (r && Array.isArray(r.citations)) parts.push('citations=' + r.citations.length);
+  if (!parts.length && tr && tr.statusCode != null) parts.push('statusCode ' + tr.statusCode);
+  return target + ': ' + (parts.length ? parts.join(', ') : 'ok');
+}
+async function gatewayCall(intent, args, ctx) {
+  const crypto = require('crypto');
+  const ts = String(Math.floor(Date.now() / 1000)); const requestId = 'agent-node-' + ctx.seq; ctx.seq += 1;
+  const rawBody = JSON.stringify({ intent: intent, payload: args || {}, requestId: requestId });
+  const sig = 'sha256=' + crypto.createHmac('sha256', String(ctx.secret)).update(ts + '.' + rawBody).digest('hex');
+  let resp; try { resp = await ctx.helpers.httpRequest({ method: 'POST', url: GATEWAY_URL, body: rawBody, headers: { 'Content-Type': 'text/plain', 'X-Timestamp': ts, 'X-Signature': sig } }); } catch (e) { return { ok: false, summary: 'gateway error: ' + (e && e.message ? e.message : 'failed') }; }
+  let json = resp; if (typeof resp === 'string') { try { json = JSON.parse(resp); } catch (e) { return { ok: false, summary: 'gateway non-JSON' }; } }
+  const executed = !!(json && json.result && json.result.executed === true);
+  const perTarget = (json && json.result && Array.isArray(json.result.perTarget)) ? json.result.perTarget : [];
+  const siblingsOk = perTarget.length > 0 && perTarget.every(function (t) { const sc = t && t.result ? t.result.statusCode : undefined; return sc == null || Number(sc) < 400; });
+  const summary = perTarget.length ? perTarget.map(function (t) { return summarizeTarget(t.target, t.result); }).join(' | ') : 'no result';
+  return { ok: (json && json.ok === true) && executed && siblingsOk, summary: summary };
+}
+async function runAgentLoopLive(task, opts) {
+  const maxStepsL = Number.isFinite(opts.maxSteps) ? opts.maxSteps : 4;
+  const safe = isUnsafeTask(task);
+  if (safe.unsafe) return { refused: true, stopReason: 'refused', reason: safe.reason, trajectory: [], toolCalls: 0, finalAnswer: null, guardrail: 'refusal' };
+  const trajectory = []; const history = []; const ctx = { helpers: opts.helpers, secret: opts.secret, seq: 1 };
+  for (let step = 1; step <= maxStepsL; step += 1) {
+    let label; try { label = await llmClassify(task, opts.helpers); } catch (e) { return { refused: false, stopReason: 'planner-error', reason: (e && e.message ? e.message : 'classify failed'), trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null }; }
+    const decision = routeByClass(label, task, history);
+    if (decision.action === 'finish') return { refused: false, stopReason: 'finished', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: decision.answer == null ? null : decision.answer };
+    if (decision.action === 'call') {
+      if (TOOL_ALLOWLIST.indexOf(decision.intent) < 0) return { refused: false, stopReason: 'guardrail:non-allowlisted-tool', blockedIntent: decision.intent, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'non-allowlisted-tool' };
+      const result = await gatewayCall(decision.intent, decision.args || {}, ctx);
+      trajectory.push({ step: step, intent: decision.intent, args: decision.args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary });
+      history.push({ intent: decision.intent, result: result });
+      continue;
+    }
+    return { refused: false, stopReason: 'unknown-action', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null };
+  }
+  return { refused: false, stopReason: 'guardrail:max-steps', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'max-steps' };
+}
 const input = items[0].json;
-const run = runAgentLoop(input.task, { planner: keywordPlanner, callTool: stubTools, maxSteps: (input.config && input.config.maxSteps) || 4, allowlist: TOOL_ALLOWLIST });
-return [{ json: { run: run, policyVersion: input.policyVersion, plannerSource: 'stub', toolSource: 'stub' } }];`
+const mode = (input.config && input.config.agentMode) === 'live' ? 'live' : 'stub';
+const maxSteps = (input.config && input.config.maxSteps) || 4;
+let run; let plannerSource; let toolSource;
+if (mode === 'live') {
+  const helpers = (this && this.helpers) ? this.helpers : ((typeof $helpers !== 'undefined') ? $helpers : null);
+  const secret = (typeof $env !== 'undefined' && $env) ? $env.GATEWAY_SIGNING_SECRET : undefined;
+  if (!helpers || typeof helpers.httpRequest !== 'function') { run = { refused: false, stopReason: 'live-unavailable', reason: 'no httpRequest helper in this runtime', trajectory: [], toolCalls: 0, finalAnswer: null }; }
+  else { run = await runAgentLoopLive(input.task, { maxSteps: maxSteps, helpers: helpers, secret: secret }); }
+  plannerSource = 'llm:' + LLM_MODEL; toolSource = 'gateway';
+} else {
+  run = runAgentLoop(input.task, { planner: keywordPlanner, callTool: stubTools, maxSteps: maxSteps, allowlist: TOOL_ALLOWLIST });
+  plannerSource = 'stub'; toolSource = 'stub';
+}
+return [{ json: { run: run, policyVersion: input.policyVersion, plannerSource: plannerSource, toolSource: toolSource } }];`
     }
   }
 });
@@ -176,13 +262,13 @@ const respond = node({
 });
 
 const overview = sticky(
-  '## Autonomous Agent v0.1.0 (Capstone C). A BOUNDED tool-use loop: the Agent Loop Code node MIRRORS the audited ' +
-  'scripts/lib/agent-core.mjs (verify:agent 39/39) — deterministic keyword planner + refusal/allowlist/max-steps/' +
-  'no-fabricated guardrails — over STUB tools (byte-stable trajectory). The agent tools ARE the portfolio ' +
-  'workflows via the signed interaction-gateway; live LLM planner + live gateway tool execution are the opt-in next ' +
-  'increments. scripts/test-agent-workflow.mjs extracts the COMPILED Agent Loop body, runs the golden tasks, AND ' +
-  'differentially checks it vs the core, so the deployed copy cannot silently drift. webhook -> normalize -> Agent ' +
-  'Loop -> respond. policyVersion autonomous-agent-v0.1.0.',
+  '## Autonomous Agent v0.1.0 (Capstone C). A BOUNDED tool-use loop. DEFAULT (stub): the Agent Loop Code node ' +
+  'MIRRORS the audited scripts/lib/agent-core.mjs (verify:agent 59/59) — deterministic keyword planner + ' +
+  'refusal/allowlist/max-steps/no-fabricated guardrails — over STUB tools (byte-stable, differential-pinned). ' +
+  'OPT-IN (POST agentMode=live): this node runs a REAL LLM classifier (Ollama) + signed interaction-gateway tools ' +
+  '(real in-process portfolio siblings). scripts/test-agent-workflow.mjs differentially pins the STUB path vs the ' +
+  'core, so the deployed copy cannot silently drift. webhook -> normalize -> Agent Loop -> respond. ' +
+  'policyVersion autonomous-agent-v0.1.0.',
   [receiveTask, runFromUi, buildDemoTask, normalizeTask, agentLoop, buildResponse, respond],
   { color: 6 }
 );
