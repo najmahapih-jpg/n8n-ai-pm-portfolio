@@ -15,14 +15,14 @@ default, with the SAME rubric grading a live LLM. No "vibe check" — every crit
 | `outcome` | `stopReason` + `refused` match the golden expectation |
 | `taskSuccess` | refused-as-expected, OR finished with exactly the expected tools |
 
-This rubric is **planner-agnostic**: it grades the deterministic stub planner today and a live LLM planner
-later, unchanged — the answer to "how do you eval a non-deterministic agent".
+This rubric is **planner-agnostic**: the SAME checks grade the deterministic stub planner AND a live LLM planner
+(`verify:llm`), unchanged — the answer to "how do you eval a non-deterministic agent".
 
 ## Layers
 
-### Layer 1 — static (offline)
-PS/JSON parse + secret scan + (once the SDK workflow lands) workflow-JSON shape + node-floor. *(Arrives with the
-workflow increment.)*
+### Layer 1 — static (offline) — `verify:static`
+PS/JSON parse + secret scan + registry freshness + workflow-JSON shape + node-floor, then both Node self-tests
+(`verify:agent` + `verify:workflow`). Built.
 
 ### Layer 2 — trajectory self-test (offline, deterministic) — `verify:agent`
 `scripts/test-agent-core.mjs` runs the golden tasks through `runAgentLoop` with the **stub planner + stub tools**
@@ -34,12 +34,22 @@ unsafe-injection (refused) · unsafe-destructive (refused) · no-signal (finishe
 Guardrail negatives: non-allowlisted-tool BLOCKED (0 executed) · max-steps bounded · no-fabricated-result
 (tool failure recorded `ok:false`).
 
-### Layer 3 — live (opt-in, not in CI)
-- **Live LLM planner** (Ollama `llama3.2:3b` default): the LLM emits the plan; the SAME `scoreTrajectory` rubric
-  grades its trajectory. A **planner-calibration** guard (stub vs LLM agreement on the golden set, mirroring A's
-  judge-drift guard) flags a low-agreement LLM — the "who plans the planner" signal.
-- **Live tool execution**: the agent signs requests and routes to the **deployed interaction-gateway** (real
-  support-triage / rag / product-feedback / … results).
+### Layer 3 — live (opt-in, not in CI) — `verify:llm` — BUILT + RUN
+`scripts/test-agent-llm-live.mjs` drives the loop with a REAL LLM (Ollama `llama3.2:3b`) and grades its trajectory
+with the SAME `scoreTrajectory` rubric, reporting a stub-vs-LLM **calibration** verdict (agreement-with-golden →
+`plannerTrust` high|low — A's judge-drift guard, applied to the planner). It runs TWO architectures head-to-head:
+
+- **Free-form** step planner (the LLM plans every step) — on `llama3.2:3b`: **2/6, trust LOW**. The small model
+  cannot track multi-step state (it re-calls tools until max-steps). An honest finding — the gate caught it; we did
+  NOT loosen the rubric.
+- **Classifier** planner (the LLM only classifies the task; deterministic `routeByClass` owns the multi-step flow)
+  — on `llama3.2:3b`: **6/6, trust HIGH**, including the 2-step `rag → support-triage`. "LLM understands, code
+  controls" — the architecture that lets a small local model clear the same bar. `verify:llm` passes if EITHER
+  architecture clears the threshold; it SKIPs cleanly when Ollama is unreachable.
+
+The OFFLINE gates already prove the prompt/parse/loop/rubric plumbing, so the only new variable here is the real
+model's output. **Still deferred — live tool execution**: the agent signs requests and routes to the **deployed
+interaction-gateway** (real support-triage / rag / product-feedback / … results) instead of stub tools.
 
 ## Gates
 
@@ -48,7 +58,7 @@ Guardrail negatives: non-allowlisted-tool BLOCKED (0 executed) · max-steps boun
 | `npm run verify:agent` | Layer 2 — pure-core trajectory self-test (39/39) | yes |
 | `npm run verify:workflow` | Layer 2b — the COMPILED Agent Loop vs the golden tasks + a differential vs the core (24/24) | yes |
 | `npm run verify:static` | Layer 1 (PS/JSON parse, secret scan, registry, JSON shape) + both Node self-tests | yes |
-| `npm run verify:live` | Layer 3 — live LLM planner + live gateway tools (opt-in) | no |
+| `npm run verify:llm` | Layer 3 — live LLM planner, same rubric (llama3.2:3b: free-form 2/6 LOW, classifier 6/6 HIGH); opt-in, SKIPs without Ollama | no |
 
 ## Why this is honest
 
