@@ -309,7 +309,7 @@ const ALLOWLIST = {
 // target -> n8n workflow id, ONLY for targets that expose an executeWorkflowTrigger (callable IN-PROCESS via
 // Execute Workflow). Business targets stay decision-only until each gets a trigger (tracked per-sibling); the
 // selftest sibling is the proven live target. Single-target live execution only in v0.2.0.
-const TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B', 'rag': 'jZ5Xfml8jbKexYqf', 'eval-harness': 'IhmmthDFMKdDbgvp' };
+const TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B', 'rag': 'jZ5Xfml8jbKexYqf', 'eval-harness': 'IhmmthDFMKdDbgvp', 'scheduled-drift-monitor': 'Gjd7wma62zubk3Wy', 'support-triage': 'RPkw9jGJ93lqs7jO' };
 function resolve(intent, allowlist) {
   if (!intent || typeof intent !== 'string') return { ok: false, targets: [], reason: 'missing intent' };
   const targets = allowlist[intent];
