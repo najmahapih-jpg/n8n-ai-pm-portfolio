@@ -54,12 +54,13 @@ model's output.
 exact bytes) and routes an allowlisted INTENT to the **deployed interaction-gateway**, which executes the real
 sibling in-process and returns the real result (no secret over HTTP beyond the HMAC; the agent never names a URL —
 SSRF-closed at the gateway). With the deterministic keyword planner (so the TOOL layer is the only variable), the
-agent drove **3 real siblings** under the same rubric — a bug ran the live 2-step `rag → support-triage` route, and
-`product-feedback` returned a real `theme=performance, sentiment=neutral` classification; refusals held with ZERO
-gateway calls. HONEST finding: `support-triage` executed but returned its own **400** — the agent's `{subject,
-message}` payload doesn't match that sibling's input contract (`callTool` reports a sibling 4xx as `ok:false`, never
-fabricated; aligning the agent's per-tool payloads to each sibling's contract is the next follow-up). The signing +
-request wiring + response parsing are themselves offline-pinned by `verify:gateway-client` (stub fetch).
+agent drove **4 real siblings** under the same rubric — the live 2-step `rag → support-triage` route returns real
+routing (`routingTeam=product-engineering`), and `product-feedback` returns a real `theme=performance,
+sentiment=neutral` classification; refusals held with ZERO gateway calls. PAYLOAD CONTRACT ALIGNMENT (done):
+support-triage's contract requires one-of `{customerEmail, email}`; the agent now passes the ticket's
+`customerEmail` (a real ticket carries one), so the 2-step bug route executes cleanly end-to-end — a 400 earlier
+caught the gap, and `callTool` still reports any sibling 4xx as `ok:false` (never fabricated). The signing +
+request wiring + response parsing are offline-pinned by `verify:gateway-client` (stub fetch).
 
 ## Gates
 
@@ -70,7 +71,7 @@ request wiring + response parsing are themselves offline-pinned by `verify:gatew
 | `npm run verify:gateway-client` | Layer 2c — the gateway tool executor offline: signing + wiring + parsing + failure handling (16/16, stub fetch) | yes |
 | `npm run verify:static` | Layer 1 (PS/JSON parse, secret scan, registry, JSON shape) + the Node self-tests | yes |
 | `npm run verify:llm` | Layer 3 — live LLM planner, same rubric (llama3.2:3b: free-form 2/6 LOW, classifier 6/6 HIGH); opt-in, SKIPs without Ollama | no |
-| `npm run verify:tools` | Layer 3 — live gateway tool execution (agent signs → real siblings; 3 clean executions, same rubric); opt-in, SKIPs without n8n/secret | no |
+| `npm run verify:tools` | Layer 3 — live gateway tool execution (agent signs → real siblings; 4 clean executions incl. the 2-step bug route, same rubric); opt-in, SKIPs without n8n/secret | no |
 
 ## Why this is honest
 
