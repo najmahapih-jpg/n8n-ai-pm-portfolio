@@ -3,8 +3,8 @@
   "name": "Portfolio - Interaction Gateway",
   "nodes": [
     {
-      "id": "bb7fc1ed-5683-4f7b-ab75-46dda077badf",
-      "name": "Sticky Note bb7fc1ed",
+      "id": "7b2fe09e-35b1-4e8e-99c3-132a1d268404",
+      "name": "Sticky Note 7b2fe09e",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -19,7 +19,7 @@
       }
     },
     {
-      "id": "8cd39aa1-6c5e-4ce2-b524-01ef1b9d96be",
+      "id": "e7f149f8-5977-422f-9341-36e9cc073ec9",
       "name": "Receive Signed Request (POST)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -37,10 +37,10 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "3a3af0e2-e8b8-44db-b322-ab874fdee86e"
+      "webhookId": "37bb6499-eb0d-4313-9ffd-0044fad0c062"
     },
     {
-      "id": "2880b274-6aa0-4c62-9446-4d3f3eb528e8",
+      "id": "3801b35b-e559-4909-b54d-12074d170d98",
       "name": "Normalize Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -55,7 +55,7 @@
       }
     },
     {
-      "id": "a960c935-13c0-443d-a244-8a9ed546db4c",
+      "id": "6361a35e-d3a8-4df0-a1d9-7e3c2e6cbbcf",
       "name": "Enforce Body Size (413)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -70,7 +70,7 @@
       }
     },
     {
-      "id": "5965839e-313d-4a64-9157-97b41a04bd59",
+      "id": "d46c6a10-7b80-4ffa-b43f-54f1766a4806",
       "name": "Verify Signature (401)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -85,7 +85,7 @@
       }
     },
     {
-      "id": "62300144-6df7-46ab-9ef3-eac8b9dd1781",
+      "id": "c5f25127-6774-4dfa-8eb6-15737a10353a",
       "name": "Strip Secrets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -100,7 +100,7 @@
       }
     },
     {
-      "id": "3eece43f-6437-4f7c-8af0-ff8e3f20400e",
+      "id": "776aff38-a2b9-45f7-bced-6f502843c6bd",
       "name": "Resolve Route (422)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -111,11 +111,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Mirrors gateway-core.resolveRoute: map an intent to 1+ allowlisted sibling targets; reject unknown /\n// non-allowlisted. Callers never supply a URL/host (SSRF-closed by construction). A multi-target intent\n// (feedback-then-grade) is a fan-out composition.\nconst g = items[0].json.gateway;\nconst ALLOWLIST = {\n  'support-triage': ['support-triage'],\n  'product-feedback': ['product-feedback'],\n  'rag': ['rag'],\n  'eval': ['eval-harness'],\n  'drift': ['scheduled-drift-monitor'],\n  'feedback-then-grade': ['product-feedback', 'eval-harness'],\n  'gateway-selftest': ['gateway-selftest-sibling'],\n  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling']\n};\n// target -> n8n workflow id, ONLY for targets that expose an executeWorkflowTrigger (callable IN-PROCESS via\n// Execute Workflow). Business targets stay decision-only until each gets a trigger (tracked per-sibling); the\n// selftest sibling is the proven live target. Single-target live execution only in v0.2.0.\nconst TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B', 'rag': 'jZ5Xfml8jbKexYqf', 'eval-harness': 'IhmmthDFMKdDbgvp' };\nfunction resolve(intent, allowlist) {\n  if (!intent || typeof intent !== 'string') return { ok: false, targets: [], reason: 'missing intent' };\n  const targets = allowlist[intent];\n  if (!Array.isArray(targets) || targets.length === 0) return { ok: false, targets: [], reason: 'non-allowlisted intent: ' + intent };\n  return { ok: true, targets: targets.slice(), reason: 'ok' };\n}\nconst r = resolve(g.request.intent, ALLOWLIST);\ng.stages.route = { ok: r.ok, reason: r.reason };\nif (g.accepted) {\n  if (r.ok) {\n    g.routedTo = r.targets;\n    g.targetIds = r.targets.map(function (t) { return { target: t, id: TARGET_WORKFLOW_IDS[t] || null }; });\n    // callable iff EVERY resolved target has a wired executeWorkflowTrigger id (live fan-out is all-or-nothing)\n    g.targetCallable = g.targetIds.length > 0 && g.targetIds.every(function (x) { return !!x.id; });\n  } else {\n    g.accepted = false;\n    g.statusCode = 422;\n    g.error = 'unprocessable: ' + r.reason;\n    g.routedTo = [];\n    g.targetIds = [];\n    g.targetCallable = false;\n  }\n}\nreturn [{ json: { gateway: g } }];"
+        "jsCode": "// Mirrors gateway-core.resolveRoute: map an intent to 1+ allowlisted sibling targets; reject unknown /\n// non-allowlisted. Callers never supply a URL/host (SSRF-closed by construction). A multi-target intent\n// (feedback-then-grade) is a fan-out composition.\nconst g = items[0].json.gateway;\nconst ALLOWLIST = {\n  'support-triage': ['support-triage'],\n  'product-feedback': ['product-feedback'],\n  'rag': ['rag'],\n  'eval': ['eval-harness'],\n  'drift': ['scheduled-drift-monitor'],\n  'feedback-then-grade': ['product-feedback', 'eval-harness'],\n  'gateway-selftest': ['gateway-selftest-sibling'],\n  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling']\n};\n// target -> n8n workflow id, ONLY for targets that expose an executeWorkflowTrigger (callable IN-PROCESS via\n// Execute Workflow). Business targets stay decision-only until each gets a trigger (tracked per-sibling); the\n// selftest sibling is the proven live target. Single-target live execution only in v0.2.0.\nconst TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B', 'rag': 'jZ5Xfml8jbKexYqf', 'eval-harness': 'IhmmthDFMKdDbgvp', 'scheduled-drift-monitor': 'Gjd7wma62zubk3Wy', 'support-triage': 'RPkw9jGJ93lqs7jO' };\nfunction resolve(intent, allowlist) {\n  if (!intent || typeof intent !== 'string') return { ok: false, targets: [], reason: 'missing intent' };\n  const targets = allowlist[intent];\n  if (!Array.isArray(targets) || targets.length === 0) return { ok: false, targets: [], reason: 'non-allowlisted intent: ' + intent };\n  return { ok: true, targets: targets.slice(), reason: 'ok' };\n}\nconst r = resolve(g.request.intent, ALLOWLIST);\ng.stages.route = { ok: r.ok, reason: r.reason };\nif (g.accepted) {\n  if (r.ok) {\n    g.routedTo = r.targets;\n    g.targetIds = r.targets.map(function (t) { return { target: t, id: TARGET_WORKFLOW_IDS[t] || null }; });\n    // callable iff EVERY resolved target has a wired executeWorkflowTrigger id (live fan-out is all-or-nothing)\n    g.targetCallable = g.targetIds.length > 0 && g.targetIds.every(function (x) { return !!x.id; });\n  } else {\n    g.accepted = false;\n    g.statusCode = 422;\n    g.error = 'unprocessable: ' + r.reason;\n    g.routedTo = [];\n    g.targetIds = [];\n    g.targetCallable = false;\n  }\n}\nreturn [{ json: { gateway: g } }];"
       }
     },
     {
-      "id": "167d3eae-7542-4019-943e-07447beccd2e",
+      "id": "a9b2932a-e9e4-47b7-8b0d-e2f6115a2f4c",
       "name": "Live Route To Sibling?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -149,7 +149,7 @@
       }
     },
     {
-      "id": "45da5325-8972-4722-ba09-875c6bc1ab39",
+      "id": "5deede50-9e95-4234-ae41-7a1c7db562fd",
       "name": "Prepare Sibling Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -164,7 +164,7 @@
       }
     },
     {
-      "id": "24f40668-c2a9-4cb9-afaf-bd3091ef0049",
+      "id": "740febb4-3ff6-4974-856d-d503e26022b7",
       "name": "Execute Sibling (in-process)",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
@@ -184,7 +184,7 @@
       }
     },
     {
-      "id": "3d5947f3-3683-4fa6-b0ca-a7ffe1038838",
+      "id": "6b969220-f6e0-47c7-98d9-7c051068ba7f",
       "name": "Merge Sibling Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -199,7 +199,7 @@
       }
     },
     {
-      "id": "6c4948d2-aa58-4a25-9555-16259ce7394b",
+      "id": "ae36e5c0-9fa9-44be-a74b-3651f1fa209d",
       "name": "Respond (live route)",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -216,7 +216,7 @@
       }
     },
     {
-      "id": "43427c22-3614-468b-8fda-82a724f83629",
+      "id": "447eea22-d64d-4eb7-8c91-49bb2ebda0e6",
       "name": "Route To Siblings (decision)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -231,7 +231,7 @@
       }
     },
     {
-      "id": "a4235e3d-10ba-412c-ad05-82908134ec60",
+      "id": "37141d51-fca2-4108-9a70-8e34b1251dc0",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -246,7 +246,7 @@
       }
     },
     {
-      "id": "8bc54f2b-9285-49f7-91a1-631bf105e9a9",
+      "id": "10b1d3de-938d-4f5e-a400-186ff1244b74",
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -263,7 +263,7 @@
       }
     },
     {
-      "id": "95f56368-d2cc-4a69-84f3-d3c77e17c471",
+      "id": "d471f7d7-5113-4feb-b887-84f56e5f3fcd",
       "name": "Run Demo From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -273,7 +273,7 @@
       ]
     },
     {
-      "id": "ae54b154-b99a-4991-8137-6139b1711595",
+      "id": "a101c21d-19db-4285-a82a-9cfb5c04bb47",
       "name": "Build Signed Demo Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
