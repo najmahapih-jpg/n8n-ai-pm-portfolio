@@ -18,7 +18,7 @@
       "canonical": "workflows\\canonical\\scheduled-drift-monitor.canonical.json",
       "release": "workflows\\releases\\scheduled-drift-monitor-v0.3.0.json",
       "request": "fixtures\\requests\\scheduled-drift-monitor.md",
-      "trigger": "schedule + manual + webhook (on-demand)",
+      "trigger": "schedule + manual + webhook (on-demand) + executeWorkflowTrigger (callable by the interaction-gateway; 2026-06-03 -- ADDITIVE, feeds the same Normalize Run Config node; recompile + REST-deployed; on-demand webhook regression-tested unchanged: mode=stub, digestIntegrity=true; canonical 22 nodes)",
       "integrations": [
         "n8n Schedule Trigger (weekly, default — the production cadence)",
         "n8n Manual Trigger (editor demo)",
@@ -54,9 +54,10 @@
         "source-changed"
       ],
       "localOnly": true,
-      "nodeCount": 21,
+      "nodeCount": 22,
       "nodeTypes": [
         "n8n-nodes-base.code",
+        "n8n-nodes-base.executeWorkflowTrigger",
         "n8n-nodes-base.if",
         "n8n-nodes-base.manualTrigger",
         "n8n-nodes-base.respondToWebhook",
