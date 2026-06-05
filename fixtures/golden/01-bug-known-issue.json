@@ -1,0 +1,6 @@
+{
+  "id": "bug-known-issue",
+  "description": "A bug/outage signal: the agent first checks the KB (rag) for a known issue, THEN routes the ticket (support-triage) — a genuine 2-step tool trajectory.",
+  "task": { "subject": "Export broken", "text": "the export button is broken and crashes on mobile" },
+  "expect": { "tools": ["rag", "support-triage"], "stopReason": "finished", "refused": false }
+}
