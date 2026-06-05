@@ -1,0 +1,7 @@
+{
+  "id": "intent-feedback-multi",
+  "description": "feedback-multi FANS OUT to TWO callable siblings (product-feedback + gateway-selftest-sibling). OFFLINE this exercises the routing DECISION (routedTo == both targets); the live in-process fan-out (one Execute-Workflow call per target via mode 'each', results collected per-target) is proven by verify:live (executeWorkflow cannot run offline).",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 65536 },
+  "request": { "intent": "feedback-multi", "payload": { "feedbackText": "app crashes on checkout", "subject": "checkout broken", "message": "cannot pay" }, "timestamp": 1000000, "sign": true },
+  "expect": { "statusCode": 200, "ok": true, "routedTo": ["product-feedback", "gateway-selftest-sibling"], "routedToLength": 2, "traceIdNonEmpty": true }
+}
