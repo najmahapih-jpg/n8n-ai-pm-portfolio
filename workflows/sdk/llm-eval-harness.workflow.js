@@ -1610,6 +1610,16 @@ const overview = sticky(
   { color: 4 }
 );
 
+// Callable as a sub-workflow by the interaction-gateway via Execute Workflow (in-process, no HTTP). Feeds the
+// SAME Normalize Eval Request pipeline as the webhook (tolerates passthrough via `source.body ?? source`), so the
+// webhook contract is unchanged. Minimal input { golden: [{id,input,expected,assertions}] } runs a stub eval.
+// respondToWebhook is a no-op in a sub-workflow call; the caller receives Build Eval Response's output (.response).
+const calledByGateway = trigger({
+  type: 'n8n-nodes-base.executeWorkflowTrigger',
+  version: 1.1,
+  config: { name: 'Called By Gateway (Execute Workflow)', position: [160, 900], parameters: { inputSource: 'passthrough' } }
+});
+
 export default workflow('llm-eval-harness', 'Portfolio - LLM Eval Harness API')
   .add(overview)
   .add(runDemoFromUi)
@@ -1679,4 +1689,6 @@ export default workflow('llm-eval-harness', 'Portfolio - LLM Eval Harness API')
     )
   )
   .add(receiveEvalRun)
+  .to(normalizeEvalRequest)
+  .add(calledByGateway)
   .to(normalizeEvalRequest);
