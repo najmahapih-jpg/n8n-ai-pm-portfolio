@@ -3,8 +3,8 @@
   "name": "Portfolio - Autonomous Agent",
   "nodes": [
     {
-      "id": "ded486f9-cbd5-4057-b59a-0936f32a9d15",
-      "name": "Sticky Note ded486f9",
+      "id": "409877db-a6f3-403a-950c-0973c9afc771",
+      "name": "Sticky Note 409877db",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -19,7 +19,7 @@
       }
     },
     {
-      "id": "15a23106-a9d0-49ac-9a64-a6c655a257a3",
+      "id": "6fb5c66e-7b6c-49bb-bd07-0f50cfd8e229",
       "name": "Receive Task (POST)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -37,10 +37,10 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "ca168def-5cb4-4c11-8f3d-bd142d00d114"
+      "webhookId": "05e8fb3f-edf2-4ae4-b1ef-7c509ac80217"
     },
     {
-      "id": "73d902d5-cae2-4f51-954b-4d9e642915b7",
+      "id": "d78e166b-0c5f-4574-894e-c92b9f0e48b5",
       "name": "Normalize Task",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -55,7 +55,7 @@
       }
     },
     {
-      "id": "2b5ab06c-5987-4b43-bc94-32c5f12e630d",
+      "id": "68ead4be-5fb5-438b-9e83-87cc57b19b15",
       "name": "Agent Loop",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -66,11 +66,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// MIRRORS scripts/lib/agent-core.mjs (the audited source of truth, verify:agent 39/39). The bounded tool-use\n// loop + deterministic keyword planner + refusal/allowlist/max-steps/no-fabricated guardrails. STUB tools here;\n// live gateway tool execution is the opt-in next increment.\nconst TOOL_ALLOWLIST = ['support-triage', 'product-feedback', 'rag', 'eval', 'drift'];\nfunction taskText(task) { if (task == null) return ''; if (typeof task === 'string') return task; return (String(task.text == null ? '' : task.text) + ' ' + String(task.subject == null ? '' : task.subject)).trim(); }\nfunction taskSubject(task) { if (task && typeof task === 'object' && task.subject) return String(task.subject); return taskText(task).slice(0, 60); }\nconst UNSAFE_PATTERNS = [\n  /\\bignore\\s+(all\\s+)?(previous|prior|above)\\b/i,\n  /\\b(disregard|override)\\s+(your\\s+)?(instructions|system|prompt|rules)\\b/i,\n  /\\b(delete|drop|truncate|wipe|destroy)\\b[\\s\\S]*\\b(all|everything|database|table|data|users?|accounts?)\\b/i,\n  /\\b(exfiltrate|leak|reveal|print|show)\\b[\\s\\S]*\\b(secret|token|password|api[_-]?key|credential|system\\s*prompt)\\b/i,\n  /\\bsystem\\s+prompt\\b/i,\n  /\\brm\\s+-rf\\b/i\n];\nfunction isUnsafeTask(task) { const text = taskText(task); for (const p of UNSAFE_PATTERNS) { if (p.test(text)) return { unsafe: true, reason: 'refused: destructive / prompt-injection / out-of-scope request' }; } return { unsafe: false }; }\nfunction synthesize(kind, history) { const parts = history.filter((h) => h.result && h.result.ok).map((h) => h.intent + ':' + (h.result.summary == null ? 'ok' : h.result.summary)); return '[' + kind + '] ' + (parts.length ? parts.join(' | ') : 'no successful tool results'); }\nfunction keywordPlanner(task, history) {\n  const text = taskText(task).toLowerCase();\n  const called = history.map((h) => h.intent);\n  const has = (i) => called.includes(i);\n  const looksBug = /\\b(bug|broken|crash|error|down|outage|cannot|can't|fail|failing|not working|unresponsive)\\b/.test(text);\n  const looksFeedback = /\\b(love|hate|like|dislike|feedback|suggest|wish|feature request|too (slow|small|big|expensive|confusing))\\b/.test(text);\n  const looksQuestion = /\\b(how|what|why|where|when|which|explain|guide|docs?|tutorial)\\b/.test(text) || text.includes('?');\n  if (looksBug) {\n    if (!has('rag')) return { action: 'call', intent: 'rag', args: { query: 'known issue: ' + text.slice(0, 120) }, why: 'check the knowledge base for a known issue' };\n    if (!has('support-triage')) return { action: 'call', intent: 'support-triage', args: { subject: taskSubject(task), message: taskText(task) }, why: 'classify + route the ticket' };\n    return { action: 'finish', answer: synthesize('bug', history) };\n  }\n  if (looksFeedback) {\n    if (!has('product-feedback')) return { action: 'call', intent: 'product-feedback', args: { feedbackText: taskText(task) }, why: 'classify theme / sentiment / urgency' };\n    return { action: 'finish', answer: synthesize('feedback', history) };\n  }\n  if (looksQuestion) {\n    if (!has('rag')) return { action: 'call', intent: 'rag', args: { query: taskText(task) }, why: 'grounded answer from the KB (or a clean abstain)' };\n    return { action: 'finish', answer: synthesize('question', history) };\n  }\n  if (called.length > 0) return { action: 'finish', answer: synthesize('other', history) };\n  return { action: 'finish', answer: 'No actionable signal detected; no tool was appropriate.' };\n}\nfunction stubTools(intent) {\n  const summaries = { 'rag': '2 citations (known-issue check)', 'support-triage': 'routed: platform-support, urgency: high', 'product-feedback': 'theme: praise, sentiment: positive', 'eval': 'passRate 1.0', 'drift': 'drift.any false' };\n  return summaries[intent] ? { ok: true, summary: summaries[intent] } : { ok: false, summary: 'unknown tool' };\n}\nfunction runAgentLoop(task, opts) {\n  opts = opts || {};\n  const planner = opts.planner || keywordPlanner;\n  const callTool = opts.callTool || stubTools;\n  const maxSteps = Number.isFinite(opts.maxSteps) ? opts.maxSteps : 4;\n  const allowlist = Array.isArray(opts.allowlist) ? opts.allowlist : TOOL_ALLOWLIST;\n  const safe = isUnsafeTask(task);\n  if (safe.unsafe) return { refused: true, stopReason: 'refused', reason: safe.reason, trajectory: [], toolCalls: 0, finalAnswer: null, guardrail: 'refusal' };\n  const trajectory = []; const history = [];\n  for (let step = 1; step <= maxSteps; step += 1) {\n    let decision;\n    try { decision = planner(task, history); } catch (e) { return { refused: false, stopReason: 'planner-error', reason: e.message, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null }; }\n    if (!decision || typeof decision !== 'object') return { refused: false, stopReason: 'bad-decision', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null };\n    if (decision.action === 'refuse') return { refused: true, stopReason: 'refused', reason: decision.reason || 'planner refused', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'refusal' };\n    if (decision.action === 'finish') return { refused: false, stopReason: 'finished', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: decision.answer == null ? null : decision.answer };\n    if (decision.action === 'call') {\n      if (!allowlist.includes(decision.intent)) return { refused: false, stopReason: 'guardrail:non-allowlisted-tool', blockedIntent: decision.intent, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'non-allowlisted-tool' };\n      let result;\n      try { result = callTool(decision.intent, decision.args || {}); } catch (e) { result = { ok: false, summary: 'tool error: ' + e.message }; }\n      if (!result || typeof result !== 'object') result = { ok: false, summary: 'tool returned a bad shape' };\n      trajectory.push({ step: step, intent: decision.intent, args: decision.args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary });\n      history.push({ intent: decision.intent, result: result });\n      continue;\n    }\n    return { refused: false, stopReason: 'unknown-action', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null };\n  }\n  return { refused: false, stopReason: 'guardrail:max-steps', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'max-steps' };\n}\nconst input = items[0].json;\nconst run = runAgentLoop(input.task, { planner: keywordPlanner, callTool: stubTools, maxSteps: (input.config && input.config.maxSteps) || 4, allowlist: TOOL_ALLOWLIST });\nreturn [{ json: { run: run, policyVersion: input.policyVersion, plannerSource: 'stub', toolSource: 'stub' } }];"
+        "jsCode": "// MIRRORS scripts/lib/agent-core.mjs (the audited source of truth, verify:agent 39/39). The bounded tool-use\n// loop + deterministic keyword planner + refusal/allowlist/max-steps/no-fabricated guardrails. STUB tools here;\n// live gateway tool execution is the opt-in next increment.\nconst TOOL_ALLOWLIST = ['support-triage', 'product-feedback', 'rag', 'eval', 'drift'];\nfunction taskText(task) { if (task == null) return ''; if (typeof task === 'string') return task; return (String(task.text == null ? '' : task.text) + ' ' + String(task.subject == null ? '' : task.subject)).trim(); }\nfunction taskSubject(task) { if (task && typeof task === 'object' && task.subject) return String(task.subject); return taskText(task).slice(0, 60); }\nfunction taskEmail(task) { if (task && typeof task === 'object') { if (task.customerEmail) return String(task.customerEmail); if (task.email) return String(task.email); } return 'unknown@example.com'; }\nconst UNSAFE_PATTERNS = [\n  /\\bignore\\s+(all\\s+)?(previous|prior|above)\\b/i,\n  /\\b(disregard|override)\\s+(your\\s+)?(instructions|system|prompt|rules)\\b/i,\n  /\\b(delete|drop|truncate|wipe|destroy)\\b[\\s\\S]*\\b(all|everything|database|table|data|users?|accounts?)\\b/i,\n  /\\b(exfiltrate|leak|reveal|print|show)\\b[\\s\\S]*\\b(secret|token|password|api[_-]?key|credential|system\\s*prompt)\\b/i,\n  /\\bsystem\\s+prompt\\b/i,\n  /\\brm\\s+-rf\\b/i\n];\nfunction isUnsafeTask(task) { const text = taskText(task); for (const p of UNSAFE_PATTERNS) { if (p.test(text)) return { unsafe: true, reason: 'refused: destructive / prompt-injection / out-of-scope request' }; } return { unsafe: false }; }\nfunction synthesize(kind, history) { const parts = history.filter((h) => h.result && h.result.ok).map((h) => h.intent + ':' + (h.result.summary == null ? 'ok' : h.result.summary)); return '[' + kind + '] ' + (parts.length ? parts.join(' | ') : 'no successful tool results'); }\nfunction keywordPlanner(task, history) {\n  const text = taskText(task).toLowerCase();\n  const called = history.map((h) => h.intent);\n  const has = (i) => called.includes(i);\n  const looksBug = /\\b(bug|broken|crash|error|down|outage|cannot|can't|fail|failing|not working|unresponsive)\\b/.test(text);\n  const looksFeedback = /\\b(love|hate|like|dislike|feedback|suggest|wish|feature request|too (slow|small|big|expensive|confusing))\\b/.test(text);\n  const looksQuestion = /\\b(how|what|why|where|when|which|explain|guide|docs?|tutorial)\\b/.test(text) || text.includes('?');\n  if (looksBug) {\n    if (!has('rag')) return { action: 'call', intent: 'rag', args: { query: 'known issue: ' + text.slice(0, 120) }, why: 'check the knowledge base for a known issue' };\n    if (!has('support-triage')) return { action: 'call', intent: 'support-triage', args: { customerEmail: taskEmail(task), subject: taskSubject(task), message: taskText(task) }, why: 'classify + route the ticket' };\n    return { action: 'finish', answer: synthesize('bug', history) };\n  }\n  if (looksFeedback) {\n    if (!has('product-feedback')) return { action: 'call', intent: 'product-feedback', args: { feedbackText: taskText(task) }, why: 'classify theme / sentiment / urgency' };\n    return { action: 'finish', answer: synthesize('feedback', history) };\n  }\n  if (looksQuestion) {\n    if (!has('rag')) return { action: 'call', intent: 'rag', args: { query: taskText(task) }, why: 'grounded answer from the KB (or a clean abstain)' };\n    return { action: 'finish', answer: synthesize('question', history) };\n  }\n  if (called.length > 0) return { action: 'finish', answer: synthesize('other', history) };\n  return { action: 'finish', answer: 'No actionable signal detected; no tool was appropriate.' };\n}\nfunction stubTools(intent) {\n  const summaries = { 'rag': '2 citations (known-issue check)', 'support-triage': 'routed: platform-support, urgency: high', 'product-feedback': 'theme: praise, sentiment: positive', 'eval': 'passRate 1.0', 'drift': 'drift.any false' };\n  return summaries[intent] ? { ok: true, summary: summaries[intent] } : { ok: false, summary: 'unknown tool' };\n}\nfunction runAgentLoop(task, opts) {\n  opts = opts || {};\n  const planner = opts.planner || keywordPlanner;\n  const callTool = opts.callTool || stubTools;\n  const maxSteps = Number.isFinite(opts.maxSteps) ? opts.maxSteps : 4;\n  const allowlist = Array.isArray(opts.allowlist) ? opts.allowlist : TOOL_ALLOWLIST;\n  const safe = isUnsafeTask(task);\n  if (safe.unsafe) return { refused: true, stopReason: 'refused', reason: safe.reason, trajectory: [], toolCalls: 0, finalAnswer: null, guardrail: 'refusal' };\n  const trajectory = []; const history = [];\n  for (let step = 1; step <= maxSteps; step += 1) {\n    let decision;\n    try { decision = planner(task, history); } catch (e) { return { refused: false, stopReason: 'planner-error', reason: e.message, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null }; }\n    if (!decision || typeof decision !== 'object') return { refused: false, stopReason: 'bad-decision', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null };\n    if (decision.action === 'refuse') return { refused: true, stopReason: 'refused', reason: decision.reason || 'planner refused', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'refusal' };\n    if (decision.action === 'finish') return { refused: false, stopReason: 'finished', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: decision.answer == null ? null : decision.answer };\n    if (decision.action === 'call') {\n      if (!allowlist.includes(decision.intent)) return { refused: false, stopReason: 'guardrail:non-allowlisted-tool', blockedIntent: decision.intent, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'non-allowlisted-tool' };\n      let result;\n      try { result = callTool(decision.intent, decision.args || {}); } catch (e) { result = { ok: false, summary: 'tool error: ' + e.message }; }\n      if (!result || typeof result !== 'object') result = { ok: false, summary: 'tool returned a bad shape' };\n      trajectory.push({ step: step, intent: decision.intent, args: decision.args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary });\n      history.push({ intent: decision.intent, result: result });\n      continue;\n    }\n    return { refused: false, stopReason: 'unknown-action', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null };\n  }\n  return { refused: false, stopReason: 'guardrail:max-steps', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'max-steps' };\n}\nconst input = items[0].json;\nconst run = runAgentLoop(input.task, { planner: keywordPlanner, callTool: stubTools, maxSteps: (input.config && input.config.maxSteps) || 4, allowlist: TOOL_ALLOWLIST });\nreturn [{ json: { run: run, policyVersion: input.policyVersion, plannerSource: 'stub', toolSource: 'stub' } }];"
       }
     },
     {
-      "id": "1eb86c0c-c455-45c6-ba38-99376f086d3f",
+      "id": "cfed6c57-f851-48a0-83a4-89d9de5fa1a0",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -85,7 +85,7 @@
       }
     },
     {
-      "id": "9e29bc35-ce89-483a-8001-e63993f1b313",
+      "id": "ff2daa68-da1b-4b86-9f49-623769ac5a8a",
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -102,7 +102,7 @@
       }
     },
     {
-      "id": "616e97d9-c560-4aaa-81b9-96250bce1e19",
+      "id": "f8d57714-d0d6-4f64-ac81-c01bcac501c5",
       "name": "Run Demo From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -112,7 +112,7 @@
       ]
     },
     {
-      "id": "435237d3-3d3c-452c-8b3e-b5f300a050ee",
+      "id": "1eec8c1e-fa6f-4508-bec1-8fd888aef22f",
       "name": "Build Demo Task",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
