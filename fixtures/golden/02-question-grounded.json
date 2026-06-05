@@ -1,0 +1,6 @@
+{
+  "id": "question-grounded",
+  "description": "A knowledge question: the agent calls rag for a grounded answer (or a clean abstain), then finishes.",
+  "task": { "text": "how do I become an AI product manager?" },
+  "expect": { "tools": ["rag"], "stopReason": "finished", "refused": false }
+}
