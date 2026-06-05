@@ -11,7 +11,10 @@ as tools**, under guardrails, graded by **agent-trajectory evals**.
 > `llama3.2:3b`): free-form **2/6 (low)** vs LLM-classifier + deterministic routing **6/6 (high)**; and
 > **`verify:tools`** — the agent SIGNS each call and drives **real portfolio siblings** in-process via the deployed
 > interaction-gateway (a bug ran the live 2-step `rag → support-triage` route; `product-feedback` returned a real
-> classification; refusals held with zero gateway calls). The agent's tools ARE the portfolio, over the signed gateway.
+> classification; refusals held with zero gateway calls). **And the deployed n8n node itself runs the live path on
+> `agentMode=live`** — it calls the real Ollama classifier, then signs + drives the gateway tools in-process (proven
+> live: `rag → support-triage` with real routing); **stub stays the default**, differential-pinned. The agent's
+> tools ARE the portfolio, over the signed gateway.
 
 ## What it is
 
