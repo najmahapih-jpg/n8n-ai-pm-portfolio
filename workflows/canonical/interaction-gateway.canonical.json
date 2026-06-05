@@ -3,8 +3,8 @@
   "name": "Portfolio - Interaction Gateway",
   "nodes": [
     {
-      "id": "301a09b9-80e2-4a6b-a395-da51ef136ea2",
-      "name": "Sticky Note 301a09b9",
+      "id": "4c194e43-d350-45a8-8f34-52a1e95147cf",
+      "name": "Sticky Note 4c194e43",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -12,14 +12,14 @@
         270
       ],
       "parameters": {
-        "content": "## Interaction Gateway v0.1.0 (generic SIGNED-webhook edge; stub-default + opt-in live). One authenticated POST entry point that VERIFIES -> SIZE-LIMITS -> SECRET-STRIPS -> ROUTES a request to allowlisted sibling workflow(s) by INTENT, so each business workflow keeps its clean JSON contract and the gateway owns the production-edge controls. The four security functions are the single source of truth in scripts/lib/gateway-core.mjs (verify:gateway 20/20); the Code nodes here MIRROR them inline, and scripts/test-gateway-workflow.mjs extracts the COMPILED Code-node bodies, runs 13 golden scenarios, and differentially pins the four security gates (size/signature/strip/route — verdicts, reasons, whole-body strip) to the .mjs, so the deployed security logic cannot silently drift. Pipeline order is size-before-signature on purpose (reject an oversized body before spending crypto): enforceBodySize -> 413, verifySignature (timing-safe HMAC over timestamp + \".\" + rawBody + replay window) -> 401, stripSecrets (key-name + value-pattern redaction; never forwarded/echoed/logged), resolveRoute (fixed intent -> allowlist; callers never name a URL -> SSRF-closed) -> 422. The status code is decided in JS (testable offline) and the respond node only echoes it. SECURITY CONFIG (secret, body cap, replay window, live-mode) comes from env/credential ONLY — a webhook caller can neither loosen a cap nor force live routing. v0.3.0 routes a CALLABLE intent IN-PROCESS via a DYNAMIC Execute-Workflow (no secret over HTTP) and wraps its real result — proven live vs the selftest sibling AND the real product-feedback SUT; non-callable intents stay decision-only. Every routed call + the response carry a generated traceId (the cross-workflow trace metadata the review flagged as absent). policyVersion interaction-gateway-v0.1.0.",
+        "content": "## Interaction Gateway v0.1.0 (generic SIGNED-webhook edge; stub-default + opt-in live). One authenticated POST entry point that VERIFIES -> SIZE-LIMITS -> SECRET-STRIPS -> ROUTES a request to allowlisted sibling workflow(s) by INTENT, so each business workflow keeps its clean JSON contract and the gateway owns the production-edge controls. The four security functions are the single source of truth in scripts/lib/gateway-core.mjs (verify:gateway 20/20); the Code nodes here MIRROR them inline, and scripts/test-gateway-workflow.mjs extracts the COMPILED Code-node bodies, runs 13 golden scenarios, and differentially pins the four security gates (size/signature/strip/route — verdicts, reasons, whole-body strip) to the .mjs, so the deployed security logic cannot silently drift. Pipeline order is size-before-signature on purpose (reject an oversized body before spending crypto): enforceBodySize -> 413, verifySignature (timing-safe HMAC over timestamp + \".\" + rawBody + replay window) -> 401, stripSecrets (key-name + value-pattern redaction; never forwarded/echoed/logged), resolveRoute (fixed intent -> allowlist; callers never name a URL -> SSRF-closed) -> 422. The status code is decided in JS (testable offline) and the respond node only echoes it. SECURITY CONFIG (secret, body cap, replay window, live-mode) comes from env/credential ONLY — a webhook caller can neither loosen a cap nor force live routing. v0.4.0 routes a CALLABLE intent IN-PROCESS via a DYNAMIC Execute-Workflow (no secret over HTTP) and wraps the real result(s) — incl. MULTI-TARGET FAN-OUT (one intent -> N siblings, results per-target); proven live vs the selftest sibling, the product-feedback SUT, and a 2-sibling fan-out. Every routed call + the response carry a generated traceId (the cross-workflow trace metadata the review flagged as absent). policyVersion interaction-gateway-v0.1.0.",
         "color": 4,
         "width": 2460,
         "height": 500
       }
     },
     {
-      "id": "78069e2f-3ab5-4280-843d-09eb66bc4ec6",
+      "id": "d753d438-4a55-4a99-8943-26ee2bd7fdd1",
       "name": "Receive Signed Request (POST)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -37,10 +37,10 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "6a090e30-c170-46a8-be68-5c3ac657d764"
+      "webhookId": "ff6379ad-6b7f-4d9c-b39f-a6b2a4979e1c"
     },
     {
-      "id": "f15574a2-b926-4afc-8e5b-311e9fde8f02",
+      "id": "fca92455-d26d-47aa-b844-e16d029cb3ee",
       "name": "Normalize Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -51,11 +51,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Parse the signed envelope and initialise the gateway state. SECURITY CONFIG is read from env only\n// (never the untrusted body): a webhook caller cannot loosen the body cap, widen the replay window, or\n// force live routing. The shared secret is NEVER copied into the state object (so it is never echoed/logged).\nconst src = items[0].json || {};\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nfunction hget(h, name){ if (!h) return undefined; const lower = name.toLowerCase(); for (const k of Object.keys(h)) { if (k.toLowerCase() === lower) return h[k]; } return undefined; }\nfunction num(v, d){ const n = Number(v); return Number.isFinite(n) ? n : d; }\n\nconst isDemo = src.__demo === true;\nconst entrypoint = isDemo ? 'manual' : 'webhook';\nconst headers = src.headers || {};\n// Exact-bytes rawBody for HMAC: prefer n8n's raw body; if the webhook delivered the body as an unparsed\n// STRING (e.g. a text/plain post so n8n preserves the exact signed bytes), use it verbatim; only as a last\n// resort re-serialize a parsed object (which a signer must then match). See docs/security-boundaries.md.\nlet rawBody;\nif (typeof src.rawBody === 'string') { rawBody = src.rawBody; }\nelse if (typeof src.body === 'string') { rawBody = src.body; }\nelse if (src.body != null) { rawBody = JSON.stringify(src.body); }\nelse { rawBody = ''; }\nlet body = {};\ntry { body = (src.body && typeof src.body === 'object') ? src.body : JSON.parse(rawBody || '{}'); } catch (e) { body = {}; }\n\nconst timestamp = hget(headers, 'x-timestamp');\nconst signatureHeader = hget(headers, 'x-signature') || '';\nconst maxBytes = num(envGet('GATEWAY_MAX_BODY_BYTES'), 65536);\nconst windowSeconds = num(envGet('GATEWAY_REPLAY_WINDOW_SECONDS'), 300);\nconst now = num(envGet('GATEWAY_NOW_SECONDS'), Math.floor(Date.now() / 1000));\nconst mode = String(envGet('GATEWAY_MODE') || '').toLowerCase() === 'live' ? 'live' : 'stub';\n\nconst intent = (body && typeof body.intent === 'string') ? body.intent : '';\nconst requestId = (body && typeof body.requestId === 'string' && body.requestId) ? body.requestId : '';\nconst payload = (body && typeof body.payload === 'object' && body.payload) ? body.payload : {};\n\n// intent / requestId / payload are UNTRUSTED here. The Strip node strips the WHOLE envelope (g.body) and\n// finalises the ECHOED intent + the traceId from the CLEANED values, so a secret-shaped intent or requestId\n// can never be reflected into the response, the audit event, or the trace id. traceId + cleanPayload are\n// therefore deferred to Strip (set to '' / {} here).\nconst gateway = {\n  policyVersion: 'interaction-gateway-v0.3.0',\n  traceId: '',\n  entrypoint: entrypoint,\n  mode: mode,\n  config: { maxBytes: maxBytes, windowSeconds: windowSeconds },\n  request: { intent: intent, requestId: requestId },\n  body: body,\n  rawBody: rawBody,\n  timestamp: (timestamp == null ? '' : String(timestamp)),\n  signatureHeader: String(signatureHeader),\n  payload: payload,\n  now: now,\n  accepted: true,\n  statusCode: 200,\n  error: null,\n  stages: {},\n  routedTo: [],\n  targetId: null,\n  targetCallable: false,\n  stripped: [],\n  cleanPayload: {}\n};\nreturn [{ json: { gateway: gateway } }];"
+        "jsCode": "// Parse the signed envelope and initialise the gateway state. SECURITY CONFIG is read from env only\n// (never the untrusted body): a webhook caller cannot loosen the body cap, widen the replay window, or\n// force live routing. The shared secret is NEVER copied into the state object (so it is never echoed/logged).\nconst src = items[0].json || {};\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nfunction hget(h, name){ if (!h) return undefined; const lower = name.toLowerCase(); for (const k of Object.keys(h)) { if (k.toLowerCase() === lower) return h[k]; } return undefined; }\nfunction num(v, d){ const n = Number(v); return Number.isFinite(n) ? n : d; }\n\nconst isDemo = src.__demo === true;\nconst entrypoint = isDemo ? 'manual' : 'webhook';\nconst headers = src.headers || {};\n// Exact-bytes rawBody for HMAC: prefer n8n's raw body; if the webhook delivered the body as an unparsed\n// STRING (e.g. a text/plain post so n8n preserves the exact signed bytes), use it verbatim; only as a last\n// resort re-serialize a parsed object (which a signer must then match). See docs/security-boundaries.md.\nlet rawBody;\nif (typeof src.rawBody === 'string') { rawBody = src.rawBody; }\nelse if (typeof src.body === 'string') { rawBody = src.body; }\nelse if (src.body != null) { rawBody = JSON.stringify(src.body); }\nelse { rawBody = ''; }\nlet body = {};\ntry { body = (src.body && typeof src.body === 'object') ? src.body : JSON.parse(rawBody || '{}'); } catch (e) { body = {}; }\n\nconst timestamp = hget(headers, 'x-timestamp');\nconst signatureHeader = hget(headers, 'x-signature') || '';\nconst maxBytes = num(envGet('GATEWAY_MAX_BODY_BYTES'), 65536);\nconst windowSeconds = num(envGet('GATEWAY_REPLAY_WINDOW_SECONDS'), 300);\nconst now = num(envGet('GATEWAY_NOW_SECONDS'), Math.floor(Date.now() / 1000));\nconst mode = String(envGet('GATEWAY_MODE') || '').toLowerCase() === 'live' ? 'live' : 'stub';\n\nconst intent = (body && typeof body.intent === 'string') ? body.intent : '';\nconst requestId = (body && typeof body.requestId === 'string' && body.requestId) ? body.requestId : '';\nconst payload = (body && typeof body.payload === 'object' && body.payload) ? body.payload : {};\n\n// intent / requestId / payload are UNTRUSTED here. The Strip node strips the WHOLE envelope (g.body) and\n// finalises the ECHOED intent + the traceId from the CLEANED values, so a secret-shaped intent or requestId\n// can never be reflected into the response, the audit event, or the trace id. traceId + cleanPayload are\n// therefore deferred to Strip (set to '' / {} here).\nconst gateway = {\n  policyVersion: 'interaction-gateway-v0.4.0',\n  traceId: '',\n  entrypoint: entrypoint,\n  mode: mode,\n  config: { maxBytes: maxBytes, windowSeconds: windowSeconds },\n  request: { intent: intent, requestId: requestId },\n  body: body,\n  rawBody: rawBody,\n  timestamp: (timestamp == null ? '' : String(timestamp)),\n  signatureHeader: String(signatureHeader),\n  payload: payload,\n  now: now,\n  accepted: true,\n  statusCode: 200,\n  error: null,\n  stages: {},\n  routedTo: [],\n  targetIds: [],\n  targetCallable: false,\n  stripped: [],\n  cleanPayload: {}\n};\nreturn [{ json: { gateway: gateway } }];"
       }
     },
     {
-      "id": "ac28d7ba-f38a-4125-8ac1-f362fd5f4d4c",
+      "id": "775f9a1d-11a2-4463-a4fe-3d0c2248439a",
       "name": "Enforce Body Size (413)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -70,7 +70,7 @@
       }
     },
     {
-      "id": "6a44039a-8594-4386-886b-82c82e43ba93",
+      "id": "0cd6da13-fcde-4bb3-9fb0-46c1d88a69c3",
       "name": "Verify Signature (401)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -85,7 +85,7 @@
       }
     },
     {
-      "id": "b970f73d-15d4-4288-9904-b548965df8f0",
+      "id": "bb6ebb4d-4b57-46bd-b0bc-1d9526e4da2e",
       "name": "Strip Secrets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -100,7 +100,7 @@
       }
     },
     {
-      "id": "128e43a5-be2a-4be0-aa47-c5cc48c04809",
+      "id": "4717d123-bc85-47b9-8327-7468997099cb",
       "name": "Resolve Route (422)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -111,11 +111,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Mirrors gateway-core.resolveRoute: map an intent to 1+ allowlisted sibling targets; reject unknown /\n// non-allowlisted. Callers never supply a URL/host (SSRF-closed by construction). A multi-target intent\n// (feedback-then-grade) is a fan-out composition.\nconst g = items[0].json.gateway;\nconst ALLOWLIST = {\n  'support-triage': ['support-triage'],\n  'product-feedback': ['product-feedback'],\n  'rag': ['rag'],\n  'eval': ['eval-harness'],\n  'drift': ['scheduled-drift-monitor'],\n  'feedback-then-grade': ['product-feedback', 'eval-harness'],\n  'gateway-selftest': ['gateway-selftest-sibling']\n};\n// target -> n8n workflow id, ONLY for targets that expose an executeWorkflowTrigger (callable IN-PROCESS via\n// Execute Workflow). Business targets stay decision-only until each gets a trigger (tracked per-sibling); the\n// selftest sibling is the proven live target. Single-target live execution only in v0.2.0.\nconst TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B' };\nfunction resolve(intent, allowlist) {\n  if (!intent || typeof intent !== 'string') return { ok: false, targets: [], reason: 'missing intent' };\n  const targets = allowlist[intent];\n  if (!Array.isArray(targets) || targets.length === 0) return { ok: false, targets: [], reason: 'non-allowlisted intent: ' + intent };\n  return { ok: true, targets: targets.slice(), reason: 'ok' };\n}\nconst r = resolve(g.request.intent, ALLOWLIST);\ng.stages.route = { ok: r.ok, reason: r.reason };\nif (g.accepted) {\n  if (r.ok) {\n    g.routedTo = r.targets;\n    const firstId = (r.targets.length === 1) ? TARGET_WORKFLOW_IDS[r.targets[0]] : null;\n    g.targetId = firstId || null;\n    g.targetCallable = !!g.targetId;\n  } else {\n    g.accepted = false;\n    g.statusCode = 422;\n    g.error = 'unprocessable: ' + r.reason;\n    g.routedTo = [];\n    g.targetId = null;\n    g.targetCallable = false;\n  }\n}\nreturn [{ json: { gateway: g } }];"
+        "jsCode": "// Mirrors gateway-core.resolveRoute: map an intent to 1+ allowlisted sibling targets; reject unknown /\n// non-allowlisted. Callers never supply a URL/host (SSRF-closed by construction). A multi-target intent\n// (feedback-then-grade) is a fan-out composition.\nconst g = items[0].json.gateway;\nconst ALLOWLIST = {\n  'support-triage': ['support-triage'],\n  'product-feedback': ['product-feedback'],\n  'rag': ['rag'],\n  'eval': ['eval-harness'],\n  'drift': ['scheduled-drift-monitor'],\n  'feedback-then-grade': ['product-feedback', 'eval-harness'],\n  'gateway-selftest': ['gateway-selftest-sibling'],\n  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling']\n};\n// target -> n8n workflow id, ONLY for targets that expose an executeWorkflowTrigger (callable IN-PROCESS via\n// Execute Workflow). Business targets stay decision-only until each gets a trigger (tracked per-sibling); the\n// selftest sibling is the proven live target. Single-target live execution only in v0.2.0.\nconst TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B' };\nfunction resolve(intent, allowlist) {\n  if (!intent || typeof intent !== 'string') return { ok: false, targets: [], reason: 'missing intent' };\n  const targets = allowlist[intent];\n  if (!Array.isArray(targets) || targets.length === 0) return { ok: false, targets: [], reason: 'non-allowlisted intent: ' + intent };\n  return { ok: true, targets: targets.slice(), reason: 'ok' };\n}\nconst r = resolve(g.request.intent, ALLOWLIST);\ng.stages.route = { ok: r.ok, reason: r.reason };\nif (g.accepted) {\n  if (r.ok) {\n    g.routedTo = r.targets;\n    g.targetIds = r.targets.map(function (t) { return { target: t, id: TARGET_WORKFLOW_IDS[t] || null }; });\n    // callable iff EVERY resolved target has a wired executeWorkflowTrigger id (live fan-out is all-or-nothing)\n    g.targetCallable = g.targetIds.length > 0 && g.targetIds.every(function (x) { return !!x.id; });\n  } else {\n    g.accepted = false;\n    g.statusCode = 422;\n    g.error = 'unprocessable: ' + r.reason;\n    g.routedTo = [];\n    g.targetIds = [];\n    g.targetCallable = false;\n  }\n}\nreturn [{ json: { gateway: g } }];"
       }
     },
     {
-      "id": "fbdedb06-be39-4055-94ea-dd7dd9acaf01",
+      "id": "4c033f10-d5de-4a68-b532-990f52f010f3",
       "name": "Live Route To Sibling?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -149,7 +149,7 @@
       }
     },
     {
-      "id": "694ebe4b-c288-4fae-90a9-f103773b3712",
+      "id": "7005d298-d2f7-4edd-af9c-4173e74669dd",
       "name": "Prepare Sibling Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -160,11 +160,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Shape the in-process call: pass ONLY the cleaned (secret-stripped) payload + intent + traceId to the\n// sibling — never the rawBody, signature, or gateway internals. __gw carries the response metadata we re-attach\n// after the call (the Execute Workflow node replaces the item with the sibling's output).\nconst g = items[0].json.gateway;\nconst clean = g.cleanPayload || {};\n// Shape the in-process call so DIFFERENT siblings can read it: the clean payload fields are SPREAD at top level\n// (business siblings like product-feedback read e.g. body.feedbackText), AND kept under a 'payload' key (the\n// selftest sibling reads src.payload). __targetId drives the dynamic Execute-Workflow workflowId; __gw carries\n// the response metadata re-attached after the call. Never the rawBody/signature.\nreturn [{ json: Object.assign({}, clean, {\n  payload: clean,\n  intent: g.request.intent,\n  traceId: g.traceId,\n  __targetId: g.targetId,\n  __gw: { traceId: g.traceId, intent: g.request.intent, routedTo: g.routedTo, policyVersion: g.policyVersion }\n}) }];"
+        "jsCode": "// Shape the in-process call: pass ONLY the cleaned (secret-stripped) payload + intent + traceId to the\n// sibling — never the rawBody, signature, or gateway internals. __gw carries the response metadata we re-attach\n// after the call (the Execute Workflow node replaces the item with the sibling's output).\nconst g = items[0].json.gateway;\nconst clean = g.cleanPayload || {};\nconst gwMeta = { traceId: g.traceId, intent: g.request.intent, routedTo: g.routedTo, policyVersion: g.policyVersion };\n// Emit ONE item per callable target -> Execute Sibling (mode 'each') invokes each IN-PROCESS; Merge collects\n// per-target. Each item spreads the clean payload at top level (business siblings read e.g. feedbackText) AND\n// keeps a 'payload' key (the selftest sibling reads src.payload) -- one shape, multiple sibling contracts.\n// __targetId drives the dynamic workflowId; __targetName + __gw are re-read after the call. Never rawBody/signature.\nreturn (g.targetIds || []).map(function (t) {\n  return { json: Object.assign({}, clean, {\n    payload: clean,\n    intent: g.request.intent,\n    traceId: g.traceId,\n    __targetId: t.id,\n    __targetName: t.target,\n    __gw: gwMeta\n  }) };\n});"
       }
     },
     {
-      "id": "24a63476-cfff-4e58-83d5-c7b867c60c57",
+      "id": "734995b6-79ca-433e-a4cb-0122a79833a0",
       "name": "Execute Sibling (in-process)",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
@@ -179,12 +179,12 @@
           "value": "={{ $json.__targetId }}",
           "mode": "id"
         },
-        "mode": "once",
+        "mode": "each",
         "options": {}
       }
     },
     {
-      "id": "08c0198d-5448-4590-b7fd-cf1662c8a125",
+      "id": "fb791120-7f58-4214-a5c3-34c4e1ff239c",
       "name": "Merge Sibling Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -195,11 +195,11 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Execute Workflow replaced the item with the sibling's output. Re-attach the gateway metadata (from\n// Prepare Sibling Input) and wrap the REAL sibling result — executed:true, in-process, no secret over HTTP.\nconst result = items[0].json;\nconst gw = $('Prepare Sibling Input').first().json.__gw;\nconst body = {\n  ok: true,\n  traceId: gw.traceId,\n  intent: gw.intent,\n  routedTo: gw.routedTo,\n  result: { mode: 'live', executed: true, sibling: result },\n  policyVersion: gw.policyVersion\n};\nconst audit = { auditEventId: gw.traceId, intent: gw.intent, routedTo: gw.routedTo, executed: true, statusCode: 200 };\nreturn [{ json: { statusCode: 200, body: body, audit: audit } }];"
+        "jsCode": "// Execute Workflow replaced the item with the sibling's output. Re-attach the gateway metadata (from\n// Prepare Sibling Input) and wrap the REAL sibling result — executed:true, in-process, no secret over HTTP.\n// The Execute Workflow node (mode 'each') produced one output item PER target, in input order. Correlate each\n// back to its target via $('Prepare Sibling Input').all()[i], and collect per-target -- executed:true, in-process,\n// no HTTP. A single-target intent yields a 1-entry perTarget; a fan-out intent yields N.\nconst prep = $('Prepare Sibling Input').all();\nconst gw = (prep[0] && prep[0].json.__gw) || {};\nconst perTarget = items.map(function (it, i) {\n  return { target: (prep[i] && prep[i].json.__targetName) || ('idx' + i), result: it.json };\n});\nconst body = {\n  ok: true,\n  traceId: gw.traceId,\n  intent: gw.intent,\n  routedTo: gw.routedTo,\n  result: { mode: 'live', executed: true, fanout: perTarget.length > 1, perTarget: perTarget },\n  policyVersion: gw.policyVersion\n};\nconst audit = { auditEventId: gw.traceId, intent: gw.intent, routedTo: gw.routedTo, executed: true, targets: perTarget.length, statusCode: 200 };\nreturn [{ json: { statusCode: 200, body: body, audit: audit } }];"
       }
     },
     {
-      "id": "df705fe7-2de0-430f-b585-13229da2c419",
+      "id": "4c2047c8-cd39-4ed4-87fb-ccdcd6fcee40",
       "name": "Respond (live route)",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -216,7 +216,7 @@
       }
     },
     {
-      "id": "d5d04e43-82ed-48ac-870d-2f6571dd3b81",
+      "id": "557e3509-1824-48f3-b024-429b9ef15a2b",
       "name": "Route To Siblings (decision)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -231,7 +231,7 @@
       }
     },
     {
-      "id": "4909aaad-b4ae-4fe6-8616-29afd1d4b6c0",
+      "id": "f20185da-345b-49af-93ea-62a4e52004f8",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -246,7 +246,7 @@
       }
     },
     {
-      "id": "04546d84-76ab-4443-8a34-c93214ceeee1",
+      "id": "5e8b2f70-6353-4d76-a69f-00570400e1fd",
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -263,7 +263,7 @@
       }
     },
     {
-      "id": "67398c56-056f-455a-bbf7-09634d96d2d4",
+      "id": "d5c5625d-455e-40e9-a22a-9b86e0ba46eb",
       "name": "Run Demo From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -273,7 +273,7 @@
       ]
     },
     {
-      "id": "8aacf23b-562a-47ee-8646-be5279f98ffe",
+      "id": "5af49545-e1ca-4e1b-a5d1-a17d7581e2e6",
       "name": "Build Signed Demo Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
