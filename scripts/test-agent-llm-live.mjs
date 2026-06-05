@@ -10,7 +10,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { TOOL_ALLOWLIST, isUnsafeTask, buildPlannerPrompt, parsePlannerResponse, buildClassifyPrompt, parseClassifyResponse, routeByClass, scoreTrajectory } from './lib/agent-core.mjs';
+import { buildPlannerPrompt, parsePlannerResponse, buildClassifyPrompt, parseClassifyResponse, routeByClass, scoreTrajectory } from './lib/agent-core.mjs';
+import { runAgentLoopAsync } from './lib/agent-loop-async.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const goldenDir = join(here, '..', 'fixtures', 'golden');
@@ -34,38 +35,10 @@ async function ollamaChat(prompt) {
   return j && j.message && j.message.content ? j.message.content : '';
 }
 
-// Generic async agent loop — SAME guardrails as runAgentLoop (refusal pre-check / allowlist / max-steps /
-// no-fabrication), parameterised by an async decideStep(task, history) -> decision. The sync equivalent is proven
-// by verify:agent; this differs ONLY by awaiting the (async) LLM decision.
-async function runLoop(task, opts) {
-  const decideStep = opts.decideStep;
-  const callTool = opts.callTool;
-  const maxSteps = Number.isFinite(opts.maxSteps) ? opts.maxSteps : 4;
-  const allowlist = Array.isArray(opts.allowlist) ? opts.allowlist : TOOL_ALLOWLIST;
-
-  const safe = isUnsafeTask(task);
-  if (safe.unsafe) return { refused: true, stopReason: 'refused', reason: safe.reason, trajectory: [], toolCalls: 0, finalAnswer: null, guardrail: 'refusal' };
-
-  const trajectory = [];
-  const history = [];
-  for (let step = 1; step <= maxSteps; step += 1) {
-    let decision;
-    try { decision = await decideStep(task, history); } catch (e) { decision = { action: 'finish', answer: 'decide error: ' + (e && e.message ? e.message : 'failed') }; }
-    if (decision.action === 'refuse') return { refused: true, stopReason: 'refused', reason: decision.why, trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'refusal' };
-    if (decision.action === 'finish') return { refused: false, stopReason: 'finished', trajectory, toolCalls: trajectory.length, finalAnswer: decision.answer == null ? null : decision.answer };
-    if (decision.action === 'call') {
-      if (!allowlist.includes(decision.intent)) return { refused: false, stopReason: 'guardrail:non-allowlisted-tool', blockedIntent: decision.intent, trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'non-allowlisted-tool' };
-      const result = await callTool(decision.intent, decision.args || {});
-      trajectory.push({ step, intent: decision.intent, args: decision.args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary });
-      history.push({ intent: decision.intent, result });
-      continue;
-    }
-    return { refused: false, stopReason: 'unknown-action', trajectory, toolCalls: trajectory.length, finalAnswer: null };
-  }
-  return { refused: false, stopReason: 'guardrail:max-steps', trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'max-steps' };
-}
-
-// The two planner architectures as async decideStep functions (both await the same real LLM).
+// The agent loop is the shared async twin runAgentLoopAsync (./lib/agent-loop-async.mjs) — same guardrails as the
+// sync runAgentLoop, but it awaits the async planner. Both live tiers (LLM planner here, gateway tools there) reuse it.
+//
+// The two planner architectures as async planner functions (both await the same real LLM).
 const freeFormStep = async (task, history) => parsePlannerResponse(await ollamaChat(buildPlannerPrompt(task, history)));
 const classifierStep = async (task, history) => routeByClass(parseClassifyResponse(await ollamaChat(buildClassifyPrompt(task))), task, history);
 
@@ -73,7 +46,7 @@ async function calibrate(name, decideStep, golden) {
   console.log('--- ' + name + ' ---');
   let agree = 0;
   for (const g of golden) {
-    const run = await runLoop(g.task, { decideStep, callTool: stubTools, maxSteps: 4 });
+    const run = await runAgentLoopAsync(g.task, { planner: decideStep, callTool: stubTools, maxSteps: 4 });
     const score = scoreTrajectory(run, g.expect);
     if (score.passed) agree += 1;
     console.log('  [' + (score.passed ? 'PASS' : 'FAIL') + '] ' + g.id
