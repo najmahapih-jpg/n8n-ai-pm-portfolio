@@ -13,7 +13,9 @@
     "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 0 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical/autonomous-agent.canonical.json -MinimumNodes 6",
     "verify:agent": "node ./scripts/test-agent-core.mjs",
     "verify:workflow": "node ./scripts/test-agent-workflow.mjs",
-    "verify:llm": "node ./scripts/test-agent-llm-live.mjs"
+    "verify:gateway-client": "node ./scripts/test-gateway-client.mjs",
+    "verify:llm": "node ./scripts/test-agent-llm-live.mjs",
+    "verify:tools": "node ./scripts/test-agent-gateway-live.mjs"
   },
   "engines": {
     "node": ">=20"
