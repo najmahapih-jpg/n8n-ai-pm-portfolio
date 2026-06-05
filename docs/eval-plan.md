@@ -62,6 +62,13 @@ support-triage's contract requires one-of `{customerEmail, email}`; the agent no
 caught the gap, and `callTool` still reports any sibling 4xx as `ok:false` (never fabricated). The signing +
 request wiring + response parsing are offline-pinned by `verify:gateway-client` (stub fetch).
 
+**Wired into the deployed node** — beyond the `verify:llm` / `verify:tools` script tiers, the deployed n8n Agent
+Loop node runs the FULL live path on `agentMode=live`: the node itself classifies via Ollama
+(`host.docker.internal:11434`), then signs (`require('crypto')`) and drives the gateway (`n8n:5678`) in-process via
+`this.helpers.httpRequest`. STUB stays the default and remains differential-pinned (`verify:workflow` never enters
+the live branch). Proven live: `agentMode=live` ran the 2-step `rag → support-triage` route with
+`plannerSource=llm:llama3.2:3b`, `toolSource=gateway`, and real sibling results (`routingTeam=product-engineering`).
+
 ## Gates
 
 | Script | Tier | In CI |
