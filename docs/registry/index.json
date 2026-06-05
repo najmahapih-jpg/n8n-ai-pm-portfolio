@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/Build-WorkflowIndex.ps1",
+  "workflowCount": 1,
+  "workflows": [
+    {
+      "slug": "autonomous-agent",
+      "title": "Portfolio - Autonomous Agent",
+      "description": "Capstone C -- a bounded tool-use agent. POST a signal -> Normalize Task -> Agent Loop (MIRRORS scripts/lib/agent-core.mjs: a deterministic keyword planner + refusal/allowlist/max-steps/no-fabricated guardrails, over STUB tools) -> respond with the run record (the trajectory + outcome). The agent's TOOLS are the portfolio workflows reached via the signed interaction-gateway; v0.1.0 runs the stub planner + stub tools (byte-stable trajectory), with a live LLM planner + live gateway tool execution as the opt-in next increments. The agent-core is the single source of truth (verify:agent 39/39); the Agent Loop Code node mirrors it inline, and scripts/test-agent-workflow.mjs proves the COMPILED copy (golden tasks + a DIFFERENTIAL asserting byte-identical run records vs the core). Deployed via the n8n public REST API (no MCP).",
+      "owner": "portfolio",
+      "department": "Product",
+      "version": "0.1.0",
+      "status": "live-tested",
+      "project": "n8n-autonomous-agent",
+      "lastWriter": "n8n public REST API",
+      "n8nWorkflowId": "fIAHA00y4Rft2BrC",
+      "source": "workflows\\sdk\\autonomous-agent.workflow.js",
+      "canonical": "workflows\\canonical\\autonomous-agent.canonical.json",
+      "release": "workflows\\releases\\autonomous-agent-v0.1.0.json",
+      "request": "fixtures\\requests\\autonomous-agent.md",
+      "trigger": "webhook (POST) + manual (editor demo)",
+      "integrations": [
+        "n8n Webhook Trigger (POST /webhook/portfolio/autonomous-agent, responseMode=responseNode)",
+        "n8n Manual Trigger (editor demo: a built-in bug task)",
+        "Agent Loop Code node -- mirrors scripts/lib/agent-core.mjs (bounded tool-use loop + keyword planner + guardrails)",
+        "Tools = the portfolio workflows via the signed interaction-gateway (support-triage / product-feedback / rag / eval / drift); v0.1.0 STUB tools, live gateway execution opt-in",
+        "Redacted audit (stopReason + tool sequence + counts only; never the raw task)"
+      ],
+      "tags": [
+        "agent",
+        "autonomous",
+        "tool-use-loop",
+        "agent-trajectory-eval",
+        "guardrails",
+        "stub-default",
+        "capstone",
+        "workflow-as-code"
+      ],
+      "fixtures": [
+        "golden/01-bug-known-issue.json",
+        "golden/02-question-grounded.json",
+        "golden/03-feedback.json",
+        "golden/04-unsafe-injection.json",
+        "golden/05-unsafe-destructive.json",
+        "golden/06-no-signal.json"
+      ],
+      "smokeCases": [
+        "bug-known-issue",
+        "unsafe-injection",
+        "no-signal"
+      ],
+      "localOnly": true,
+      "nodeCount": 8,
+      "nodeTypes": [
+        "n8n-nodes-base.code",
+        "n8n-nodes-base.manualTrigger",
+        "n8n-nodes-base.respondToWebhook",
+        "n8n-nodes-base.stickyNote",
+        "n8n-nodes-base.webhook"
+      ],
+      "complexity": "basic",
+      "notes": "v0.1.0 -- the portfolio's NINTH project and its named capstone (autonomous agent). 8 nodes (2 triggers: webhook + manual demo; 1 sticky; 4 code: normalizeTask / agentLoop / buildResponse / buildDemoTask; 1 respondToWebhook). Gates green: verify:agent (39/39 pure core: 6 golden tasks + 3 guardrail negatives) + verify:workflow (24/24: the COMPILED Agent Loop, 6 golden tasks + a differential vs the core, byte-identical run records) + verify:static + verify:json. THE CAPSTONE THESIS: the SAME scoreTrajectory rubric grades the deterministic stub planner AND a future live LLM (the 'eval a non-deterministic agent' answer A+D were built to de-risk); the agent's tools are the 6 portfolio workflows via the signed gateway. Guardrails proven as REJECTED NEGATIVES: refusal (destructive/prompt-injection -> no tool) / non-allowlisted-tool (never executed) / max-steps (bounded) / no-fabricated-result (tool failure recorded ok:false). DEPLOYED + LIVE-VERIFIED 2026-06-05 as n8n workflow fIAHA00y4Rft2BrC (active): a bug task -> finished with the 2-step trajectory rag->support-triage (finalAnswer synthesises both tool results); an unsafe task (prompt-injection + destructive) -> refused, 0 tool calls (the refusal guardrail fired live). The agent uses NO crypto/require, so it needs no runner env flags. DEFERRED: the SDK workflow's live LLM planner (Ollama llama3.2:3b) graded by the same rubric + a stub-vs-LLM calibration guard; live gateway tool execution (agent signs + routes to the deployed gateway). Never touches the existing workflow ids."
+    }
+  ]
+}
