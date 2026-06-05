@@ -18,7 +18,7 @@
       "canonical": "workflows\\canonical\\rag-knowledge-assistant.canonical.json",
       "release": "workflows\\releases\\rag-knowledge-assistant-v0.3.0.json",
       "request": "fixtures\\requests\\rag-knowledge-assistant.md",
-      "trigger": "manual + webhook",
+      "trigger": "manual + webhook + executeWorkflowTrigger (callable by the interaction-gateway; 2026-06-03 — added SURGICALLY to the live JSON to PRESERVE the deploy-time Supabase RPC URL + credential injection, since a raw PUT of the secret-free canonical would clobber them; the canonical carries the placeholder + the trigger, the live carries the injection + the trigger — rag's normal canonical!=live-by-design)",
       "integrations": [
         "n8n Manual Trigger",
         "n8n Webhook",
@@ -61,9 +61,10 @@
         "citation-must-be-real"
       ],
       "localOnly": true,
-      "nodeCount": 27,
+      "nodeCount": 28,
       "nodeTypes": [
         "n8n-nodes-base.code",
+        "n8n-nodes-base.executeWorkflowTrigger",
         "n8n-nodes-base.httpRequest",
         "n8n-nodes-base.if",
         "n8n-nodes-base.manualTrigger",
