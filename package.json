@@ -6,9 +6,18 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "verify:agent": "node ./scripts/test-agent-core.mjs"
+    "hooks:install": "pwsh -NoProfile -File ./scripts/Install-GitHooks.ps1",
+    "registry:build": "pwsh -NoProfile -File ./scripts/Build-WorkflowIndex.ps1",
+    "compile": "pwsh -NoProfile -File ./scripts/Compile-WorkflowFromSdk.ps1",
+    "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
+    "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 0 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical/autonomous-agent.canonical.json -MinimumNodes 6",
+    "verify:agent": "node ./scripts/test-agent-core.mjs",
+    "verify:workflow": "node ./scripts/test-agent-workflow.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@n8n/workflow-sdk": "0.15.1"
   }
 }
