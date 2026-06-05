@@ -4,11 +4,13 @@
 (a ticket / feedback / question) into a consolidated outcome by **orchestrating the other portfolio workflows
 as tools**, under guardrails, graded by **agent-trajectory evals**.
 
-> **Status: SDK workflow built + DEPLOYED + live-verified (2026-06-05).** The agent core (`agent-core.mjs`,
-> `verify:agent` **39/39**), the SDK workflow (the n8n agent loop), and the compiled-workflow differential
-> (`verify:workflow` **24/24**) are built — plus `verify:static` / `verify:json`. **Deployed** to n8n (id
-> `fIAHA00y4Rft2BrC`, active) and proven live: a bug task runs the 2-step `rag→support-triage` trajectory; an
-> unsafe task is refused. The **live LLM planner** + **live gateway tool execution** are the opt-in next increments.
+> **Status: live LLM planner built + run (2026-06-05).** The agent core (`agent-core.mjs`, `verify:agent`
+> **59/59**), the SDK workflow + compiled-workflow differential (`verify:workflow` **24/24**), and `verify:static`
+> are green. **Deployed** to n8n (id `fIAHA00y4Rft2BrC`, active): a bug task runs the 2-step `rag→support-triage`
+> trajectory; an unsafe task is refused. **`verify:llm` drives a REAL LLM (Ollama `llama3.2:3b`) under the same
+> rubric** — free-form step planning scores **2/6 (trust low**; a small model can't track multi-step state), while
+> an LLM-classifier + deterministic routing scores **6/6 (trust high)**. **Live gateway tool execution** is the
+> remaining opt-in increment.
 
 ## What it is
 
@@ -46,7 +48,8 @@ tool is never executed) · `max-steps` (bounded loop) · `no-fabricated-result` 
 
 1. ✅ The SDK workflow (the n8n agent loop wrapping the core) + `verify:static` / `verify:json` — **deployed +
    live-verified** (id `fIAHA00y4Rft2BrC`).
-2. Live LLM planner (Ollama default) graded by the **same** trajectory rubric (calibration vs the stub planner).
+2. ✅ Live LLM planner (`verify:llm`, Ollama `llama3.2:3b`) graded by the **same** rubric — free-form 2/6 (low) vs
+   LLM-classifier + deterministic routing 6/6 (high); an honest architecture finding, no rubric loosening.
 3. Live tool execution via the deployed interaction-gateway (sign → route → observe → synthesize).
 
 License: Apache-2.0.
