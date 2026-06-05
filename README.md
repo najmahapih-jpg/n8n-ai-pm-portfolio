@@ -52,7 +52,7 @@ tool is never executed) · `max-steps` (bounded loop) · `no-fabricated-result` 
 2. ✅ Live LLM planner (`verify:llm`, Ollama `llama3.2:3b`) graded by the **same** rubric — free-form 2/6 (low) vs
    LLM-classifier + deterministic routing 6/6 (high); an honest architecture finding, no rubric loosening.
 3. ✅ Live tool execution (`verify:tools`) via the deployed interaction-gateway (sign → route → real in-process
-   sibling → observe) — 3 real siblings driven, same rubric. Follow-up: align the agent's per-tool payloads to each
-   sibling's input contract (support-triage returned a 400 on the agent's `{subject, message}` shape).
+   sibling → observe) — **4 real siblings** driven incl. the 2-step `rag → support-triage` bug route, same rubric.
+   Per-tool payloads aligned to each sibling's contract (support-triage requires `customerEmail`; a 400 first caught it).
 
 License: Apache-2.0.
