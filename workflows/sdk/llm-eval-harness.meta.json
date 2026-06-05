@@ -14,7 +14,7 @@
   "canonical": "llm-eval-harness.canonical.json",
   "release": "llm-eval-harness-v0.6.0.json",
   "request": "llm-eval-harness.md",
-  "trigger": "manual + webhook",
+  "trigger": "manual + webhook + executeWorkflowTrigger (callable by the interaction-gateway; 2026-06-03 — ADDITIVE, feeds the same Normalize Eval Request node the webhook does; recompiled via the standalone @n8n/workflow-sdk compiler + REST-deployed, no injection; webhook contract regression-tested unchanged: ok:true, stub eval; canonical now 31 nodes)",
   "integrations": [
     "n8n Manual Trigger",
     "n8n Webhook",
