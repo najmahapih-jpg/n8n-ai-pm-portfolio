@@ -79,6 +79,7 @@ const agentLoop = node({
 const TOOL_ALLOWLIST = ['support-triage', 'product-feedback', 'rag', 'eval', 'drift'];
 function taskText(task) { if (task == null) return ''; if (typeof task === 'string') return task; return (String(task.text == null ? '' : task.text) + ' ' + String(task.subject == null ? '' : task.subject)).trim(); }
 function taskSubject(task) { if (task && typeof task === 'object' && task.subject) return String(task.subject); return taskText(task).slice(0, 60); }
+function taskEmail(task) { if (task && typeof task === 'object') { if (task.customerEmail) return String(task.customerEmail); if (task.email) return String(task.email); } return 'unknown@example.com'; }
 const UNSAFE_PATTERNS = [
   /\\bignore\\s+(all\\s+)?(previous|prior|above)\\b/i,
   /\\b(disregard|override)\\s+(your\\s+)?(instructions|system|prompt|rules)\\b/i,
@@ -98,7 +99,7 @@ function keywordPlanner(task, history) {
   const looksQuestion = /\\b(how|what|why|where|when|which|explain|guide|docs?|tutorial)\\b/.test(text) || text.includes('?');
   if (looksBug) {
     if (!has('rag')) return { action: 'call', intent: 'rag', args: { query: 'known issue: ' + text.slice(0, 120) }, why: 'check the knowledge base for a known issue' };
-    if (!has('support-triage')) return { action: 'call', intent: 'support-triage', args: { subject: taskSubject(task), message: taskText(task) }, why: 'classify + route the ticket' };
+    if (!has('support-triage')) return { action: 'call', intent: 'support-triage', args: { customerEmail: taskEmail(task), subject: taskSubject(task), message: taskText(task) }, why: 'classify + route the ticket' };
     return { action: 'finish', answer: synthesize('bug', history) };
   }
   if (looksFeedback) {
