@@ -1,8 +1,10 @@
 {
+  "id": "llm-eval-harness",
   "name": "Portfolio - LLM Eval Harness API",
   "nodes": [
     {
-      "name": "Sticky Note 1",
+      "id": "563b80b8-cdd1-4713-a228-9babfff94bf8",
+      "name": "Sticky Note 563b80b8",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -17,6 +19,7 @@
       }
     },
     {
+      "id": "3ac2bdab-e1d0-43fa-a714-e6d047432819",
       "name": "Run Demo Eval From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -26,6 +29,7 @@
       ]
     },
     {
+      "id": "33ace0ab-8617-4bc5-a2c3-cfaee01a795f",
       "name": "Build Demo Eval Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -40,6 +44,7 @@
       }
     },
     {
+      "id": "6c5ab0f6-b2bb-4479-a894-a4e8552a5c6f",
       "name": "Normalize Eval Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -54,6 +59,7 @@
       }
     },
     {
+      "id": "43104d62-d83c-4733-9b5c-21464b33a798",
       "name": "Golden Case Present?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -87,6 +93,7 @@
       }
     },
     {
+      "id": "1c988858-169d-446f-9bf0-a9df26e81645",
       "name": "SUT Mode = Workflow?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -120,6 +127,7 @@
       }
     },
     {
+      "id": "710fc7b2-faec-4c5e-975e-d31a9d92c9a8",
       "name": "Fan Out SUT Cases",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -134,6 +142,7 @@
       }
     },
     {
+      "id": "3ab5a0dc-daeb-44ed-ad68-fe4546287798",
       "name": "Call Product-Feedback (SUT)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -155,6 +164,7 @@
       "onError": "continueRegularOutput"
     },
     {
+      "id": "d4fa0a35-34e4-40e9-846b-e4ca154f185b",
       "name": "Parse Workflow SUT",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -169,6 +179,7 @@
       }
     },
     {
+      "id": "9d46a91c-4de0-4c06-add1-1c66e2a5851d",
       "name": "Run Deterministic Assertions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -183,6 +194,7 @@
       }
     },
     {
+      "id": "c3f20fc3-5684-4e57-ae59-53164dfd88e2",
       "name": "Judge Source = Ollama?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -216,6 +228,7 @@
       }
     },
     {
+      "id": "9edb6a06-9efc-45f9-888a-ff2c55c1c7c2",
       "name": "Fan Out Judge Cases",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -230,6 +243,7 @@
       }
     },
     {
+      "id": "341eb9ab-7d67-42a9-8bc5-183e329a7df3",
       "name": "LLM-as-Judge (Ollama)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -251,6 +265,7 @@
       "onError": "continueRegularOutput"
     },
     {
+      "id": "7b991f25-4faf-40f8-a297-037b08006778",
       "name": "Parse + Validate Judge (Ollama)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -265,6 +280,7 @@
       }
     },
     {
+      "id": "3f4adfe5-d90d-4386-ad30-32f49da272d1",
       "name": "Aggregate Eval Run",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -279,6 +295,7 @@
       }
     },
     {
+      "id": "cd1e19cb-3cd1-477a-a9ff-81843757a702",
       "name": "Create Redacted Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -293,6 +310,7 @@
       }
     },
     {
+      "id": "7f4ff6e3-ff22-4603-8ca1-7a80b4c5e9b0",
       "name": "Build Eval Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -307,6 +325,7 @@
       }
     },
     {
+      "id": "0f1004be-252b-48b4-8e5d-34d3d26a7d8e",
       "name": "Manual UI Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -340,6 +359,7 @@
       }
     },
     {
+      "id": "0411149d-db22-4dc3-82a9-ad8fbb38bc97",
       "name": "Show UI Execution Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -354,6 +374,7 @@
       }
     },
     {
+      "id": "d6191aa3-a683-4214-9cdc-ad94ba2e820b",
       "name": "Return Eval Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -370,6 +391,7 @@
       }
     },
     {
+      "id": "1552001e-59ba-42de-aa43-d834c6dcf954",
       "name": "LLM-as-Judge (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -384,6 +406,7 @@
       }
     },
     {
+      "id": "eb6f2bc7-84be-4e43-8526-94ebe3480673",
       "name": "SUT Mode = Model?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -417,6 +440,7 @@
       }
     },
     {
+      "id": "e6e67a98-1e2e-4541-9acf-67c381459de6",
       "name": "Fan Out Model Cases",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -431,6 +455,7 @@
       }
     },
     {
+      "id": "2315f106-5ed7-47d0-b14e-6a74d321419e",
       "name": "Call Model SUT (Ollama)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -452,6 +477,7 @@
       "onError": "continueRegularOutput"
     },
     {
+      "id": "f23c4ac0-e7d7-405c-a0af-80dce6b6860a",
       "name": "Parse Model SUT (Ollama)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -466,6 +492,7 @@
       }
     },
     {
+      "id": "b777c1e5-0a8a-4e16-b21a-75399e1a3991",
       "name": "Run Subject-Under-Test (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -480,6 +507,7 @@
       }
     },
     {
+      "id": "58f4ae4e-adf9-4598-befc-8650f729ac17",
       "name": "Build Missing Golden Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -494,6 +522,7 @@
       }
     },
     {
+      "id": "50400e78-b933-4fa5-b6b5-ad289dd47400",
       "name": "Manual UI Missing Golden Error?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -527,6 +556,7 @@
       }
     },
     {
+      "id": "e3444f02-e8a3-4a59-9e8e-fadfe91b2292",
       "name": "Return Missing Golden Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -543,6 +573,7 @@
       }
     },
     {
+      "id": "f26da963-57ca-4131-a31d-de7173c08571",
       "name": "Receive Eval Run",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -558,6 +589,20 @@
         "options": {
           "allowedOrigins": "*"
         }
+      },
+      "webhookId": "b1ebcfcc-3c17-4f73-ab9f-81fea8bde95c"
+    },
+    {
+      "id": "ef7709bd-94d8-4ebb-8642-c904b33226f3",
+      "name": "Called By Gateway (Execute Workflow)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        900
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
       }
     }
   ],
@@ -880,6 +925,17 @@
       ]
     },
     "Receive Eval Run": {
+      "main": [
+        [
+          {
+            "node": "Normalize Eval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called By Gateway (Execute Workflow)": {
       "main": [
         [
           {
