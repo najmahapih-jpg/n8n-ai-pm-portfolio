@@ -60,8 +60,9 @@ the gateway + siblings being deployed (they are). Long-horizon planning beyond `
    high)**, incl. the 2-step `rag → support-triage`. "LLM understands, code controls" — and the gate caught the
    weak architecture without loosening the rubric.
 4. ✅ Live tool execution (`verify:tools`): the agent SIGNS each call (HMAC over the exact bytes) and routes an
-   allowlisted intent to the deployed gateway → real in-process sibling execution. 3 real siblings driven under the
-   same rubric (bug → live 2-step `rag → support-triage`; product-feedback → a real classification); refusals held
-   with ZERO gateway calls; a sibling 4xx is recorded `ok:false` (no fabrication). The signing + wiring + parsing are
-   offline-pinned by `verify:gateway-client`. Follow-up: align the agent's per-tool payloads to each sibling's
-   input contract (support-triage rejected the `{subject, message}` shape with a 400).
+   allowlisted intent to the deployed gateway → real in-process sibling execution. **4 real siblings** driven under
+   the same rubric (the 2-step `rag → support-triage` bug route returns real routing `routingTeam=product-engineering`;
+   product-feedback → a real classification); refusals held with ZERO gateway calls; a sibling 4xx is recorded
+   `ok:false` (no fabrication). Per-tool payloads are aligned to each sibling's contract — support-triage's one-of
+   `{customerEmail, email}` requirement (a 400 first caught it) is now satisfied by passing the ticket's email.
+   Signing + wiring + parsing offline-pinned by `verify:gateway-client`.
