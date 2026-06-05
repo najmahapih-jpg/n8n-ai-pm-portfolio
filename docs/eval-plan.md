@@ -46,7 +46,7 @@ golden scenarios through the real pipeline, **and** differentially pins the **fo
 and the whole-body strip output. So the deployed security logic can't silently drift from the audited core
 — a divergence turns the gate red. (The two composition nodes — route-decision and response-shaping — have
 no core counterpart and are pinned by the behavioral scenarios + the per-fixture status-code assertions.)
-**Built — 155 assertions across the 15 scenarios, 0 failures, fully offline.** (The harness runs our own
+**Built — 166 assertions across the 16 scenarios, 0 failures, fully offline.** (The harness runs our own
 version-controlled `jsCode` via `new Function`; no untrusted input is interpolated — it is the deliberate
 "run the deployed code" pattern, not a code-injection surface.)
 
@@ -62,7 +62,7 @@ the deployed gateway webhook, and assert the response wraps the sibling's real t
 | --- | --- | --- |
 | `npm run verify:static` | Layer 1 (PS/JSON parse, secret scan, registry, JSON shape) + both Node self-tests | yes |
 | `npm run verify:gateway` | Layer 2a — pure functions in isolation (20/20) | yes |
-| `npm run verify:workflow` | Layer 2b — the COMPILED jsCode vs the 15 golden scenarios + a differential vs the 4 security gates (155 assertions) | yes |
+| `npm run verify:workflow` | Layer 2b — the COMPILED jsCode vs the 16 golden scenarios + a differential vs the 4 security gates (166 assertions) | yes |
 | `npm run verify:json` | offline workflow-JSON shape (node floor, connections, structured secret scan) | yes |
 | `npm run verify:live` | opt-in live edge proof against the deployed gateway (signs a request; SKIPs honestly) | no |
 
