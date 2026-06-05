@@ -16,11 +16,15 @@ const canonical = JSON.parse(readFileSync(join(repoRoot, 'workflows', 'canonical
 const nodeByName = {};
 for (const n of canonical.nodes) { nodeByName[n.name] = n; }
 
-function runNode(name, items) {
+// The Agent Loop node is an ASYNC function (its opt-in live branch awaits httpRequest); run it as an AsyncFunction
+// with $env/require injected. In STUB mode (no agentMode) the live branch is never reached — no network, no $env,
+// no require, no `this` — so the differential exercises the byte-stable stub path exactly as before.
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+async function runNode(name, items) {
   const node = nodeByName[name];
   if (!node) { throw new Error('missing Code node in compiled JSON: ' + name); }
-  const fn = new Function('items', node.parameters.jsCode);
-  return fn(items);
+  const fn = new AsyncFunction('items', '$env', 'require', node.parameters.jsCode);
+  return await fn(items, {}, function (m) { throw new Error('require(' + m + ') not available in the offline differential'); });
 }
 
 // Identical to the workflow's embedded stub tools, so the differential compares like-for-like.
@@ -40,7 +44,7 @@ const files = readdirSync(join(repoRoot, 'fixtures', 'golden')).filter((f) => f.
 for (const f of files) {
   const g = JSON.parse(readFileSync(join(repoRoot, 'fixtures', 'golden', f), 'utf8'));
   // (a) the DEPLOYED Agent Loop jsCode (extracted from the compiled canonical)
-  const out = runNode('Agent Loop', [{ json: { task: g.task, config: { maxSteps: 4 }, policyVersion: 'autonomous-agent-v0.1.0' } }]);
+  const out = await runNode('Agent Loop', [{ json: { task: g.task, config: { maxSteps: 4 }, policyVersion: 'autonomous-agent-v0.1.0' } }]);
   const wfRun = out[0].json.run;
   // (b) the audited core, same task + same stub tools
   const coreRun = runAgentLoop(g.task, { planner: keywordPlanner, callTool: harnessStubTools, maxSteps: 4 });
