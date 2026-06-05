@@ -1,0 +1,6 @@
+{
+  "id": "no-signal",
+  "description": "No actionable signal: the agent finishes WITHOUT inventing a tool call (no-fabricated-tool discipline).",
+  "task": { "text": "hello there, just checking in" },
+  "expect": { "tools": [], "stopReason": "finished", "refused": false }
+}
