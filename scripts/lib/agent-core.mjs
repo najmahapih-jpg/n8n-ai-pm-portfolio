@@ -22,6 +22,15 @@ function taskSubject(task) {
   if (task && typeof task === 'object' && task.subject) return String(task.subject);
   return taskText(task).slice(0, 60);
 }
+// A support ticket carries the customer's email; support-triage requires one-of {customerEmail, email}. Pass the
+// task's email through (real tickets have it), with a safe placeholder when an inbound signal omits it.
+function taskEmail(task) {
+  if (task && typeof task === 'object') {
+    if (task.customerEmail) return String(task.customerEmail);
+    if (task.email) return String(task.email);
+  }
+  return 'unknown@example.com';
+}
 
 // Guardrail 1 — REFUSAL: destructive / prompt-injection / out-of-scope tasks are refused BEFORE any tool call.
 const UNSAFE_PATTERNS = [
@@ -55,7 +64,7 @@ export function keywordPlanner(task, history) {
 
   if (looksBug) {
     if (!has('rag')) return { action: 'call', intent: 'rag', args: { query: 'known issue: ' + text.slice(0, 120) }, why: 'check the knowledge base for a known issue' };
-    if (!has('support-triage')) return { action: 'call', intent: 'support-triage', args: { subject: taskSubject(task), message: taskText(task) }, why: 'classify + route the ticket' };
+    if (!has('support-triage')) return { action: 'call', intent: 'support-triage', args: { customerEmail: taskEmail(task), subject: taskSubject(task), message: taskText(task) }, why: 'classify + route the ticket' };
     return { action: 'finish', answer: synthesize('bug', history) };
   }
   if (looksFeedback) {
@@ -290,7 +299,7 @@ export function routeByClass(label, task, history) {
   const called = (history || []).map((h) => h.intent);
   if (label === 'bug') {
     if (!called.includes('rag')) return { action: 'call', intent: 'rag', args: { query: 'known issue: ' + taskText(task).slice(0, 120) }, why: 'llm-classified bug -> check the KB' };
-    if (!called.includes('support-triage')) return { action: 'call', intent: 'support-triage', args: { subject: taskSubject(task), message: taskText(task) }, why: 'route the ticket' };
+    if (!called.includes('support-triage')) return { action: 'call', intent: 'support-triage', args: { customerEmail: taskEmail(task), subject: taskSubject(task), message: taskText(task) }, why: 'route the ticket' };
     return { action: 'finish', answer: synthesize('bug', history) };
   }
   if (label === 'feedback') {
