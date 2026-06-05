@@ -1,6 +1,6 @@
 # ADR-0001 — An eval-first autonomous agent whose tools are the portfolio (via the signed gateway)
 
-Date: 2026-06-05 · Status: Accepted (design + core + SDK workflow + live LLM planner)
+Date: 2026-06-05 · Status: Accepted (design + core + SDK workflow + live LLM planner + live gateway tools)
 
 ## Context
 
@@ -59,4 +59,9 @@ the gateway + siblings being deployed (they are). Long-horizon planning beyond `
    multi-step state (re-calls tools to max-steps); **LLM-classifier + deterministic `routeByClass`** **6/6 (trust
    high)**, incl. the 2-step `rag → support-triage`. "LLM understands, code controls" — and the gate caught the
    weak architecture without loosening the rubric.
-4. Live tool execution via the deployed interaction-gateway (sign → route → observe → synthesize).
+4. ✅ Live tool execution (`verify:tools`): the agent SIGNS each call (HMAC over the exact bytes) and routes an
+   allowlisted intent to the deployed gateway → real in-process sibling execution. 3 real siblings driven under the
+   same rubric (bug → live 2-step `rag → support-triage`; product-feedback → a real classification); refusals held
+   with ZERO gateway calls; a sibling 4xx is recorded `ok:false` (no fabrication). The signing + wiring + parsing are
+   offline-pinned by `verify:gateway-client`. Follow-up: align the agent's per-tool payloads to each sibling's
+   input contract (support-triage rejected the `{subject, message}` shape with a 400).
