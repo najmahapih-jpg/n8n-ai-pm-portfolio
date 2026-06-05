@@ -747,6 +747,16 @@ const overview = sticky(
   { color: 4 }
 );
 
+// Callable as a sub-workflow by the interaction-gateway via Execute Workflow (in-process). Feeds the SAME
+// Normalize Run Config pipeline as the on-demand webhook (tolerates passthrough via `source.body ?? source`),
+// so schedule + webhook contracts are unchanged. respondToWebhook is a no-op in a sub-workflow call — the
+// caller receives the run record. On-demand drift run; stub-default.
+const calledByGateway = trigger({
+  type: 'n8n-nodes-base.executeWorkflowTrigger',
+  version: 1.1,
+  config: { name: 'Called By Gateway (Execute Workflow)', position: [160, 940], parameters: { inputSource: 'passthrough' } }
+});
+
 export default workflow('scheduled-drift-monitor', 'Portfolio - Scheduled Drift Monitor')
   .add(overview)
   .add(runOnSchedule)
@@ -772,4 +782,6 @@ export default workflow('scheduled-drift-monitor', 'Portfolio - Scheduled Drift 
   .to(buildDemoRunConfig)
   .to(normalizeRunConfig)
   .add(receiveRunRequest)
+  .to(normalizeRunConfig)
+  .add(calledByGateway)
   .to(normalizeRunConfig);
