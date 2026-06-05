@@ -66,3 +66,9 @@ the gateway + siblings being deployed (they are). Long-horizon planning beyond `
    `ok:false` (no fabrication). Per-tool payloads are aligned to each sibling's contract — support-triage's one-of
    `{customerEmail, email}` requirement (a 400 first caught it) is now satisfied by passing the ticket's email.
    Signing + wiring + parsing offline-pinned by `verify:gateway-client`.
+5. ✅ Live LLM + gateway tools WIRED INTO the deployed n8n node (opt-in `agentMode=live`): the Agent Loop node
+   itself classifies via Ollama (`host.docker.internal:11434`), then signs (`require('crypto')`) and drives the
+   gateway (`n8n:5678`) in-process via `this.helpers.httpRequest`. STUB stays the default and remains
+   differential-pinned (the live branch is never reached offline, so `verify:workflow` is unaffected). Proven live:
+   `agentMode=live` ran the 2-step `rag → support-triage` route with `plannerSource=llm:llama3.2:3b`,
+   `toolSource=gateway`, and real sibling results.
