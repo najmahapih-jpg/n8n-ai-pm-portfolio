@@ -953,6 +953,16 @@ const overview = sticky(
   { color: 4 }
 );
 
+// Callable as a sub-workflow by the interaction-gateway via Execute Workflow (in-process). Feeds the SAME
+// Normalize Payload pipeline as the webhook (tolerates passthrough via `source.body ?? source`), so the webhook
+// contract is unchanged. respondToWebhook is a no-op in a sub-workflow call — the caller receives the last
+// node's output (the Build*Response object carrying `.response`).
+const calledByGateway = trigger({
+  type: 'n8n-nodes-base.executeWorkflowTrigger',
+  version: 1.1,
+  config: { name: 'Called By Gateway (Execute Workflow)', position: [160, 980], parameters: { inputSource: 'passthrough' } }
+});
+
 export default workflow('portfolio-support-triage-api', 'Portfolio - Support Triage API')
   .add(overview)
   .add(receiveTicket)
@@ -997,4 +1007,6 @@ export default workflow('portfolio-support-triage-api', 'Portfolio - Support Tri
       buildValidationError
         .to(returnValidationError)
     )
-  );
+  )
+  .add(calledByGateway)
+  .to(normalizePayload);
