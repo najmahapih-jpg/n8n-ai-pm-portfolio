@@ -58,5 +58,9 @@ Invoke-ValidationStep -Name "Compiled-workflow differential self-test (verify:wo
   & node (Join-Path $repoRoot "scripts\test-agent-workflow.mjs"); if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
+Invoke-ValidationStep -Name "Gateway tool-executor self-test (verify:gateway-client)" -Action {
+  & node (Join-Path $repoRoot "scripts\test-gateway-client.mjs"); if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+
 Write-Host "Static validation passed."
 exit 0
