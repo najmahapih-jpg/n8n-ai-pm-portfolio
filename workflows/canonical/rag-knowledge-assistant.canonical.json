@@ -3,8 +3,8 @@
   "name": "Portfolio - RAG Knowledge Assistant API",
   "nodes": [
     {
-      "id": "72c1c2b7-4bd5-4942-8ea2-2e3c0882a0e0",
-      "name": "Sticky Note 72c1c2b7",
+      "id": "41434003-ec8e-41af-872a-c6e62c133fc7",
+      "name": "Sticky Note 41434003",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -19,7 +19,7 @@
       }
     },
     {
-      "id": "999ce922-2553-484d-9679-4b2e3994dcdc",
+      "id": "ff1ed127-c604-4f7b-ae85-5f53e58741ae",
       "name": "Run Demo Query From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -29,7 +29,7 @@
       ]
     },
     {
-      "id": "70821139-af55-428e-9c08-0c6a93f45ddf",
+      "id": "808d9fd3-74d5-432a-8a7e-fdab55ab0635",
       "name": "Build Demo Query Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -44,7 +44,7 @@
       }
     },
     {
-      "id": "a6bcfbd9-0984-4d0e-835c-c92bbf4b989d",
+      "id": "bc0db22d-1a58-493b-80fb-93bfcc3a6a20",
       "name": "Normalize Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -59,7 +59,7 @@
       }
     },
     {
-      "id": "5e6cbbce-105c-4c02-b603-fd84907417fe",
+      "id": "1ea65626-3562-4fb7-9aa9-7845bb81c524",
       "name": "Query Present?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -93,7 +93,7 @@
       }
     },
     {
-      "id": "7a429961-2ef0-4cf6-9dd6-7382964078f9",
+      "id": "5ba0621b-52ea-47b5-a717-6be2222a82b4",
       "name": "Retrieval Source = Supabase?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -127,7 +127,7 @@
       }
     },
     {
-      "id": "b81a3cea-b77d-403a-938c-960864f2adda",
+      "id": "f4edac81-4dd3-47aa-bb46-6dbd9af0a9f1",
       "name": "Embed Query (Ollama)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -149,7 +149,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "b382a59f-cf16-421d-829e-27f661290d97",
+      "id": "cd3fdb10-0256-4705-82c3-ce61e7d143fd",
       "name": "Match Documents (Supabase RPC)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -186,7 +186,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "ce361fe9-893e-47b0-8bfb-471504860b33",
+      "id": "7dc07bed-8e6b-4b57-8c94-be7a6b023db2",
       "name": "Map Supabase Retrieval",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -201,7 +201,7 @@
       }
     },
     {
-      "id": "8068522c-97df-4fcb-b772-a84542f01ecb",
+      "id": "e053c3d0-36aa-4c67-ad0c-89603420de93",
       "name": "Retrieval Clears Threshold?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -235,7 +235,7 @@
       }
     },
     {
-      "id": "d5ec7464-d108-4880-a97a-40eba525938b",
+      "id": "41d48e53-a46a-477f-b66b-95ca14bc0ef6",
       "name": "Generation Source = Ollama?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -269,7 +269,7 @@
       }
     },
     {
-      "id": "620328a7-2137-4ea5-b019-d64590033ed9",
+      "id": "092c6784-cdee-4782-af8b-50d1716a1339",
       "name": "Build Grounding Context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -284,7 +284,7 @@
       }
     },
     {
-      "id": "a958a35a-1aba-4547-8786-e12dd5b04326",
+      "id": "b796471d-9b63-444f-86e6-34f9b4906294",
       "name": "Generate Answer (Ollama)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -306,7 +306,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "bc29d4fa-5da6-4cfa-81e3-1d9e80b2aa26",
+      "id": "e3f1fc85-2c84-47ea-a07c-7a2c961c173e",
       "name": "Parse + Ground Answer (Ollama)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -321,7 +321,7 @@
       }
     },
     {
-      "id": "a2d2d1ab-d2e6-48a0-8e7e-dbd01d1f0ad5",
+      "id": "76e2c5f3-d200-4e0d-b74a-272ed1e8b9a6",
       "name": "Enforce Citation Integrity",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -336,7 +336,7 @@
       }
     },
     {
-      "id": "5e7ecdc2-cec7-4bc3-b9ce-cbacf0e5aecf",
+      "id": "326abb29-9b86-4768-ace9-92fefa3c5d1c",
       "name": "Create Redacted Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -351,7 +351,7 @@
       }
     },
     {
-      "id": "9623660d-af4a-4c83-9354-4581adc04213",
+      "id": "758c7bad-b6ae-4b85-8c12-01e06790a1ce",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -366,7 +366,7 @@
       }
     },
     {
-      "id": "9a7dd568-6ebc-466f-ae7e-d9e8c058b03a",
+      "id": "d48fc7f8-e294-4ae2-b78c-69acd79956de",
       "name": "Manual UI Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -400,7 +400,7 @@
       }
     },
     {
-      "id": "b89bfadf-5658-45bb-957e-e68812015716",
+      "id": "9f8b2934-5902-4e62-bfe1-be8a4b7a0859",
       "name": "Show UI Execution Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -415,7 +415,7 @@
       }
     },
     {
-      "id": "9accba2d-8f28-4a6b-baf9-93771b6d39f6",
+      "id": "a8934329-d829-41c5-91c8-1db922444bf7",
       "name": "Return Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -432,7 +432,7 @@
       }
     },
     {
-      "id": "68992b3a-21dc-462d-b578-8817a141e9ec",
+      "id": "1d32c9ef-2fa9-4adb-a0cd-6675cc5995db",
       "name": "Stub Grounded Answer",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -447,7 +447,7 @@
       }
     },
     {
-      "id": "e93cde0d-c79d-480c-b046-b0f20d7a9cd8",
+      "id": "0fba0c08-d569-4752-9af8-d4b67eb18105",
       "name": "Clean Abstain",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -462,7 +462,7 @@
       }
     },
     {
-      "id": "9a150420-9cfb-4d27-ace6-386e287c04f0",
+      "id": "3705b1ee-7cef-417c-951c-bab19eddb25c",
       "name": "Stub Embed + Retrieve",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -477,7 +477,7 @@
       }
     },
     {
-      "id": "27ade642-4d0b-4500-8b98-40f256234d85",
+      "id": "d25379f4-22b5-4457-b5b9-f4dfd20fe1a4",
       "name": "Build Missing Query Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -492,7 +492,7 @@
       }
     },
     {
-      "id": "ebcd13dd-8cf3-40e3-b48e-27987ef4be3f",
+      "id": "10b9a6de-4767-456f-9c3d-0682d453a490",
       "name": "Manual UI Missing Query Error?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -526,7 +526,7 @@
       }
     },
     {
-      "id": "8146f3f3-9bc4-4dd5-92ce-37651a891325",
+      "id": "56e58f9b-b83a-412d-a761-40b69fdaa32b",
       "name": "Return Missing Query Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -543,7 +543,7 @@
       }
     },
     {
-      "id": "2f0e038e-5a46-4436-bd7b-b81936d8a79c",
+      "id": "8a484a90-8dbc-40b0-a939-f3ca4b322fe8",
       "name": "Receive Query",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -560,7 +560,20 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "1e85f746-a3b8-4dbd-8e8a-9f5bd6f8bb08"
+      "webhookId": "137ec51a-2a63-49cc-a76e-de1e71a63866"
+    },
+    {
+      "id": "0e8b687f-9969-432d-a72e-a90964bcf528",
+      "name": "Called By Gateway (Execute Workflow)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        760
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
     }
   ],
   "connections": {
@@ -849,6 +862,17 @@
       ]
     },
     "Receive Query": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called By Gateway (Execute Workflow)": {
       "main": [
         [
           {
