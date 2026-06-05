@@ -4,13 +4,14 @@
 (a ticket / feedback / question) into a consolidated outcome by **orchestrating the other portfolio workflows
 as tools**, under guardrails, graded by **agent-trajectory evals**.
 
-> **Status: live LLM planner built + run (2026-06-05).** The agent core (`agent-core.mjs`, `verify:agent`
-> **59/59**), the SDK workflow + compiled-workflow differential (`verify:workflow` **24/24**), and `verify:static`
-> are green. **Deployed** to n8n (id `fIAHA00y4Rft2BrC`, active): a bug task runs the 2-step `rag→support-triage`
-> trajectory; an unsafe task is refused. **`verify:llm` drives a REAL LLM (Ollama `llama3.2:3b`) under the same
-> rubric** — free-form step planning scores **2/6 (trust low**; a small model can't track multi-step state), while
-> an LLM-classifier + deterministic routing scores **6/6 (trust high)**. **Live gateway tool execution** is the
-> remaining opt-in increment.
+> **Status: capstone complete — live LLM planner + live gateway tools built & run (2026-06-05).** Green: the agent
+> core (`verify:agent` **59/59**), the SDK workflow + differential (`verify:workflow` **24/24**), the gateway tool
+> executor (`verify:gateway-client` **16/16**), and `verify:static`. **Deployed** to n8n (id `fIAHA00y4Rft2BrC`,
+> active). Two live tiers under the **same** trajectory rubric: **`verify:llm`** — a real LLM plans (Ollama
+> `llama3.2:3b`): free-form **2/6 (low)** vs LLM-classifier + deterministic routing **6/6 (high)**; and
+> **`verify:tools`** — the agent SIGNS each call and drives **real portfolio siblings** in-process via the deployed
+> interaction-gateway (a bug ran the live 2-step `rag → support-triage` route; `product-feedback` returned a real
+> classification; refusals held with zero gateway calls). The agent's tools ARE the portfolio, over the signed gateway.
 
 ## What it is
 
@@ -50,6 +51,8 @@ tool is never executed) · `max-steps` (bounded loop) · `no-fabricated-result` 
    live-verified** (id `fIAHA00y4Rft2BrC`).
 2. ✅ Live LLM planner (`verify:llm`, Ollama `llama3.2:3b`) graded by the **same** rubric — free-form 2/6 (low) vs
    LLM-classifier + deterministic routing 6/6 (high); an honest architecture finding, no rubric loosening.
-3. Live tool execution via the deployed interaction-gateway (sign → route → observe → synthesize).
+3. ✅ Live tool execution (`verify:tools`) via the deployed interaction-gateway (sign → route → real in-process
+   sibling → observe) — 3 real siblings driven, same rubric. Follow-up: align the agent's per-tool payloads to each
+   sibling's input contract (support-triage returned a 400 on the agent's `{subject, message}` shape).
 
 License: Apache-2.0.
