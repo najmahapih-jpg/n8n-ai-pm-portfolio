@@ -163,6 +163,7 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   "errors": [],
   "fixtures": {
     "dir": "fixtures/golden",
+    "ignoreKeys": ["id", "description", "expect"],
     "valid": [
       "01-bug-known-issue.json",
       "02-question-grounded.json",
