@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible bug in the contract runner, self-test fixtures, or portfolio gate.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include secrets, private webhook URLs, tokens, or live customer data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List the exact commands, fixture path, or target repo path.
+      placeholder: |
+        1. Run npm run verify:self
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Package version or commit SHA.
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification output
+      description: Paste relevant sanitized output from npm run verify:self or verify:portfolio.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed secrets, tokens, webhook URLs, and customer data.
+          required: true
