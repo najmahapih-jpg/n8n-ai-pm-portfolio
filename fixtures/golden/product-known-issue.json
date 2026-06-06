@@ -1,0 +1,8 @@
+{
+  "id": "product-known-issue",
+  "exercises": "known-issue retrieval over the product-support corpus — the agent->rag->support-triage path",
+  "query": "the export button crashes on mobile — is this a known issue?",
+  "expectAbstain": false,
+  "expectAnswerContains": [],
+  "expectCiteChunkIds": ["known-export-mobile-crash"]
+}
