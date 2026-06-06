@@ -25,7 +25,7 @@ export function buildSignedRequest(intent, payload, opts) {
 export function summarizeTarget(target, targetResult) {
   const resp = (targetResult && targetResult.response) ? targetResult.response : targetResult;
   const frags = [];
-  const keys = ['theme', 'sentiment', 'urgency', 'priorityScore', 'routingTeam', 'abstained', 'passed', 'passRate'];
+  const keys = ['retrievalSource', 'theme', 'sentiment', 'urgency', 'priorityScore', 'routingTeam', 'abstained', 'passed', 'passRate'];
   for (const k of keys) { if (resp && resp[k] !== undefined && resp[k] !== null) frags.push(k + '=' + resp[k]); }
   if (resp && Array.isArray(resp.citations)) frags.push('citations=' + resp.citations.length);
   if (resp && resp.drift && resp.drift.any !== undefined) frags.push('drift.any=' + resp.drift.any);
@@ -48,6 +48,11 @@ export function makeGatewayCallTool(opts) {
   if (typeof fetchImpl !== 'function') throw new Error('makeGatewayCallTool requires a fetch implementation');
 
   return async function callTool(intent, args) {
+    // NB: the agent does NOT force rag's live (supabase) retrieval. Live embedding retrieval works (~0.73 cosine)
+    // but the in-process gateway sub-execution degrades transiently (~25%) to a clean-abstain (rag's onError path
+    // returns empty rather than falling back to its TF-IDF), which would make the agent MISS the known issue. The
+    // deterministic stub TF-IDF over the same product corpus hits reliably, so it stays the default. (Follow-up to
+    // safely default to live: fix rag's supabase-onError path to fall back to TF-IDF, not abstain.)
     const { rawBody, signature, timestamp } = buildSignedRequest(intent, args, { signingSecret, requestId: makeRequestId(), timestamp: now() });
     let res;
     let text;
