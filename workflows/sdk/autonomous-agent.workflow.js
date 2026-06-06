@@ -4,7 +4,7 @@ import { workflow, node, trigger, sticky, expr } from '@n8n/workflow-sdk';
 //
 // Given an inbound signal, the agent runs a BOUNDED tool-use loop: plan -> pick an allowlisted tool (intent) ->
 // call it -> observe -> decide (done? next? refuse?) -> ... -> synthesize. Its tools ARE the portfolio workflows,
-// reached via the signed interaction-gateway. The agent-core is the single source of truth (verify:agent 39/39);
+// reached via the signed interaction-gateway. The agent-core is the single source of truth (verify:agent 59/59);
 // the Agent Loop Code node MIRRORS it inline (n8n Code nodes can't import the .mjs), and scripts/test-agent-workflow.mjs
 // extracts the COMPILED Agent Loop body, runs the golden tasks through it, AND differentially checks it vs the core
 // — so the deployed copy can't silently drift. STUB-DEFAULT: runs the deterministic keyword planner over STUB
@@ -78,7 +78,7 @@ const agentLoop = node({
     parameters: {
       mode: 'runOnceForAllItems',
       language: 'javaScript',
-      jsCode: `// MIRRORS scripts/lib/agent-core.mjs (the audited source of truth, verify:agent 39/39). The bounded tool-use
+      jsCode: `// MIRRORS scripts/lib/agent-core.mjs (the audited source of truth, verify:agent 59/59). The bounded tool-use
 // loop + deterministic keyword planner + refusal/allowlist/max-steps/no-fabricated guardrails. STUB tools by
 // default; agentMode=live runs a REAL LLM classifier planner (Ollama) + signed gateway tools from this node.
 const TOOL_ALLOWLIST = ['support-triage', 'product-feedback', 'rag', 'eval', 'drift'];
