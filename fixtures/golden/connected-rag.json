@@ -17,6 +17,13 @@
       "expected": "true",
       "assertions": { "equals": "true", "maxLength": 8 },
       "_note": "Out-of-corpus (B's corpus is the Chinese AI-PM knowledge base only): retrieval does not clear the threshold, so the RAG assistant CLEANLY ABSTAINS -> abstained:true (answer:null, citations:[], note:'信息不足,无法回答'). expected:'true' is the abstained flag as a string. This grades the controlled failure mode of a second, differently-shaped sibling as a black box — proving the configurable sutExtract decoupled the harness from product-feedback's response shape."
+    },
+    {
+      "id": "rag-product-known-issue",
+      "input": { "query": "the export button crashes on mobile — is this a known issue?" },
+      "expected": "false",
+      "assertions": { "equals": "false", "maxLength": 8 },
+      "_note": "Black-box grade of the RAG assistant over the PRODUCT-SUPPORT corpus — the agent->rag->support-triage collaboration's known-issue KB. The deployed stub path retrieves chunk 'known-export-mobile-crash' above threshold and ANSWERS -> abstained:false. Proves A grades rag's PRODUCT known-issue retrieval, not only the AI-PM corpus; the same configurable sutExtract:'abstained' grades both corpora as a black box."
     }
   ]
 }
