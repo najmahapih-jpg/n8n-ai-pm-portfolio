@@ -1,0 +1,49 @@
+name: Tool improvement
+description: Propose a new assertion, fixture, script change, or documentation improvement.
+title: "[Tool]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What gap or user need should this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the assertion, fixture, script, or documentation change.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Assertion logic (Test-Contract.ps1)
+        - Self-test fixtures (fixtures/self/)
+        - Portfolio gate (Test-PortfolioContracts.ps1)
+        - Live mode behavior
+        - Documentation
+        - CI or tooling
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - verify:self passes
+        - verify:portfolio passes
+        - New or updated fixture added
+        - README/docs updated
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and tradeoffs
+      description: Include any security, live-mode, or compatibility risks.
