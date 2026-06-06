@@ -186,18 +186,32 @@ function summarizeTarget(target, tr) {
   if (!parts.length && tr && tr.statusCode != null) parts.push('statusCode ' + tr.statusCode);
   return target + ': ' + (parts.length ? parts.join(', ') : 'ok');
 }
-async function gatewayCall(intent, args, ctx) {
+async function gatewayCallOnce(intent, sendArgs, ctx) {
   const crypto = require('crypto');
   const ts = String(Math.floor(Date.now() / 1000)); const requestId = 'agent-node-' + ctx.seq; ctx.seq += 1;
-  const rawBody = JSON.stringify({ intent: intent, payload: args || {}, requestId: requestId });
+  const rawBody = JSON.stringify({ intent: intent, payload: sendArgs, requestId: requestId });
   const sig = 'sha256=' + crypto.createHmac('sha256', String(ctx.secret)).update(ts + '.' + rawBody).digest('hex');
-  let resp; try { resp = await ctx.helpers.httpRequest({ method: 'POST', url: GATEWAY_URL, body: rawBody, headers: { 'Content-Type': 'text/plain', 'X-Timestamp': ts, 'X-Signature': sig } }); } catch (e) { return { ok: false, summary: 'gateway error: ' + (e && e.message ? e.message : 'failed') }; }
-  let json = resp; if (typeof resp === 'string') { try { json = JSON.parse(resp); } catch (e) { return { ok: false, summary: 'gateway non-JSON' }; } }
+  let resp; try { resp = await ctx.helpers.httpRequest({ method: 'POST', url: GATEWAY_URL, body: rawBody, headers: { 'Content-Type': 'text/plain', 'X-Timestamp': ts, 'X-Signature': sig } }); } catch (e) { return { ok: false, summary: 'gateway error: ' + (e && e.message ? e.message : 'failed'), degradedAbstain: false }; }
+  let json = resp; if (typeof resp === 'string') { try { json = JSON.parse(resp); } catch (e) { return { ok: false, summary: 'gateway non-JSON', degradedAbstain: false }; } }
   const executed = !!(json && json.result && json.result.executed === true);
   const perTarget = (json && json.result && Array.isArray(json.result.perTarget)) ? json.result.perTarget : [];
   const siblingsOk = perTarget.length > 0 && perTarget.every(function (t) { const sc = t && t.result ? t.result.statusCode : undefined; return sc == null || Number(sc) < 400; });
+  const r0 = (perTarget.length && perTarget[0].result) ? (perTarget[0].result.response || perTarget[0].result) : null;
+  const degradedAbstain = !!(r0 && typeof r0.retrievalSource === 'string' && /-fallback$/.test(r0.retrievalSource) && r0.abstained === true);
   const summary = perTarget.length ? perTarget.map(function (t) { return summarizeTarget(t.target, t.result); }).join(' | ') : 'no result';
-  return { ok: (json && json.ok === true) && executed && siblingsOk, summary: summary };
+  return { ok: (json && json.ok === true) && executed && siblingsOk, summary: summary, degradedAbstain: degradedAbstain };
+}
+async function gatewayCall(intent, args, ctx) {
+  // rag tool policy: try LIVE (supabase, real embeddings) first; on a transient *-fallback abstain, retry ONCE with
+  // the deterministic stub TF-IDF over the same corpus (reliable hit) — real embeddings when available, never a
+  // transient miss. (The deeper fix is rag's own onError falling back to TF-IDF; this keeps the AGENT reliable.)
+  const baseArgs = args || {};
+  if (intent === 'rag') {
+    const live = await gatewayCallOnce('rag', Object.assign({ retrievalSource: 'supabase' }, baseArgs), ctx);
+    if (live.degradedAbstain) { return await gatewayCallOnce('rag', Object.assign({ retrievalSource: 'stub' }, baseArgs), ctx); }
+    return live;
+  }
+  return gatewayCallOnce(intent, baseArgs, ctx);
 }
 async function runAgentLoopLive(task, opts) {
   const maxStepsL = Number.isFinite(opts.maxSteps) ? opts.maxSteps : 4;
