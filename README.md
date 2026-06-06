@@ -58,4 +58,4 @@ tool is never executed) · `max-steps` (bounded loop) · `no-fabricated-result` 
    sibling → observe) — **4 real siblings** driven incl. the 2-step `rag → support-triage` bug route, same rubric.
    Per-tool payloads aligned to each sibling's contract (support-triage requires `customerEmail`; a 400 first caught it).
 
-License: Apache-2.0.
+License: Apache-2.0 (`LICENSE`).
