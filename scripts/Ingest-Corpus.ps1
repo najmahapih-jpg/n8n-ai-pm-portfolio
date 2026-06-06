@@ -167,29 +167,23 @@ function Invoke-Supabase {
     [string]$JsonBody = $null,
     [hashtable]$ExtraHeaders = @{}
   )
-  $client = [System.Net.Http.HttpClient]::new()
-  try {
-    $client.Timeout = [TimeSpan]::FromSeconds(60)
-    $req = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::new($Method), "$SupabaseUrl$PathAndQuery")
-    # Non-browser User-Agent is MANDATORY for sb_secret_ keys (else HTTP 401 "Forbidden ... in browser").
-    $req.Headers.TryAddWithoutValidation("User-Agent", "n8n") | Out-Null
-    $req.Headers.TryAddWithoutValidation("apikey", $SupabaseKey) | Out-Null
-    $req.Headers.TryAddWithoutValidation("Authorization", "Bearer $SupabaseKey") | Out-Null
-    foreach ($k in $ExtraHeaders.Keys) { $req.Headers.TryAddWithoutValidation($k, [string]$ExtraHeaders[$k]) | Out-Null }
-    if ($null -ne $JsonBody) {
-      $req.Content = [System.Net.Http.StringContent]::new($JsonBody, [System.Text.Encoding]::UTF8, "application/json")
-    }
-    $resp = $client.SendAsync($req).Result
-    $bodyText = $resp.Content.ReadAsStringAsync().Result
-    $contentRange = $null
-    [void]$resp.Content.Headers.TryGetValues("Content-Range", [ref]$contentRange)
-    return [pscustomobject]@{
-      StatusCode = [int]$resp.StatusCode
-      Body = $bodyText
-      ContentRange = if ($contentRange) { ($contentRange -join ",") } else { $null }
-    }
-  } finally {
-    $client.Dispose()
+  # Use Invoke-WebRequest (PowerShell's web stack) rather than a raw HttpClient: in proxied environments the
+  # raw HttpClient POST-with-body can fail where the cmdlet succeeds. -SkipHeaderValidation lets us set the
+  # `Range` header Supabase wants for an exact count; -SkipHttpErrorCheck returns 4xx/5xx as a normal response.
+  $headers = @{ "User-Agent" = "n8n"; "apikey" = $SupabaseKey; "Authorization" = "Bearer $SupabaseKey" }
+  foreach ($k in $ExtraHeaders.Keys) { $headers[$k] = [string]$ExtraHeaders[$k] }
+  $params = @{
+    Uri = "$SupabaseUrl$PathAndQuery"; Method = $Method; Headers = $headers
+    SkipHttpErrorCheck = $true; SkipHeaderValidation = $true; TimeoutSec = 60
+  }
+  if ($null -ne $JsonBody) { $params["Body"] = $JsonBody; $params["ContentType"] = "application/json" }
+  $resp = Invoke-WebRequest @params
+  $contentRange = $null
+  if ($resp.Headers.ContainsKey("Content-Range")) { $contentRange = (@($resp.Headers["Content-Range"]) -join ",") }
+  return [pscustomobject]@{
+    StatusCode = [int]$resp.StatusCode
+    Body = [string]$resp.Content
+    ContentRange = $contentRange
   }
 }
 
