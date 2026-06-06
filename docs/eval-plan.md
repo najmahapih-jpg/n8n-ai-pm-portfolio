@@ -26,7 +26,7 @@ PS/JSON parse + secret scan + registry freshness + workflow-JSON shape + node-fl
 
 ### Layer 2 — trajectory self-test (offline, deterministic) — `verify:agent`
 `scripts/test-agent-core.mjs` runs the golden tasks through `runAgentLoop` with the **stub planner + stub tools**
-and scores each with `scoreTrajectory`, PLUS the guardrail NEGATIVES. **Built — 39/39** (6 golden tasks + 3
+and scores each with `scoreTrajectory`, PLUS the guardrail NEGATIVES. **Built — 59/59** (6 golden tasks + 3
 guardrail negatives), fully offline, byte-stable.
 
 Golden tasks: bug→known-issue (`[rag, support-triage]`) · question (`[rag]`) · feedback (`[product-feedback]`) ·
