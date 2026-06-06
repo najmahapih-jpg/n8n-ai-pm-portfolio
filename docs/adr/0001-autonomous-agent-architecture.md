@@ -41,7 +41,7 @@ produces a consolidated outcome.
 ## Consequences
 
 **Positive** — a real agentic loop with guardrails; the non-deterministic agent is CI-gateable (stub planner +
-trajectory rubric, 39/39); reuses the whole portfolio as tools; the live LLM is held to the same bar (with a
+trajectory rubric, 59/59); reuses the whole portfolio as tools; the live LLM is held to the same bar (with a
 stub-vs-LLM calibration guard, mirroring A's judge-drift guard); low-maintenance (stub-default, no standing infra).
 
 **Negative / trade-offs** — a keyword stub planner is a simplification of real planning (acceptable: it pins the
