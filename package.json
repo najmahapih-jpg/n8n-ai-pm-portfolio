@@ -2,7 +2,7 @@
   "name": "n8n-autonomous-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "Capstone C — an autonomous agent that, given an inbound signal, AUTONOMOUSLY decides which portfolio tools to invoke (support-triage / product-feedback / rag / eval / drift) via the signed interaction-gateway, observes each result, and produces a consolidated outcome — under guardrails (refusal / tool-allowlist / max-steps / no-fabricated-result). Graded by agent-trajectory evals; the SAME rubric grades the deterministic stub planner AND a live LLM (the non-deterministic-agent eval thesis A+D were built to de-risk). v0.1.0: pure agent core + offline trajectory eval (verify:agent 39/39); the SDK workflow + live LLM/gateway are the next increments.",
+  "description": "Capstone C — an autonomous agent that, given an inbound signal, AUTONOMOUSLY decides which portfolio tools to invoke (support-triage / product-feedback / rag / eval / drift) via the signed interaction-gateway, observes each result, and produces a consolidated outcome — under guardrails (refusal / tool-allowlist / max-steps / no-fabricated-result). Graded by agent-trajectory evals; the SAME rubric grades the deterministic stub planner AND a live LLM (the non-deterministic-agent eval thesis A+D were built to de-risk). Capstone COMPLETE: agent core + offline trajectory eval (verify:agent 59/59) + SDK workflow (verify:workflow 24/24) + live LLM planner (verify:llm) + live gateway tools (verify:tools), all runnable inside the deployed n8n node via agentMode=live; the stub planner + stub tools are the reproducible default.",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
