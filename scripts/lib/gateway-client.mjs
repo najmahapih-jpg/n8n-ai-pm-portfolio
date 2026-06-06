@@ -47,13 +47,10 @@ export function makeGatewayCallTool(opts) {
   if (signingSecret === undefined || signingSecret === null || signingSecret === '') throw new Error('makeGatewayCallTool requires signingSecret');
   if (typeof fetchImpl !== 'function') throw new Error('makeGatewayCallTool requires a fetch implementation');
 
-  return async function callTool(intent, args) {
-    // NB: the agent does NOT force rag's live (supabase) retrieval. Live embedding retrieval works (~0.73 cosine)
-    // but the in-process gateway sub-execution degrades transiently (~25%) to a clean-abstain (rag's onError path
-    // returns empty rather than falling back to its TF-IDF), which would make the agent MISS the known issue. The
-    // deterministic stub TF-IDF over the same product corpus hits reliably, so it stays the default. (Follow-up to
-    // safely default to live: fix rag's supabase-onError path to fall back to TF-IDF, not abstain.)
-    const { rawBody, signature, timestamp } = buildSignedRequest(intent, args, { signingSecret, requestId: makeRequestId(), timestamp: now() });
+  // One signed round-trip to the gateway -> { ok, summary, data }. data.degradedAbstain flags a rag live call
+  // that transiently degraded (retrievalSource '*-fallback') AND abstained — the signal the retry below acts on.
+  async function callOnce(intent, sendArgs) {
+    const { rawBody, signature, timestamp } = buildSignedRequest(intent, sendArgs, { signingSecret, requestId: makeRequestId(), timestamp: now() });
     let res;
     let text;
     try {
@@ -73,9 +70,29 @@ export function makeGatewayCallTool(opts) {
       const sc = t && t.result ? t.result.statusCode : undefined;
       return sc === undefined || sc === null || Number(sc) < 400;
     });
+    const r0 = (perTarget.length && perTarget[0].result) ? (perTarget[0].result.response || perTarget[0].result) : null;
+    const degradedAbstain = !!(r0 && typeof r0.retrievalSource === 'string' && /-fallback$/.test(r0.retrievalSource) && r0.abstained === true);
     const summary = perTarget.length
       ? perTarget.map((t) => summarizeTarget(t.target, t.result)).join(' | ')
       : (json && json.routedTo ? 'routedTo ' + JSON.stringify(json.routedTo) + ' (not executed)' : 'no result');
-    return { ok: json.ok === true && executed && siblingsOk, summary, data: { traceId: json.traceId, routedTo: json.routedTo, executed, siblingsOk, perTarget } };
+    return { ok: json.ok === true && executed && siblingsOk, summary, data: { traceId: json.traceId, routedTo: json.routedTo, executed, siblingsOk, degradedAbstain, perTarget } };
+  }
+
+  return async function callTool(intent, args) {
+    const baseArgs = args || {};
+    // rag tool policy: try the LIVE knowledge base (real Supabase embeddings) FIRST; if the in-process call
+    // transiently degrades to a *-fallback abstain (~25% of runs), retry ONCE with the deterministic stub TF-IDF
+    // over the SAME corpus (a reliable hit). So the agent gets real embeddings when available AND never suffers a
+    // transient miss. (The deeper fix — rag's own supabase-onError falling back to TF-IDF instead of abstaining —
+    // would make this client retry unnecessary and benefit every caller; deferred, as it touches rag's live
+    // Supabase-injected workflow.)
+    if (intent === 'rag') {
+      const live = await callOnce('rag', Object.assign({ retrievalSource: 'supabase' }, baseArgs));
+      if (live.data && live.data.degradedAbstain) {
+        return await callOnce('rag', Object.assign({ retrievalSource: 'stub' }, baseArgs));
+      }
+      return live;
+    }
+    return callOnce(intent, baseArgs);
   };
 }
