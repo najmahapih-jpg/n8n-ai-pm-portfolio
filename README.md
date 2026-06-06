@@ -83,4 +83,13 @@ Both are set on the `n8n` and `n8n-runners` services in the n8n docker-compose. 
 (`scripts/Test-GatewayLive.ps1`) signs a real request and asserts valid→200 + `traceId` and tampered→401,
 SKIPping honestly (exit 0, labeled) when n8n / the secret / the webhook is absent.
 
-License: Apache-2.0.
+## Open-source governance
+
+This repository includes the baseline files needed for public collaboration:
+
+- License: Apache-2.0 (`LICENSE`).
+- Contributions: `CONTRIBUTING.md`.
+- Security policy: `SECURITY.md`.
+- Code of conduct: `CODE_OF_CONDUCT.md`.
+- Workflow contract: `docs/workflow-contract.md`.
+- Security boundaries: `docs/security-boundaries.md`.
