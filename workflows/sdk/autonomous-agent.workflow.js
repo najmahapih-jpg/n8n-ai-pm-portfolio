@@ -181,7 +181,7 @@ async function llmClassify(task, helpers) {
 }
 function summarizeTarget(target, tr) {
   const r = (tr && tr.response) ? tr.response : tr; const parts = [];
-  ['theme', 'sentiment', 'urgency', 'priorityScore', 'routingTeam', 'abstained', 'passed', 'passRate'].forEach(function (k) { if (r && r[k] != null) parts.push(k + '=' + r[k]); });
+  ['retrievalSource', 'theme', 'sentiment', 'urgency', 'priorityScore', 'routingTeam', 'abstained', 'passed', 'passRate'].forEach(function (k) { if (r && r[k] != null) parts.push(k + '=' + r[k]); });
   if (r && Array.isArray(r.citations)) parts.push('citations=' + r.citations.length);
   if (!parts.length && tr && tr.statusCode != null) parts.push('statusCode ' + tr.statusCode);
   return target + ': ' + (parts.length ? parts.join(', ') : 'ok');
