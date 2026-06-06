@@ -1,0 +1,8 @@
+{
+  "id": "product-howto-export",
+  "exercises": "product-docs Q&A over the product-support corpus (the question -> rag path)",
+  "query": "how do I export data to CSV?",
+  "expectAbstain": false,
+  "expectAnswerContains": [],
+  "expectCiteChunkIds": ["doc-export-howto"]
+}
