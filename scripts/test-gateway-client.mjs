@@ -34,7 +34,32 @@ check('callTool parses executed result -> ok:true', out.ok === true && out.data.
 check('summary carries the sibling digest', /rag:/.test(out.summary) && /abstained=true/.test(out.summary), out.summary);
 check('POST used Content-Type text/plain', captured.init.headers['Content-Type'] === 'text/plain');
 check('POST sent X-Timestamp + X-Signature(sha256=)', captured.init.headers['X-Timestamp'] === '1700000000' && /^sha256=/.test(captured.init.headers['X-Signature']));
-check('POST body is the exact signed envelope', captured.init.body === '{"intent":"rag","payload":{"query":"x"},"requestId":"r1"}', captured.init.body);
+check('POST body = signed envelope (rag tries LIVE first: retrievalSource=supabase)', captured.init.body === '{"intent":"rag","payload":{"retrievalSource":"supabase","query":"x"},"requestId":"r1"}', captured.init.body);
+
+// rag RETRY-ON-DEGRADE: a live call that degrades to a *-fallback abstain triggers ONE retry with stub.
+const ragCalls = [];
+const degradeThenHit = async (_url, init) => {
+  ragCalls.push(JSON.parse(init.body).payload.retrievalSource);
+  const body = (ragCalls.length === 1)
+    ? { ok: true, result: { executed: true, perTarget: [{ target: 'rag', result: { statusCode: 200, response: { abstained: true, retrievalSource: 'supabase-fallback', citations: [] } } }] } }
+    : { ok: true, result: { executed: true, perTarget: [{ target: 'rag', result: { statusCode: 200, response: { abstained: false, retrievalSource: 'stub', citations: [{ chunkId: 'known-export-mobile-crash' }] } } }] } };
+  return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+};
+const retried = await makeGatewayCallTool({ gatewayUrl: 'http://gw.local/x', signingSecret: 's', fetchImpl: degradeThenHit })('rag', { query: 'export broken' });
+check('rag degrade -> retried with stub (2 calls: supabase then stub)', ragCalls.length === 2 && ragCalls[0] === 'supabase' && ragCalls[1] === 'stub', ragCalls.join('->'));
+check('rag retry returns the reliable stub hit', retried.ok === true && /retrievalSource=stub/.test(retried.summary) && /abstained=false/.test(retried.summary), retried.summary);
+
+// a CLEAN live hit (not a fallback) is NOT retried (1 call only).
+let cleanCalls = 0;
+const cleanHit = async () => { cleanCalls += 1; return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { executed: true, perTarget: [{ target: 'rag', result: { statusCode: 200, response: { abstained: false, retrievalSource: 'supabase', citations: [{ chunkId: 'known-export-mobile-crash' }] } } }] } }) }; };
+await makeGatewayCallTool({ gatewayUrl: 'http://gw.local/x', signingSecret: 's', fetchImpl: cleanHit })('rag', { query: 'export broken' });
+check('clean live hit -> no retry (1 call)', cleanCalls === 1, 'calls=' + cleanCalls);
+
+// non-rag intent: 1 call, no retrievalSource injected, no retry.
+const stCalls = [];
+const stFetch = async (_url, init) => { stCalls.push(init.body); return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { executed: true, perTarget: [{ target: 'support-triage', result: { statusCode: 200, response: { routingTeam: 'x' } } }] } }) }; };
+await makeGatewayCallTool({ gatewayUrl: 'http://gw.local/x', signingSecret: 's', fetchImpl: stFetch })('support-triage', { subject: 's' });
+check('non-rag: 1 call, no retrievalSource', stCalls.length === 1 && !/retrievalSource/.test(stCalls[0]), stCalls[0]);
 
 // (4) failure handling — never a fabricated success.
 const httpErr = await makeGatewayCallTool({ gatewayUrl: 'http://gw.local/x', signingSecret: 's', fetchImpl: async () => ({ ok: false, status: 500, text: async () => 'boom' }) })('rag', {});
