@@ -219,6 +219,21 @@ function runStubFixtureCompiled(fixture, fallbackRunId) {
   return runCompiledHappy(req, {}).final.response;
 }
 
+// masking-fail: stub echoes expected which contains a raw email -> masking check fails -> deterministic fail -> passRate 0.
+// This also proves the AUDIT does NOT leak the raw email (masking invariant holds end-to-end).
+{
+  const fixture = JSON.parse(readFileSync(join(goldenDir, 'masking-fail.json'), 'utf8'));
+  const { req, opts } = toReproducibleStubRequest(fixture, 'masking-fail');
+  const compiled = runCompiledHappy(req, {});
+  const r = compiled.final.response;
+  check('masking-fail', 'passRate == 0 (email in output -> masking fail)', r.passRate === 0, String(r.passRate));
+  check('masking-fail', 'passed == false', r.passed === false);
+  check('masking-fail', 'results[0].deterministicPassed == false (masking check)', r.results[0].deterministicPassed === false, String(r.results[0].deterministicPassed));
+  // checks[] lives in the deterministic stage snapshot, not the final response
+  const detRow = (compiled.snap[DET].deterministic.results || []).find((x) => x.caseId === 'masking-fail');
+  const maskingCheck = detRow && (detRow.checks || []).find((ch) => ch.type === 'masking');
+  check('masking-fail', 'masking check is the failing check', !!(maskingCheck && maskingCheck.ok === false), maskingCheck ? String(maskingCheck.ok) : 'missing');
+}
 // echo-pass: stub echoes 'ping', contains 'ping' -> deterministic pass -> judge 5s -> overall pass, passRate 1.
 {
   const r = runStubFixtureCompiled(JSON.parse(readFileSync(join(goldenDir, 'echo-pass.json'), 'utf8')), 'echo-pass');
