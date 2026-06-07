@@ -63,6 +63,7 @@ function Test-FixtureFields {
   $ok = ($offenders.Count -eq 0)
   return @{ name = "fixtures-use-declared-request-fields"; type = "shape-conform"; ok = [bool]$ok; detail = $(if ($ok) { "all fixture request keys are declared in request.accepted" } else { "undeclared: $($offenders -join ', ')" }) }
 }
+$ValidEnforcers = @("gateway")
 function Test-LimitsLabeled {
   param($Contract)
   if ($null -eq $Contract -or $null -eq $Contract.request) { return @{ name = "limits-are-labeled"; type = "shape-conform"; ok = $false; detail = "no contract block" } }
@@ -70,9 +71,15 @@ function Test-LimitsLabeled {
   if ($Contract.request.PSObject.Properties["limits"] -and $null -ne $Contract.request.limits) {
     $hasLimits = (@($Contract.request.limits.PSObject.Properties).Count -gt 0)
   }
-  $labeled = $Contract.request.PSObject.Properties["limitsEnforcedBy"] -and -not [string]::IsNullOrWhiteSpace([string]$Contract.request.limitsEnforcedBy)
-  $ok = (-not $hasLimits) -or $labeled
-  return @{ name = "limits-are-labeled"; type = "shape-conform"; ok = [bool]$ok; detail = $(if ($ok) { "limits absent or labeled '$([string]$Contract.request.limitsEnforcedBy)'" } else { "request.limits present but limitsEnforcedBy missing (silent enforced-claim)" }) }
+  $labeled = $Contract.request.PSObject.Properties["limitsEnforcedBy"] -and -not [string]::IsNullOrWhiteSpace([string]$Contract.request.PSObject.Properties["limitsEnforcedBy"].Value)
+  $enforcer = if ($labeled) { [string]$Contract.request.PSObject.Properties["limitsEnforcedBy"].Value } else { "" }
+  $knownEnforcer = $labeled -and ($ValidEnforcers -contains $enforcer.ToLower())
+  $ok = (-not $hasLimits) -or $knownEnforcer
+  $detail = if (-not $hasLimits) { "limits absent; no enforcer required" }
+            elseif (-not $labeled) { "request.limits present but limitsEnforcedBy missing (silent enforced-claim)" }
+            elseif (-not $knownEnforcer) { "limitsEnforcedBy '$enforcer' is not a recognised enforcer (allowed: $($ValidEnforcers -join ', '))" }
+            else { "limits labeled '$enforcer' (recognised enforcer)" }
+  return @{ name = "limits-are-labeled"; type = "shape-conform"; ok = [bool]$ok; detail = $detail }
 }
 
 $OfflineChecks = @(
