@@ -3,8 +3,8 @@
   "name": "Portfolio - Scheduled Drift Monitor",
   "nodes": [
     {
-      "id": "7ea00864-16a6-459a-b7c9-cf5b492b34a7",
-      "name": "Sticky Note 7ea00864",
+      "id": "e674fc99-ef5a-4549-bc8e-ba6916779457",
+      "name": "Sticky Note e674fc99",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -19,7 +19,7 @@
       }
     },
     {
-      "id": "c95bc7e9-34fd-4e66-8da1-32f923df6040",
+      "id": "01823a91-fcdb-47f7-b747-450e8465224a",
       "name": "Run Weekly (Schedule)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
@@ -44,7 +44,7 @@
       }
     },
     {
-      "id": "36482f36-946c-4b14-8a30-96aca86cdd96",
+      "id": "43c18ffa-0c7c-4ab6-aa59-c76ed134fa3e",
       "name": "Normalize Run Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -59,7 +59,7 @@
       }
     },
     {
-      "id": "57b4fa7b-c1a5-452c-a0be-0855dec07c7f",
+      "id": "3d6bfe0f-2a38-403d-8629-26ce156a3e1a",
       "name": "Load Prior Baseline",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -74,7 +74,7 @@
       }
     },
     {
-      "id": "419d8818-555a-42d7-82b6-8dba749cc93f",
+      "id": "2edd7f37-3cad-448d-8d28-16e5da87f0b3",
       "name": "M1 Collect Sources (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -89,7 +89,7 @@
       }
     },
     {
-      "id": "239147b7-56c5-42bf-ba98-378ae8c23783",
+      "id": "19bd60f2-f8be-45c3-8912-b8d4c7124e1a",
       "name": "M1 Detect Source Drift",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -104,7 +104,7 @@
       }
     },
     {
-      "id": "349737a3-319a-4135-8bd4-82f91bc2b274",
+      "id": "4c8f3186-9788-4597-b466-d63db1866039",
       "name": "M2 Collect Eval Reading (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -119,7 +119,7 @@
       }
     },
     {
-      "id": "36638ad8-0ef8-44c6-b48b-f514724723c0",
+      "id": "403336ca-8545-4796-8916-47282fb41332",
       "name": "M2 Detect Quality Drift",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -134,7 +134,7 @@
       }
     },
     {
-      "id": "f2208974-d7f4-4407-b007-db0e42968ce9",
+      "id": "64e2ad3c-4a8c-4e7c-ac3f-6c6ac2488221",
       "name": "Aggregate Run Record",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -149,7 +149,7 @@
       }
     },
     {
-      "id": "a71e351a-f8ed-4691-ae2f-b4b365ed467f",
+      "id": "36ac0799-805d-4835-ad52-f1008caded23",
       "name": "Summarize Digest (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -164,7 +164,7 @@
       }
     },
     {
-      "id": "b1205b43-f5c3-4577-a2a9-b006bea032b5",
+      "id": "ed248955-eb51-4ef9-a4e0-c5d0b56274ca",
       "name": "Enforce Digest Integrity",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -179,7 +179,7 @@
       }
     },
     {
-      "id": "041e75d0-a12f-4b09-bcac-745cc77b39d1",
+      "id": "5d6adc56-3400-42c1-bc40-234b482f632f",
       "name": "Create Redacted Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -194,7 +194,7 @@
       }
     },
     {
-      "id": "5cec0aee-2e02-42e1-a5f3-cb9d9c6d5c1d",
+      "id": "dc9f98b4-b84d-478f-aa34-27835edb479b",
       "name": "Build Run Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -209,7 +209,7 @@
       }
     },
     {
-      "id": "363d6c01-a8eb-4873-af96-b8fc06b90d33",
+      "id": "06b2b381-371c-43c5-b3cc-b6ac6ff44d77",
       "name": "Webhook Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -243,7 +243,7 @@
       }
     },
     {
-      "id": "abcc1090-9687-4d29-b600-f6ae03dc48a5",
+      "id": "24e7785f-343b-4ef8-a6dd-08e8c910d73f",
       "name": "Return Run Record",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -260,7 +260,7 @@
       }
     },
     {
-      "id": "5cc847ab-5baf-4bc5-8856-82a276f069b0",
+      "id": "ca8f8bfd-a19d-43a3-81bc-e551bbf02bbe",
       "name": "Manual UI Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -294,7 +294,7 @@
       }
     },
     {
-      "id": "268bff48-3f57-463f-b2c8-ba5d4a05524d",
+      "id": "ae089363-49cf-4ba5-a55a-f4f626721b85",
       "name": "Show Run Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -309,7 +309,7 @@
       }
     },
     {
-      "id": "7a3c91a4-1900-4c00-829d-6e3035bd5368",
+      "id": "47c539b2-6deb-45a5-bdf5-77167ef62d30",
       "name": "Emit Digest Artifact",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -324,7 +324,7 @@
       }
     },
     {
-      "id": "391ceb5d-c23a-4d9f-9e1b-1d336b6e5ee0",
+      "id": "8a4b4168-40a2-416b-8341-810a2a233c59",
       "name": "Run Demo From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -334,7 +334,7 @@
       ]
     },
     {
-      "id": "cac63350-0974-40f2-aa9d-04145f713d27",
+      "id": "431d51a9-54d6-4c9e-a12b-54a858f761ab",
       "name": "Build Demo Run Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -349,7 +349,7 @@
       }
     },
     {
-      "id": "0b0fbb58-8fd2-4209-9694-3672e3b57341",
+      "id": "465b8a33-9e8a-4107-afb2-379564be8802",
       "name": "Receive Run Request (on-demand)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -366,7 +366,20 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "9d7edc6e-4224-4476-bbe3-86cba3500b90"
+      "webhookId": "aa37cf68-32a6-4b87-88f6-84a855f4efe7"
+    },
+    {
+      "id": "2075221a-3737-44f1-a7d4-f633066df1e0",
+      "name": "Called By Gateway (Execute Workflow)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        940
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
     }
   ],
   "connections": {
@@ -561,6 +574,17 @@
       ]
     },
     "Receive Run Request (on-demand)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Run Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called By Gateway (Execute Workflow)": {
       "main": [
         [
           {
