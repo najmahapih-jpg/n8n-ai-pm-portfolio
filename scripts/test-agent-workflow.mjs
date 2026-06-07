@@ -52,6 +52,10 @@ for (const f of files) {
   const score = scoreTrajectory(wfRun, g.expect);
   check(g.id, 'trajectory ' + JSON.stringify(wfRun.trajectory.map((t) => t.intent)) + ' == ' + JSON.stringify(g.expect.tools || []), score.checks.toolSequence);
   check(g.id, 'outcome=' + wfRun.stopReason + (wfRun.refused ? '(refused)' : ''), score.checks.outcome);
+  // checks.allToolsAllowlisted: every recorded intent is in TOOL_ALLOWLIST (vacuously true when trajectory is empty).
+  check(g.id, 'allToolsAllowlisted=' + score.checks.allToolsAllowlisted, score.checks.allToolsAllowlisted === true);
+  // checks.toolArgsPresent: every tool call carried at least one arg (vacuously true when trajectory is empty).
+  check(g.id, 'toolArgsPresent=' + score.checks.toolArgsPresent, score.checks.toolArgsPresent === true);
   check(g.id, 'OVERALL trajectory score', score.passed);
   // DIFFERENTIAL: the deployed loop's run record EQUALS the audited core's (the regex/planner/guardrails can't drift).
   check(g.id, 'DIFF deployed-loop == agent-core', JSON.stringify(wfRun) === JSON.stringify(coreRun), 'wf=' + wfRun.stopReason + ' core=' + coreRun.stopReason);
