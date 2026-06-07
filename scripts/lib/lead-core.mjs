@@ -45,6 +45,9 @@ function hash(value) {
 // lead.receivedAt to new Date().toISOString() ONLY when the payload omits it; the differential injects the
 // SAME instant via opts.now so the records (and the receivedAt-derived idempotencyKey) compare byte-identical.
 // All 11 golden fixtures supply receivedAt, so opts.now is exercised only as a parity safeguard.
+// It also captures an OPTIONAL correlation id traceId = body.traceId ?? body.requestId ?? null (pure
+// passthrough, never generated) onto runtime.traceId, which createAuditEvent + buildLeadResponse echo. When
+// absent it is null and changes nothing else (the additive-null contract).
 // ---------------------------------------------------------------------------------------------------------
 export function normalizeLead(source, opts = {}) {
   source = source ?? {};
@@ -61,6 +64,7 @@ export function normalizeLead(source, opts = {}) {
     return text(value).split(',').map((part) => part.trim()).filter(Boolean);
   };
 
+  const traceId = body.traceId ?? body.requestId ?? null;
   const email = lower(body.email ?? body.workEmail ?? body.customerEmail);
   const domainFromEmail = email.includes('@') ? email.split('@').pop() : '';
   const companyDomain = lower(body.companyDomain ?? body.domain ?? domainFromEmail);
@@ -104,7 +108,8 @@ export function normalizeLead(source, opts = {}) {
       missingFields
     },
     runtime: {
-      entrypoint
+      entrypoint,
+      traceId
     },
     sourcePayloadKeys: Object.keys(body)
   };
@@ -466,6 +471,7 @@ export function createAuditEvent(input, opts = {}) {
     ...input,
     auditEvent: {
       auditEventId: 'audit_' + input.identity.idempotencyKey,
+      traceId: input.runtime.traceId ?? null,
       leadId: input.identity.leadId,
       emailHash: input.identity.emailHash,
       redactedEmail: input.pii.redactedEmail,
@@ -491,6 +497,7 @@ export function buildLeadResponse(input) {
     response: {
       ok: true,
       duplicate: false,
+      traceId: input.runtime.traceId ?? null,
       leadId: input.identity.leadId,
       companyName: input.lead.companyName,
       companyDomain: input.lead.companyDomain,
