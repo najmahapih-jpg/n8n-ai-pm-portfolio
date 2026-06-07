@@ -10,6 +10,7 @@
     "registry:build": "pwsh -NoProfile -File ./scripts/Build-WorkflowIndex.ps1",
     "smoke": "pwsh -NoProfile -File ./scripts/Invoke-SmokeTest.ps1",
     "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
+    "verify:workflow": "node ./scripts/test-triage-workflow.mjs",
     "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 27 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0",
     "verify:feishu": "pwsh -NoProfile -File ./scripts/Test-FeishuWorkflowJson.ps1",
     "verify:live": "pwsh -NoProfile -File ./scripts/Test-N8nConnection.ps1 && pwsh -NoProfile -File ./scripts/Sync-N8nWorkflowFromSdk.ps1 && pwsh -NoProfile -File ./scripts/Test-SupportTriageWorkflow.ps1"
