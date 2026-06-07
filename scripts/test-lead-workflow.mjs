@@ -7,7 +7,7 @@
 // discipline (cf. interaction-gateway's test-gateway-workflow.mjs / llm-eval-harness's test-eval-workflow.mjs
 // / rag-knowledge-assistant's test-rag-workflow.mjs). It:
 //   1) loads the compiled CANONICAL JSON (the deploy artifact),
-//   2) extracts each deterministic Code node's jsCode and runs the 11 golden fixtures through the real local
+//   2) extracts each deterministic Code node's jsCode and runs the 12 golden fixtures through the real local
 //      pipeline (Normalize -> [gates] -> Identity -> Redact PII -> Check Duplicate -> [Duplicate?] ->
 //      {Duplicate Response | enrichment x2 -> evidence -> ICP/Intent/Priority -> grade -> route -> follow-up ->
 //      [Hot?] -> {hot notif -> record skipped | -} -> CRM -> Audit -> Response}), threading each node's output
@@ -168,6 +168,11 @@ function blankVolatileTimestamps(record) {
 const fixtureCases = [
   { id: 'hot-enterprise-lead', file: 'lead-hot-enterprise.json', node: BUILD, branch: 'lead',
     exp: { statusCode: 200, duplicate: false, grade: 'A', minPriority: 80, maxPriority: 100, ownerQueue: 'enterprise-ae', ownerTeam: 'enterprise-sales', slaHours: 2, hotLead: true, notificationStatus: 'skipped', manuallyOverridden: false } },
+  // traceId correlation: identical to hot-enterprise but carries an optional caller-supplied traceId, which must
+  // surface in BOTH the response and the redacted audit event (capture-and-echo, never generated). expTraceId
+  // pins the echoed value; all other fixtures omit traceId and must carry traceId: null additively (asserted below).
+  { id: 'traceid-correlation', file: 'lead-traceid-correlation.json', node: BUILD, branch: 'lead',
+    exp: { statusCode: 200, duplicate: false, grade: 'A', minPriority: 80, maxPriority: 100, ownerQueue: 'enterprise-ae', ownerTeam: 'enterprise-sales', slaHours: 2, hotLead: true, notificationStatus: 'skipped', manuallyOverridden: false, expTraceId: 'trace-abc-123' } },
   { id: 'midmarket-qualified', file: 'lead-midmarket-qualified.json', node: BUILD, branch: 'lead',
     exp: { statusCode: 200, duplicate: false, grade: 'B', minPriority: 62, maxPriority: 79, ownerQueue: 'midmarket-ae', ownerTeam: 'commercial-sales', slaHours: 8, hotLead: false, notificationStatus: 'not_required', manuallyOverridden: false } },
   { id: 'high-intent-low-fit', file: 'lead-high-intent-low-fit.json', node: BUILD, branch: 'lead',
@@ -324,6 +329,19 @@ for (const fc of fixtureCases) {
     if (exp.redactedEmail) {
       check(fc.id, 'redactedEmail == ' + exp.redactedEmail, resp.redactedEmail === exp.redactedEmail, resp.redactedEmail);
     }
+    // traceId capture-and-echo (additive correlation): the optional caller-supplied traceId/requestId surfaces in
+    // BOTH the response and the redacted audit event, never generated. When the fixture omits it, both must be
+    // null (additive — every existing lead fixture proves the absent case keeps its record otherwise byte-identical
+    // via the whole-record differential above; the only new field is traceId: null). expTraceId pins the echoed
+    // value for the traceId-correlation fixture.
+    const bodyForTrace = fixture.body ?? fixture;
+    const expectedTraceId = bodyForTrace.traceId ?? bodyForTrace.requestId ?? null;
+    if ('expTraceId' in exp) {
+      check(fc.id, 'expectedTraceId resolves to expTraceId', expectedTraceId === exp.expTraceId, JSON.stringify(expectedTraceId));
+    }
+    check(fc.id, 'response.traceId echoes caller (or null when absent)', resp.traceId === expectedTraceId, JSON.stringify(resp.traceId));
+    check(fc.id, 'auditEvent.traceId echoes caller (or null when absent)', final.auditEvent.traceId === expectedTraceId, JSON.stringify(final.auditEvent.traceId));
+    check(fc.id, 'runtime.traceId echoes caller (or null when absent)', final.runtime.traceId === expectedTraceId, JSON.stringify(final.runtime.traceId));
   } else if (fc.branch === 'duplicate') {
     check(fc.id, 'response.ok == true', resp.ok === true);
     check(fc.id, 'duplicate == true', resp.duplicate === true);
@@ -419,6 +437,21 @@ function runFileCompiled(file) { return runCompiled(loadFixture(file), {}); }
   check('pin:dup-leak', 'no auditEvent in duplicate record', !('auditEvent' in dup), Object.keys(dup).join(','));
   check('pin:dup-leak', 'no raw email in duplicate record', !JSON.stringify(dup).includes('ops@known-account.example'));
   check('pin:dup-leak', 'duplicate response omits scoring', !('grade' in dup.response) && !('priorityScore' in dup.response), Object.keys(dup.response).join(','));
+}
+// traceId correlation pin: a caller-supplied traceId is echoed (capture-and-echo, never generated) into BOTH the
+// response and the redacted audit event; a fixture WITHOUT a traceId carries traceId: null in both (additive).
+{
+  const withTrace = runFileCompiled('lead-traceid-correlation.json').final;
+  check('pin:traceid', 'supplied traceId echoed in response', withTrace.response.traceId === 'trace-abc-123', JSON.stringify(withTrace.response.traceId));
+  check('pin:traceid', 'supplied traceId echoed in audit event', withTrace.auditEvent.traceId === 'trace-abc-123', JSON.stringify(withTrace.auditEvent.traceId));
+  check('pin:traceid', 'supplied traceId carried on runtime', withTrace.runtime.traceId === 'trace-abc-123', JSON.stringify(withTrace.runtime.traceId));
+  const noTrace = runFileCompiled('lead-hot-enterprise.json').final;
+  check('pin:traceid', 'absent traceId is null in response (additive)', noTrace.response.traceId === null, JSON.stringify(noTrace.response.traceId));
+  check('pin:traceid', 'absent traceId is null in audit event (additive)', noTrace.auditEvent.traceId === null, JSON.stringify(noTrace.auditEvent.traceId));
+  // requestId fallback: traceId is absent but requestId is present -> echoed (proves the ?? requestId fallback).
+  const reqFallback = runCompiled({ ...loadFixture('lead-hot-enterprise.json'), requestId: 'req-xyz-789' }, {}).final;
+  check('pin:traceid', 'requestId fallback echoed in response when traceId absent', reqFallback.response.traceId === 'req-xyz-789', JSON.stringify(reqFallback.response.traceId));
+  check('pin:traceid', 'requestId fallback echoed in audit when traceId absent', reqFallback.auditEvent.traceId === 'req-xyz-789', JSON.stringify(reqFallback.auditEvent.traceId));
 }
 
 console.log('');
