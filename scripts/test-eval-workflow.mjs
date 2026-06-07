@@ -223,7 +223,7 @@ function runStubFixtureCompiled(fixture, fallbackRunId) {
 // This also proves the AUDIT does NOT leak the raw email (masking invariant holds end-to-end).
 {
   const fixture = JSON.parse(readFileSync(join(goldenDir, 'masking-fail.json'), 'utf8'));
-  const { req, opts } = toReproducibleStubRequest(fixture, 'masking-fail');
+  const { req } = toReproducibleStubRequest(fixture, 'masking-fail');
   const compiled = runCompiledHappy(req, {});
   const r = compiled.final.response;
   check('masking-fail', 'passRate == 0 (email in output -> masking fail)', r.passRate === 0, String(r.passRate));
