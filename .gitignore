@@ -17,3 +17,7 @@ artifacts/validation/*
 Thumbs.db
 .DS_Store
 *.log
+
+# Generated workflow exports (build scratch; canonical is the committed artifact)
+workflows/generated/*
+!workflows/generated/.gitkeep
