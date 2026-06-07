@@ -47,5 +47,5 @@
   ],
   "localOnly": true,
   "notes": "v0.1.2 adds an Execute Workflow Trigger so the workflow can be called as an agent/MCP tool (see docs/lead-scoring-mcp-tool.md and the lead-scoring-mcp-tool workflow); the manual + webhook paths and the 11-fixture eval are unchanged. External CRM and Feishu adapters remain deferred.",
-  "updatedAt": "2026-05-30T03:37:01.986Z"
+  "updatedAt": "2026-06-07T14:38:29.884Z"
 }
