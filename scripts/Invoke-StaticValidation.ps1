@@ -70,6 +70,17 @@ Invoke-ValidationStep -Name "Canonical workflow JSON validation" -Action {
   & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\canonical") -MinimumNodes $canonicalNodeCount
 }
 
+Invoke-ValidationStep -Name "Offline workflow behavioral differential" -Action {
+  # Execute the compiled deterministic Code-node jsCode (extracted from the canonical JSON) over the golden
+  # pin-data fixtures and assert it is byte-behaviour-identical to scripts/lib/triage-core.mjs, plus the
+  # documented routing/escalation/response-shape expectations. No n8n, no network. Fails the gate on drift.
+  & node (Join-Path $repoRoot "scripts\test-triage-workflow.mjs")
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Offline workflow behavioral differential failed (compiled jsCode diverged from triage-core.mjs)."
+    exit 1
+  }
+}
+
 Invoke-ValidationStep -Name "Release workflow JSON validation" -Action {
   & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\releases") -MinimumNodes 0
 }
