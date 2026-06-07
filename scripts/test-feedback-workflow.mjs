@@ -148,6 +148,11 @@ const fixtureExpectations = {
   'feedback-feature-request.json': { node: CLASSIFIED, theme: 'feature_request', sentiment: 'neutral', urgency: 'normal', status: 'classified', needsHumanReview: false, classifierSource: 'stub', priorityScore: 27 },
   'feedback-praise.json': { node: CLASSIFIED, theme: 'praise', sentiment: 'positive', urgency: 'low', status: 'classified', needsHumanReview: false, classifierSource: 'stub', priorityScore: 1 },
   'feedback-churn-risk.json': { node: APPROVAL, theme: 'churn_risk', sentiment: 'negative', urgency: 'critical', status: 'awaiting_approval', needsHumanReview: true, classifierSource: 'stub', priorityScore: 20 },
+  // traceId correlation: a churn-risk item (-> approval branch) that ALSO carries an optional caller-supplied
+  // traceId, which must surface in BOTH the approval-gated response and the redacted audit event (capture-and-echo,
+  // never generated). expTraceId pins the echoed value; every other fixture omits traceId and must carry
+  // traceId: null additively (asserted in the loop + the traceId headline pin).
+  'feedback-traceid-correlation.json': { node: APPROVAL, theme: 'churn_risk', sentiment: 'negative', urgency: 'critical', status: 'awaiting_approval', needsHumanReview: true, classifierSource: 'stub', priorityScore: 20, expTraceId: 'trace-pf-123' },
   'feedback-performance.json': { node: CLASSIFIED, theme: 'performance', sentiment: 'negative', urgency: 'high', status: 'classified', needsHumanReview: false, classifierSource: 'stub', priorityScore: 36 },
   'feedback-pricing.json': { node: CLASSIFIED, theme: 'pricing', sentiment: 'negative', urgency: 'normal', status: 'classified', needsHumanReview: false, classifierSource: 'stub', priorityScore: 9 },
   'feedback-usability.json': { node: CLASSIFIED, theme: 'usability', sentiment: 'negative', urgency: 'normal', status: 'classified', needsHumanReview: false, classifierSource: 'stub', priorityScore: 15 },
@@ -258,6 +263,20 @@ for (const file of fixtureFiles) {
   check(id, 'confidence in [0,1]', typeof resp.confidence === 'number' && resp.confidence >= 0 && resp.confidence <= 1, String(resp.confidence));
   check(id, 'policyVersion == ' + POLICY_VERSION, resp.policyVersion === POLICY_VERSION, resp.policyVersion);
   check(id, 'audit createdAt is ISO', isIso(final.auditEvent.createdAt), final.auditEvent.createdAt);
+
+  // traceId capture-and-echo (additive correlation): the optional caller-supplied traceId/requestId surfaces in
+  // BOTH the response and the redacted audit event, never generated. When the fixture omits it, all three
+  // (response/audit/runtime) must be null (additive — every other happy fixture proves the absent case keeps its
+  // record otherwise byte-identical via the whole-record differential above; the only new field is traceId: null).
+  // expTraceId pins the echoed value for the traceId-correlation fixture.
+  const bodyForTrace = fixture.body ?? fixture;
+  const expectedTraceId = bodyForTrace.traceId ?? bodyForTrace.requestId ?? null;
+  if ('expTraceId' in exp) {
+    check(id, 'expectedTraceId resolves to expTraceId', expectedTraceId === exp.expTraceId, JSON.stringify(expectedTraceId));
+  }
+  check(id, 'response.traceId echoes caller (or null when absent)', resp.traceId === expectedTraceId, JSON.stringify(resp.traceId));
+  check(id, 'auditEvent.traceId echoes caller (or null when absent)', final.auditEvent.traceId === expectedTraceId, JSON.stringify(final.auditEvent.traceId));
+  check(id, 'runtime.traceId echoes caller (or null when absent)', final.runtime.traceId === expectedTraceId, JSON.stringify(final.runtime.traceId));
 
   // PII MASKING / absence: no UNMASKED email anywhere in the response or the redacted audit event. The
   // workflow's masking deliberately keeps the domain (local-part -> `x***@domain`), so the redacted form
@@ -374,6 +393,29 @@ for (const empty of [
   check('pin:pii-redaction', 'safeExcerpt <= 60 chars', c.snap[REDACT].pii.safeExcerpt.length <= 60, String(c.snap[REDACT].pii.safeExcerpt.length));
   const wholeOut = JSON.stringify(c.final);
   check('pin:pii-redaction', 'raw email absent from whole output', !!rawEmail && !wholeOut.includes(rawEmail), rawEmail || 'no-email');
+}
+{
+  // traceId correlation pin: a caller-supplied traceId is echoed (capture-and-echo, never generated) into BOTH the
+  // response and the redacted audit event; a fixture WITHOUT a traceId carries traceId: null in both (additive).
+  const withTrace = runCompiled(JSON.parse(readFileSync(join(pinDataDir, 'feedback-traceid-correlation.json'), 'utf8')), {}).final;
+  check('pin:traceid', 'supplied traceId echoed in response', withTrace.response.traceId === 'trace-pf-123', JSON.stringify(withTrace.response.traceId));
+  check('pin:traceid', 'supplied traceId echoed in audit event', withTrace.auditEvent.traceId === 'trace-pf-123', JSON.stringify(withTrace.auditEvent.traceId));
+  check('pin:traceid', 'supplied traceId carried on runtime', withTrace.runtime.traceId === 'trace-pf-123', JSON.stringify(withTrace.runtime.traceId));
+  // absent traceId -> null in both response and audit (additive); use an existing happy fixture that omits it.
+  const noTrace = runCompiled(JSON.parse(readFileSync(join(pinDataDir, 'feedback-bug-negative.json'), 'utf8')), {}).final;
+  check('pin:traceid', 'absent traceId is null in response (additive)', noTrace.response.traceId === null, JSON.stringify(noTrace.response.traceId));
+  check('pin:traceid', 'absent traceId is null in audit event (additive)', noTrace.auditEvent.traceId === null, JSON.stringify(noTrace.auditEvent.traceId));
+  // requestId fallback: traceId absent but requestId present -> echoed (proves the ?? requestId fallback).
+  const reqFallback = runCompiled({ ...JSON.parse(readFileSync(join(pinDataDir, 'feedback-bug-negative.json'), 'utf8')), requestId: 'req-pf-789' }, {}).final;
+  check('pin:traceid', 'requestId fallback echoed in response when traceId absent', reqFallback.response.traceId === 'req-pf-789', JSON.stringify(reqFallback.response.traceId));
+  check('pin:traceid', 'requestId fallback echoed in audit when traceId absent', reqFallback.auditEvent.traceId === 'req-pf-789', JSON.stringify(reqFallback.auditEvent.traceId));
+  // traceId does NOT perturb the load-bearing hashes: same payload with vs without a traceId must produce the
+  // SAME feedbackId/auditEventId/idempotencyKey (traceId is not in any hash seed).
+  const baseBug = JSON.parse(readFileSync(join(pinDataDir, 'feedback-bug-negative.json'), 'utf8'));
+  const withId = runCompiled({ ...baseBug, traceId: 'trace-anything' }, {}).final;
+  const withoutId = runCompiled(baseBug, {}).final;
+  check('pin:traceid', 'traceId does not change feedbackId hash', withId.response.feedbackId === withoutId.response.feedbackId, withId.response.feedbackId + ' vs ' + withoutId.response.feedbackId);
+  check('pin:traceid', 'traceId does not change auditEventId hash', withId.auditEvent.auditEventId === withoutId.auditEvent.auditEventId, withId.auditEvent.auditEventId + ' vs ' + withoutId.auditEvent.auditEventId);
 }
 
 console.log('');
