@@ -43,6 +43,7 @@ Optional fields:
 - `manualGrade` or `overrideGrade`
 - `existingLeadId`
 - `receivedAt`
+- `traceId` or `requestId` (optional correlation id; captured and echoed, never generated — see Correlation below)
 
 Example:
 
@@ -78,6 +79,7 @@ Successful responses return a safe response object:
 {
   "ok": true,
   "leadId": "lead_...",
+  "traceId": "trace-abc-123 | null",
   "companyName": "Example Corp",
   "grade": "A|B|C|D",
   "priorityScore": 88,
@@ -106,6 +108,14 @@ Successful responses return a safe response object:
 ```
 
 The response must not include raw email hashes that are reversible, raw messages beyond safe summaries, CRM API keys, Feishu webhook URLs, or n8n management credentials.
+
+### Correlation (optional `traceId`)
+
+- A caller (or upstream gateway) may supply an optional correlation id as `traceId`, falling back to `requestId` when `traceId` is absent.
+- The workflow **captures and echoes** this value: it is **never generated** in-workflow (no random/UUID), so the deterministic offline differential stays reproducible.
+- On the successful lead path it surfaces as `response.traceId` and on the redacted `auditEvent.traceId`, letting a caller correlate the response and the audit record to the originating request.
+- When neither `traceId` nor `requestId` is supplied, both fields are `null` — purely additive, with no other change to the response or audit event (the deterministic `leadId`/`idempotencyKey`/`auditEventId` hashes are unaffected by `traceId`).
+- The duplicate (200) and error (400/422) responses do not carry `traceId`; correlation is scoped to the scored lead response and its audit event.
 
 ## Error Contract
 
@@ -150,6 +160,7 @@ Primary fixtures:
 - `fixtures/pin-data/lead-duplicate-domain.json`
 - `fixtures/pin-data/lead-duplicate-existing-id.json`
 - `fixtures/pin-data/lead-manual-override.json`
+- `fixtures/pin-data/lead-traceid-correlation.json`
 
 Required gates:
 
@@ -170,7 +181,7 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   "contractVersion": "lead-intel-v0.1.0",
   "webhookPath": "webhook/portfolio/lead-intelligence",
   "request": {
-    "accepted": ["email", "workEmail", "customerEmail", "companyName", "company", "accountName", "message", "requestedProduct", "product", "interest", "intentSignals", "signals", "intent", "fullName", "title", "jobTitle", "companyDomain", "domain", "source", "channel", "industry", "country", "region", "employeeCount", "employees", "companySize", "annualRevenue", "revenue", "plan", "manualGrade", "overrideGrade", "existingLeadId", "receivedAt"],
+    "accepted": ["email", "workEmail", "customerEmail", "companyName", "company", "accountName", "message", "requestedProduct", "product", "interest", "intentSignals", "signals", "intent", "fullName", "title", "jobTitle", "companyDomain", "domain", "source", "channel", "industry", "country", "region", "employeeCount", "employees", "companySize", "annualRevenue", "revenue", "plan", "manualGrade", "overrideGrade", "existingLeadId", "receivedAt", "traceId", "requestId"],
     "oneOfRequired": [["email", "workEmail", "customerEmail"], ["companyName", "company", "accountName"]],
     "limits": { "bodyBytes": 65536, "messageChars": 8000 },
     "limitsEnforcedBy": "gateway"
@@ -184,7 +195,7 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   ],
   "fixtures": {
     "dir": "fixtures/pin-data",
-    "valid": ["lead-competitor-domain.json", "lead-duplicate-domain.json", "lead-duplicate-existing-id.json", "lead-high-intent-low-fit.json", "lead-hot-enterprise.json", "lead-low-intent-newsletter.json", "lead-manual-override.json", "lead-student-low-fit.json"],
+    "valid": ["lead-competitor-domain.json", "lead-duplicate-domain.json", "lead-duplicate-existing-id.json", "lead-high-intent-low-fit.json", "lead-hot-enterprise.json", "lead-low-intent-newsletter.json", "lead-manual-override.json", "lead-student-low-fit.json", "lead-traceid-correlation.json"],
     "errorCases": ["lead-bad-email.json", "lead-missing-company.json"]
   }
 }
