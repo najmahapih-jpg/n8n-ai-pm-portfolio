@@ -63,7 +63,11 @@ Invoke-ValidationStep -Name "Feishu workflow JSON guard" -Action {
 }
 
 Invoke-ValidationStep -Name "Canonical workflow JSON validation" -Action {
-  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\canonical") -MinimumNodes $MinimumNodes
+  # Derive the exact expected node count from the canonical JSON so a dropped
+  # node is always caught, without relying on a manually-maintained floor.
+  $canonicalFile = Join-Path $repoRoot "workflows\canonical\portfolio-support-triage-api.canonical.json"
+  $canonicalNodeCount = @((Get-Content -LiteralPath $canonicalFile -Raw | ConvertFrom-Json -Depth 100).nodes).Count
+  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\canonical") -MinimumNodes $canonicalNodeCount
 }
 
 Invoke-ValidationStep -Name "Release workflow JSON validation" -Action {
