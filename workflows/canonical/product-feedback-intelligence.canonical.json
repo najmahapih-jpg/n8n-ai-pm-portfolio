@@ -1,10 +1,11 @@
 {
-  "id": "product-feedback-intelligence",
   "name": "Portfolio - Product Feedback Intelligence API",
+  "description": "Local product feedback intelligence: validate intake, classify theme/sentiment/urgency with an LLM-in-the-loop stub + deterministic fallback, derive urgency, score priority, gate churn-risk/critical for human review, redact audit, respond.",
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
-      "id": "8d132d6f-c604-4948-8ab7-1398c09cdf27",
-      "name": "Sticky Note 8d132d6f",
+      "name": "Sticky Note 1",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -19,7 +20,6 @@
       }
     },
     {
-      "id": "36bc0024-b56d-455b-84ca-42e640dbe043",
       "name": "Run Demo Feedback From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -29,7 +29,6 @@
       ]
     },
     {
-      "id": "920fa299-2b51-4884-826b-023457dd0e79",
       "name": "Build Demo Feedback Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -44,7 +43,6 @@
       }
     },
     {
-      "id": "af65d45b-6d70-41b3-80cd-d16927f7912a",
       "name": "Normalize Feedback Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -59,7 +57,6 @@
       }
     },
     {
-      "id": "4dd62b94-15a8-4714-bc94-801012153245",
       "name": "Feedback Field Present?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -93,7 +90,6 @@
       }
     },
     {
-      "id": "452225eb-446c-4b09-bbf6-f4226a72ce83",
       "name": "Feedback Non-empty?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -127,7 +123,6 @@
       }
     },
     {
-      "id": "51e50ff0-d8ba-4311-94e8-cd387b3708b0",
       "name": "Classifier Mode = Ollama?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -161,7 +156,6 @@
       }
     },
     {
-      "id": "cb2f22c8-7681-48a2-b952-8c255b01595f",
       "name": "Classify Feedback (Ollama)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -182,7 +176,6 @@
       }
     },
     {
-      "id": "68f3713f-629c-4910-8d60-85877eaa7a27",
       "name": "Parse Ollama Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -197,7 +190,6 @@
       }
     },
     {
-      "id": "fa927c2d-4866-44d1-b1ef-b840e24ec36e",
       "name": "Resolve Classification (confidence gate + fallback)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -212,7 +204,6 @@
       }
     },
     {
-      "id": "68e7e416-c6a0-47b0-a3f7-81712269dff7",
       "name": "Derive Urgency",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -227,7 +218,6 @@
       }
     },
     {
-      "id": "9a76bdb0-bc2a-4b34-baac-d659375b2f9e",
       "name": "Score Priority",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -242,7 +232,6 @@
       }
     },
     {
-      "id": "7e1eaf14-d3d4-463a-9c70-b945fd90b7fa",
       "name": "Redact Feedback PII",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -257,7 +246,6 @@
       }
     },
     {
-      "id": "5bdc9888-9dc3-4b54-9d72-34a8d56341f3",
       "name": "Create Redacted Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -272,7 +260,6 @@
       }
     },
     {
-      "id": "fd5f1c07-7979-4fa8-a8af-617f80f510df",
       "name": "Needs Human Review?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -306,7 +293,6 @@
       }
     },
     {
-      "id": "616ffe9d-d596-454a-b0ec-c408da53d08e",
       "name": "Build Approval-Gated Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -321,7 +307,6 @@
       }
     },
     {
-      "id": "e5f61d66-2f7c-4694-961b-02760d7264ce",
       "name": "Manual UI Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -355,7 +340,6 @@
       }
     },
     {
-      "id": "2aeb7cdf-3b98-4f9d-8db0-6957b3cda8e3",
       "name": "Show UI Execution Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -370,7 +354,6 @@
       }
     },
     {
-      "id": "21a8bf35-c5da-4aac-970a-eab52534cb9d",
       "name": "Return Feedback Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -387,7 +370,6 @@
       }
     },
     {
-      "id": "2853aff2-d16a-4e4e-87d8-8de9ef9c281f",
       "name": "Build Classified Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -402,7 +384,6 @@
       }
     },
     {
-      "id": "031df815-4c38-4c59-9021-734248c8ad52",
       "name": "Classify Feedback (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -417,7 +398,6 @@
       }
     },
     {
-      "id": "355751a5-e67d-47e7-ab7f-d3cfb3908d14",
       "name": "Build Empty Feedback Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -432,7 +412,6 @@
       }
     },
     {
-      "id": "fa5e9dbc-d13d-477d-9670-690014f221e3",
       "name": "Manual UI Empty Error?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -466,7 +445,6 @@
       }
     },
     {
-      "id": "05969a14-8ca2-4ac7-a7b1-d242b2ee39b2",
       "name": "Return Empty Feedback Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -483,7 +461,6 @@
       }
     },
     {
-      "id": "af4d13d1-99ae-4340-953e-01c105420f95",
       "name": "Build Required Field Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -498,7 +475,6 @@
       }
     },
     {
-      "id": "83e7b11f-d02a-4922-9a67-9f23b6dc7047",
       "name": "Manual UI Required Error?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -532,7 +508,6 @@
       }
     },
     {
-      "id": "b6470943-d54d-4a7f-b503-b730e7fe0f9d",
       "name": "Return Required Field Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -549,7 +524,6 @@
       }
     },
     {
-      "id": "8f9f4b55-00d5-440f-b3d5-083e34ef151a",
       "name": "Receive Feedback Intake",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -565,11 +539,9 @@
         "options": {
           "allowedOrigins": "*"
         }
-      },
-      "webhookId": "5f1e52ab-e33c-48df-be03-2e8f93c0e044"
+      }
     },
     {
-      "id": "b14c950a-64b1-4149-9027-bdbcbf25f339",
       "name": "Called By Gateway (Execute Workflow)",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
@@ -897,5 +869,14 @@
       ]
     }
   },
-  "settings": {}
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": []
 }
