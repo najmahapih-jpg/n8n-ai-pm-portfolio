@@ -15,15 +15,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install locked dependencies
-        run: npm ci
-
       - name: Run self-test (offline, no credentials required)
         shell: pwsh
-        run: npm run verify:self
+        run: pwsh -NoProfile -File ./scripts/Test-Contract.ps1 -SelfTest
