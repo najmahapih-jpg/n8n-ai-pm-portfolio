@@ -32,6 +32,11 @@ export const POLICY_VERSION = 'feedback-intel-v0.1.0';
 // sides (via opts.now) so the records — and the submittedAt-derived auditEventId/feedbackId — compare
 // byte-identical. classifierMode is the finding-#5 field: any value other than the literal 'ollama' (incl.
 // garbage, empty, or absent) defaults to 'stub'.
+// It also captures an OPTIONAL correlation id traceId = body.traceId ?? body.requestId ?? null (pure
+// passthrough, NEVER generated) onto runtime.traceId, which buildAuditEvent + the two Build*Response nodes echo.
+// When absent it is null and changes nothing else (the additive-null contract). traceId does NOT feed any
+// id/hash seed (the FNV-1a feedbackId/auditEventId/idempotencyKey are seeded by feedbackText|submittedAt only),
+// so the load-bearing hashes are unaffected and every existing fixture's record stays otherwise byte-identical.
 // ---------------------------------------------------------------------------------------------------------
 export function normalizeFeedback(source, opts = {}) {
   source = source ?? {};
@@ -44,6 +49,11 @@ export function normalizeFeedback(source, opts = {}) {
   const feedbackText = text(body.feedbackText ?? body.text ?? body.message ?? body.comment);
   const reportedCountRaw = number(body.reportedCount ?? body.count);
   const reportedCount = reportedCountRaw && reportedCountRaw > 0 ? Math.floor(reportedCountRaw) : 1;
+  // Optional caller/gateway-supplied correlation id: captured-and-echoed, NEVER generated (no random/UUID), so
+  // the deterministic differential stays reproducible. traceId falls back to requestId, else null when absent.
+  // It does NOT feed any id/hash seed (feedbackId/auditEventId/idempotencyKey are seeded by feedbackText|submittedAt
+  // only), so an absent traceId is purely additive: every existing fixture keeps its record otherwise byte-identical.
+  const traceId = body.traceId ?? body.requestId ?? null;
   const missingFields = [];
   if (!hasFeedbackKey) missingFields.push('feedbackText');
   // The node uses new Date().toISOString() when submittedAt/createdAt are both absent; the core takes that
@@ -62,7 +72,7 @@ export function normalizeFeedback(source, opts = {}) {
       nonEmpty: feedbackText.length > 0,
       missingFields
     },
-    runtime: { entrypoint, classifierMode: (String(body.classifierMode ?? '').toLowerCase().trim() === 'ollama' ? 'ollama' : 'stub') },
+    runtime: { entrypoint, classifierMode: (String(body.classifierMode ?? '').toLowerCase().trim() === 'ollama' ? 'ollama' : 'stub'), traceId },
     sourcePayloadKeys: Object.keys(body)
   };
 }
@@ -210,6 +220,7 @@ export function buildAuditEvent(input, opts = {}) {
     },
     auditEvent: {
       auditEventId: 'audit_' + hash(seed),
+      traceId: input.runtime.traceId ?? null,
       feedbackId,
       source: input.feedback.source,
       theme: input.classification.theme,
@@ -239,6 +250,7 @@ export function buildApprovalResponse(input) {
       status: 'awaiting_approval',
       needsHumanReview: true,
       feedbackId: input.identity.feedbackId,
+      traceId: input.runtime.traceId ?? null,
       theme: input.classification.theme,
       sentiment: input.classification.sentiment,
       urgency: input.derived.urgency,
@@ -267,6 +279,7 @@ export function buildClassifiedResponse(input) {
       status: 'classified',
       needsHumanReview: false,
       feedbackId: input.identity.feedbackId,
+      traceId: input.runtime.traceId ?? null,
       theme: input.classification.theme,
       sentiment: input.classification.sentiment,
       urgency: input.derived.urgency,
