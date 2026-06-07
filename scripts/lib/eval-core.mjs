@@ -242,7 +242,7 @@ export function judgeStub(input) {
   const judged = input.sut.outputs.map((row) => {
     const detPassed = detById[row.rowKey] === true;
     const base = detPassed ? 5 : 2;
-    const jitter = (dim) => 0;
+    const jitter = (_dim) => 0;
     const scores = {
       groundedness: detPassed ? 5 : 2,
       relevance: base + jitter('relevance'),
@@ -474,8 +474,6 @@ export function buildAuditEvent(input, opts = {}) {
     for (let i = 0; i < value.length; i += 1) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); }
     return (h >>> 0).toString(16).padStart(8, '0');
   }
-  const emailRe = /[^\s@]+@[^\s@]+\.[^\s@]+/g;
-  const maskEmail = (e) => { const p = e.split('@'); return (p[0] ? p[0][0] + '***' : '***') + '@' + (p[1] ?? ''); };
   const runSeed = input.run.runId + '|' + input.run.requestedAt;
 
   const cases = input.aggregate.perCase.map((p) => ({
