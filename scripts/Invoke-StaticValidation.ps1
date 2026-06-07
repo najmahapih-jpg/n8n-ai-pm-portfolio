@@ -62,5 +62,9 @@ Invoke-ValidationStep -Name "Gateway tool-executor self-test (verify:gateway-cli
   & node (Join-Path $repoRoot "scripts\test-gateway-client.mjs"); if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
+Invoke-ValidationStep -Name "Canonical-matches-SDK self-test (verify:canonical)" -Action {
+  & node (Join-Path $repoRoot "scripts\test-canonical-matches-sdk.mjs"); if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+
 Write-Host "Static validation passed."
 exit 0
