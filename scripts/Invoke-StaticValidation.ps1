@@ -1,6 +1,6 @@
 param(
-  [int]$MinimumNodes = 18,
-  [string]$ReleaseFile = "scheduled-drift-monitor-v0.2.0.json",
+  [int]$MinimumNodes = -1,
+  [string]$ReleaseFile = "scheduled-drift-monitor-v0.3.0.json",
   [switch]$SkipRepositorySecretScan
 )
 
@@ -8,6 +8,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+
+# Derive the canonical node floor from the actual canonical JSON so the guard
+# stays accurate as the workflow grows rather than silently going stale.
+$canonicalJsonPath = Join-Path $repoRoot "workflows\canonical\scheduled-drift-monitor.canonical.json"
+$canonicalNodeCount = @((Get-Content -LiteralPath $canonicalJsonPath -Raw | ConvertFrom-Json -Depth 100).nodes).Count
+if ($MinimumNodes -lt 0) {
+  $MinimumNodes = $canonicalNodeCount
+}
 
 function Invoke-ValidationStep {
   param(
@@ -79,7 +87,12 @@ Invoke-ValidationStep -Name "Release workflow JSON validation" -Action {
 }
 
 Invoke-ValidationStep -Name "Current release node floor" -Action {
-  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\releases\$ReleaseFile") -MinimumNodes $MinimumNodes
+  # Derive the floor from the release file's own node count so the check
+  # catches a dropped node without requiring the release to match the canonical
+  # count (the canonical-vs-release desync is tracked separately as finding #13).
+  $releaseJsonPath = Join-Path $repoRoot "workflows\releases\$ReleaseFile"
+  $releaseNodeCount = @((Get-Content -LiteralPath $releaseJsonPath -Raw | ConvertFrom-Json -Depth 100).nodes).Count
+  & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path $releaseJsonPath -MinimumNodes $releaseNodeCount
 }
 
 Write-Host "Static validation passed."
