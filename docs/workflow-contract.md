@@ -28,6 +28,7 @@ Optional fields:
 - `source` or `channel`
 - `submittedAt` or `createdAt`
 - `classifierMode`: `stub` (default) or `ollama`
+- `traceId` or `requestId` (optional correlation id; captured and echoed, never generated — see Correlation below)
 
 Example:
 
@@ -62,6 +63,7 @@ Successful responses return a safe response object:
   "status": "classified|awaiting_approval",
   "needsHumanReview": false,
   "feedbackId": "feedback_...",
+  "traceId": "trace-pf-123 | null",
   "theme": "bug|feature_request|usability|performance|pricing|praise|churn_risk|other",
   "sentiment": "positive|neutral|negative",
   "urgency": "critical|high|normal|low",
@@ -77,6 +79,14 @@ Human-review routing:
 
 - `theme:"churn_risk"` or `urgency:"critical"` returns `needsHumanReview:true` and `status:"awaiting_approval"`.
 - Other valid cases return `needsHumanReview:false`.
+
+### Correlation (optional `traceId`)
+
+- A caller (or upstream gateway) may supply an optional correlation id as `traceId`, falling back to `requestId` when `traceId` is absent.
+- The workflow **captures and echoes** this value: it is **never generated** in-workflow (no random/UUID), so the deterministic offline differential stays reproducible.
+- On both successful response paths — `status:"classified"` and `status:"awaiting_approval"` — it surfaces as `response.traceId` and on the redacted `auditEvent.traceId`, letting a caller correlate the response and the audit record to the originating request.
+- When neither `traceId` nor `requestId` is supplied, both fields are `null` — purely additive, with no other change to the response or audit event (the deterministic `feedbackId`/`idempotencyKey`/`auditEventId` hashes are unaffected by `traceId`).
+- The error (400/422) responses do not carry `traceId`; correlation is scoped to the classified/approval-gated feedback response and its audit event.
 
 ## Error Contract
 
@@ -112,6 +122,7 @@ Primary fixtures:
 - `fixtures/pin-data/feedback-praise.json`
 - `fixtures/pin-data/feedback-pricing.json`
 - `fixtures/pin-data/feedback-prompt-injection.json`
+- `fixtures/pin-data/feedback-traceid-correlation.json`
 - `fixtures/pin-data/feedback-usability.json`
 
 Required gates:
@@ -133,7 +144,7 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   "contractVersion": "feedback-intel-v0.1.0",
   "webhookPath": "webhook/portfolio/product-feedback-intelligence",
   "request": {
-    "accepted": ["feedbackText", "text", "message", "comment", "reportedCount", "count", "source", "channel", "submittedAt", "createdAt", "classifierMode"],
+    "accepted": ["feedbackText", "text", "message", "comment", "reportedCount", "count", "source", "channel", "submittedAt", "createdAt", "classifierMode", "traceId", "requestId"],
     "oneOfRequired": [["feedbackText", "text", "message", "comment"]],
     "limits": { "bodyBytes": 65536, "feedbackChars": 8000 },
     "limitsEnforcedBy": "gateway"
@@ -148,7 +159,7 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   ],
   "fixtures": {
     "dir": "fixtures/pin-data",
-    "valid": ["feedback-bug-negative.json", "feedback-churn-risk.json", "feedback-feature-request.json", "feedback-low-confidence-fallback.json", "feedback-performance.json", "feedback-praise.json", "feedback-pricing.json", "feedback-prompt-injection.json", "feedback-usability.json"],
+    "valid": ["feedback-bug-negative.json", "feedback-churn-risk.json", "feedback-feature-request.json", "feedback-low-confidence-fallback.json", "feedback-performance.json", "feedback-praise.json", "feedback-pricing.json", "feedback-prompt-injection.json", "feedback-traceid-correlation.json", "feedback-usability.json"],
     "errorCases": ["feedback-missing-text.json"]
   }
 }
