@@ -32,9 +32,10 @@ Common case fields:
   "id": "echo-pass",
   "input": "ping",
   "expected": "ping",
-  "assertions": [],
+  "assertions": { "contains": "ping", "maxLength": 64 },
   "humanLabel": {
-    "groundednessBand": "high"
+    "passed": true,
+    "groundednessBand": [4, 5]
   }
 }
 ```
