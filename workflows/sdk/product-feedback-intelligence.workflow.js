@@ -83,6 +83,7 @@ const hasFeedbackKey = aliasKeys.some((k) => Object.prototype.hasOwnProperty.cal
 const feedbackText = text(body.feedbackText ?? body.text ?? body.message ?? body.comment);
 const reportedCountRaw = number(body.reportedCount ?? body.count);
 const reportedCount = reportedCountRaw && reportedCountRaw > 0 ? Math.floor(reportedCountRaw) : 1;
+const traceId = body.traceId ?? body.requestId ?? null;
 const missingFields = [];
 if (!hasFeedbackKey) missingFields.push('feedbackText');
 return [{
@@ -98,7 +99,7 @@ return [{
       nonEmpty: feedbackText.length > 0,
       missingFields
     },
-    runtime: { entrypoint, classifierMode: (String(body.classifierMode ?? '').toLowerCase().trim() === 'ollama' ? 'ollama' : 'stub') },
+    runtime: { entrypoint, classifierMode: (String(body.classifierMode ?? '').toLowerCase().trim() === 'ollama' ? 'ollama' : 'stub'), traceId },
     sourcePayloadKeys: Object.keys(body)
   }
 }];`
@@ -541,6 +542,7 @@ return [{
     },
     auditEvent: {
       auditEventId: 'audit_' + hash(seed),
+      traceId: input.runtime.traceId ?? null,
       feedbackId,
       source: input.feedback.source,
       theme: input.classification.theme,
@@ -600,6 +602,7 @@ return [{
       status: 'awaiting_approval',
       needsHumanReview: true,
       feedbackId: input.identity.feedbackId,
+      traceId: input.runtime.traceId ?? null,
       theme: input.classification.theme,
       sentiment: input.classification.sentiment,
       urgency: input.derived.urgency,
@@ -637,6 +640,7 @@ return [{
       status: 'classified',
       needsHumanReview: false,
       feedbackId: input.identity.feedbackId,
+      traceId: input.runtime.traceId ?? null,
       theme: input.classification.theme,
       sentiment: input.classification.sentiment,
       urgency: input.derived.urgency,
