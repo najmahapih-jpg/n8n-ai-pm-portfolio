@@ -1,5 +1,5 @@
 param(
-  [int]$MinimumNodes = 28,
+  [int]$MinimumNodes = 29,
   [switch]$SkipRepositorySecretScan
 )
 
@@ -68,6 +68,11 @@ Invoke-ValidationStep -Name "Release workflow JSON validation" -Action {
 
 Invoke-ValidationStep -Name "Current release node floor" -Action {
   & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\releases\product-feedback-intelligence-v0.2.0.json") -MinimumNodes $MinimumNodes
+}
+
+Invoke-ValidationStep -Name "Release snapshot matches canonical" -Action {
+  & node (Join-Path $repoRoot "scripts\Test-ReleaseMatchesCanonical.mjs")
+  if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
 Invoke-ValidationStep -Name "Workflow behavioral differential (compiled jsCode == core)" -Action {
