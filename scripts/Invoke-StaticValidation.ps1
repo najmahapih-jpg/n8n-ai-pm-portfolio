@@ -48,6 +48,14 @@ Invoke-ValidationStep -Name "Pin-data JSON parse check" -Action {
   Write-Host "Pin-data JSON parse check passed."
 }
 
+Invoke-ValidationStep -Name "Workflow behavioral differential (offline)" -Action {
+  & node (Join-Path $repoRoot "scripts\test-lead-workflow.mjs")
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Offline workflow behavioral differential failed (compiled jsCode diverged from lead-core)."
+    exit 1
+  }
+}
+
 if (-not $SkipRepositorySecretScan) {
   Invoke-ValidationStep -Name "Repository secret scan" -Action {
     & (Join-Path $repoRoot "scripts\Test-RepositorySecrets.ps1")
