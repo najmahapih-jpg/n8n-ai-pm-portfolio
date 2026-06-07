@@ -70,6 +70,15 @@ each case is `{ query, expectAbstain: bool, expectAnswerContains?: [...], expect
 
 ## Layer-2 behavioural suite (what `verify:live` asserts — stub retriever + stub generator)
 
+> **Gate attribution:** `verify:live` (`npm run verify:live`) is **opt-in and NOT part of CI**.
+> It requires a live n8n instance (connects, syncs, then runs `Test-RagAssistantWorkflow.ps1`).
+> The CI pipeline (`ci.yml`) runs only the **offline static/JSON/secret gate**:
+> `Invoke-StaticValidation.ps1` (PS parse check, JSON parse check, registry freshness, workflow
+> structural validation) and `Test-RepositorySecrets.ps1` (secret scan).  The CI gate does NOT
+> execute any request against the workflow and does NOT assert any of the behavioral invariants
+> below (abstain correctness, citation integrity, groundedness, PII masking).  Those invariants
+> are only proven by running `verify:live`.
+
 | Field(s) | Assertion type | Helper |
 |---|---|---|
 | `abstained`, `retrievalSource`, `generationSource`, `policyVersion` | **exact-match** | `Assert-Equal` |
