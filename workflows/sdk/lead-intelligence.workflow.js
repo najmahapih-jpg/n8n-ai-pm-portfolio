@@ -93,6 +93,7 @@ const splitSignals = (value) => {
   return text(value).split(',').map((part) => part.trim()).filter(Boolean);
 };
 
+const traceId = body.traceId ?? body.requestId ?? null;
 const email = lower(body.email ?? body.workEmail ?? body.customerEmail);
 const domainFromEmail = email.includes('@') ? email.split('@').pop() : '';
 const companyDomain = lower(body.companyDomain ?? body.domain ?? domainFromEmail);
@@ -132,7 +133,8 @@ return [{
       missingFields
     },
     runtime: {
-      entrypoint
+      entrypoint,
+      traceId
     },
     sourcePayloadKeys: Object.keys(body)
   }
@@ -972,6 +974,7 @@ return [{
     ...input,
     auditEvent: {
       auditEventId: 'audit_' + input.identity.idempotencyKey,
+      traceId: input.runtime.traceId ?? null,
       leadId: input.identity.leadId,
       emailHash: input.identity.emailHash,
       redactedEmail: input.pii.redactedEmail,
@@ -1005,6 +1008,7 @@ return [{
     response: {
       ok: true,
       duplicate: false,
+      traceId: input.runtime.traceId ?? null,
       leadId: input.identity.leadId,
       companyName: input.lead.companyName,
       companyDomain: input.lead.companyDomain,
