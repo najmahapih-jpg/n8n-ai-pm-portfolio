@@ -16,6 +16,7 @@
     "verify:judge": "pwsh -NoProfile -File ./scripts/Test-LiveJudge.ps1",
     "verify:connected": "pwsh -NoProfile -File ./scripts/Test-ConnectedEval.ps1",
     "verify:connected-rag": "pwsh -NoProfile -File ./scripts/Test-ConnectedRagEval.ps1",
+    "verify:canonical": "node ./scripts/test-canonical-matches-sdk.mjs",
     "verify:bench": "pwsh -NoProfile -File ./scripts/Test-Bench.ps1"
   },
   "dependencies": {
