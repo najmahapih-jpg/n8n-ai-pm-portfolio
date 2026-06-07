@@ -82,5 +82,10 @@ Invoke-ValidationStep -Name "Current release node floor" -Action {
   & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\releases\$ReleaseFile") -MinimumNodes $MinimumNodes
 }
 
+Invoke-ValidationStep -Name "Canonical-matches-SDK self-test" -Action {
+  & node (Join-Path $repoRoot "scripts\test-canonical-matches-sdk.mjs")
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+
 Write-Host "Static validation passed."
 exit 0
