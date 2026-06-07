@@ -87,12 +87,16 @@ Invoke-ValidationStep -Name "Release workflow JSON validation" -Action {
 }
 
 Invoke-ValidationStep -Name "Current release node floor" -Action {
-  # Derive the floor from the release file's own node count so the check
-  # catches a dropped node without requiring the release to match the canonical
-  # count (the canonical-vs-release desync is tracked separately as finding #13).
+  # Derive the floor from the release file's own node count (== canonical after finding #13 was closed).
+  # Catches a dropped node; the release-matches-canonical gate (below) further ensures no structural drift.
   $releaseJsonPath = Join-Path $repoRoot "workflows\releases\$ReleaseFile"
   $releaseNodeCount = @((Get-Content -LiteralPath $releaseJsonPath -Raw | ConvertFrom-Json -Depth 100).nodes).Count
   & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path $releaseJsonPath -MinimumNodes $releaseNodeCount
+}
+
+Invoke-ValidationStep -Name "Release matches canonical (finding #13 closed)" -Action {
+  & node (Join-Path $repoRoot "scripts\test-release-matches-canonical.mjs")
+  if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
 Invoke-ValidationStep -Name "Canonical-matches-SDK self-test" -Action {
