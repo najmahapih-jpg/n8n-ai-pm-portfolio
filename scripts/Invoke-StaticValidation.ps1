@@ -70,5 +70,10 @@ Invoke-ValidationStep -Name "Current release node floor" -Action {
   & (Join-Path $repoRoot "scripts\Test-N8nWorkflowJson.ps1") -Path (Join-Path $repoRoot "workflows\releases\product-feedback-intelligence-v0.2.0.json") -MinimumNodes $MinimumNodes
 }
 
+Invoke-ValidationStep -Name "Workflow behavioral differential (compiled jsCode == core)" -Action {
+  & node (Join-Path $repoRoot "scripts\test-feedback-workflow.mjs")
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+
 Write-Host "Static validation passed."
 exit 0
