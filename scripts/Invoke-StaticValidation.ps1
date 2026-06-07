@@ -100,5 +100,10 @@ Invoke-ValidationStep -Name "Canonical-matches-SDK self-test" -Action {
   if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
+Invoke-ValidationStep -Name "Drift-workflow behavioral differential (compiled jsCode == core)" -Action {
+  & node (Join-Path $repoRoot "scripts\test-drift-workflow.mjs")
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+
 Write-Host "Static validation passed."
 exit 0
