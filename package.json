@@ -14,6 +14,7 @@
     "verify:agent": "node ./scripts/test-agent-core.mjs",
     "verify:workflow": "node ./scripts/test-agent-workflow.mjs",
     "verify:gateway-client": "node ./scripts/test-gateway-client.mjs",
+    "verify:canonical": "node ./scripts/test-canonical-matches-sdk.mjs",
     "verify:llm": "node ./scripts/test-agent-llm-live.mjs",
     "verify:tools": "node ./scripts/test-agent-gateway-live.mjs"
   },
