@@ -25,6 +25,7 @@ function parseArgs(argv) {
     if (a === '--out') { args.out = argv[++i]; }
     else if (a === '--min') { args.min = Number(argv[++i]); }
     else if (a === '--quiet') { args.quiet = true; }
+    else if (a === '--strict') { args.strict = true; }
     else { args._.push(a); }
   }
   return args;
@@ -78,10 +79,17 @@ try {
   valid = !!result.valid && errors.length === 0;
   validationDetail = valid ? 'valid' : errors.map((er) => er.code + ': ' + er.message).join(' | ');
 } catch (e) {
-  // Across SDK versions the validator can require node-type metadata we do not bundle; a throw
-  // is a soft signal, not a hard failure — parseWorkflowCode already produced deployable JSON.
+  // The SDK validator can require n8n node-type metadata we do not bundle offline; that specific
+  // failure is a known soft signal and degrades gracefully. Any OTHER throw is a real signal and
+  // must NOT be swallowed (previously this catch set valid=true for every error, hiding genuine failures).
+  const msg = (e && e.message) ? String(e.message) : String(e);
+  process.stderr.write('WARN: validateWorkflow threw: ' + msg.slice(0, 200) + '\n');
+  const knownOffline = /node[\s-]?type|nodetype|unknown node|node-types|metadata|provider/i.test(msg);
+  if (args.strict || !knownOffline) {
+    fail('SDK validation error: ' + msg.slice(0, 200));
+  }
   valid = true;
-  validationDetail = 'validator-unavailable (' + e.message.slice(0, 80) + ')';
+  validationDetail = 'validator-unavailable (' + msg.slice(0, 80) + ')';
 }
 
 if (Number.isFinite(args.min) && nodeCount < args.min) {
