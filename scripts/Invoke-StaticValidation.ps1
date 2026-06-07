@@ -97,5 +97,10 @@ Invoke-ValidationStep -Name "Compiled-workflow behavioral self-test" -Action {
   if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
+Invoke-ValidationStep -Name "Canonical-matches-SDK self-test" -Action {
+  & node (Join-Path $repoRoot "scripts\test-canonical-matches-sdk.mjs")
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+
 Write-Host "Static validation passed."
 exit 0
