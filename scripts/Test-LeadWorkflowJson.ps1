@@ -1,6 +1,6 @@
 param(
   [string]$CanonicalPath = ".\workflows\canonical\lead-intelligence.canonical.json",
-  [string]$ReleasePath = ".\workflows\releases\lead-intelligence-v0.1.1.json",
+  [string]$ReleasePath = ".\workflows\releases\lead-intelligence-v0.1.2.json",
   [int]$MinimumNodes = 38
 )
 
