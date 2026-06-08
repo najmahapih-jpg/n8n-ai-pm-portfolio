@@ -38,6 +38,7 @@ Fields:
   - `task.text`: full task description. **Untrusted input** — the refusal guardrail fires before any tool call on unsafe patterns (destructive commands, prompt-injection attempts, out-of-scope requests).
   - `task.customerEmail`: optional caller-supplied email; forwarded to `support-triage` when the bug route runs.
 - `agentMode` (optional): `"stub"` (default) or `"live"`. The `live` mode runs a real LLM classifier (Ollama) and signs + drives the gateway tools in-process. The stub mode runs the deterministic keyword planner over stub tools and is byte-stable and differential-pinned.
+- `traceId` (optional): caller-supplied correlation id. When present, it is echoed unchanged on the response body and audit event, and forwarded (signed into the HMAC-covered request body) to the interaction-gateway on every tool call so the gateway/sibling can capture it. When absent, `requestId` is used as a fallback; when both are absent, `traceId` is `null`. The agent **never generates** a traceId — it only echoes what the caller supplies. A gateway-response traceId (returned by the gateway after routing a tool call) is recorded on the corresponding trajectory step for cross-run correlation. `traceId` feeds no id/hash seed and is not scored by `scoreTrajectory`.
 
 **`maxSteps` is NOT a request field.** It is read from the `AGENT_MAX_STEPS` environment variable only. A caller cannot widen the bound.
 
@@ -95,12 +96,13 @@ Response fields:
 - `ok`: `true` when the agent finished without refusal; `false` when refused or a guardrail fired.
 - `refused`: `true` when the refusal guardrail fired (unsafe / destructive / prompt-injection / out-of-scope task).
 - `stopReason`: `"finished"` | `"refused"` | `"guardrail:max-steps"` | `"guardrail:non-allowlisted-tool"` | `"planner-error"` | `"bad-decision"` | `"unknown-action"` | `"live-unavailable"`.
-- `trajectory`: array of `{ step, intent, args, ok, summary }` — the executed tool calls. Intentionally omits raw task text and customer data.
+- `trajectory`: array of `{ step, intent, args, ok, summary[, traceId] }` — the executed tool calls. The optional `traceId` field on each step carries the gateway/sibling correlation id returned by that tool call; absent on steps where the gateway returned none. Intentionally omits raw task text and customer data.
 - `toolCalls`: count of tool calls in the trajectory.
 - `finalAnswer`: synthesized answer string, or `null` when refused.
 - `guardrail`: the guardrail that fired (`"refusal"` | `"non-allowlisted-tool"` | `"max-steps"` | `null`).
 - `plannerSource`: `"stub"` or `"llm:<model>"` (e.g. `"llm:llama3.2:3b"`).
 - `toolSource`: `"stub"` or `"gateway"`.
+- `traceId`: echoed from the request `traceId` (or `requestId` fallback); `null` when neither was supplied by the caller.
 - `policyVersion`: always `"autonomous-agent-v0.1.0"`.
 
 ## External Integrations
@@ -149,15 +151,15 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   "contractVersion": "autonomous-agent-v0.1.0",
   "webhookPath": "webhook/portfolio/autonomous-agent",
   "request": {
-    "accepted": ["task", "agentMode"],
+    "accepted": ["task", "agentMode", "traceId"],
     "required": ["task"],
     "notes": "maxSteps is env-only (AGENT_MAX_STEPS); it is NOT a request field and callers cannot widen the bound.",
     "limits": { "bodyBytes": 65536 },
     "limitsEnforcedBy": "gateway"
   },
   "response": {
-    "required": ["ok", "refused", "stopReason", "trajectory", "toolCalls", "finalAnswer", "guardrail", "plannerSource", "toolSource", "policyVersion"],
-    "types": { "ok": "boolean", "refused": "boolean", "toolCalls": "number" },
+    "required": ["ok", "refused", "stopReason", "trajectory", "toolCalls", "finalAnswer", "guardrail", "plannerSource", "toolSource", "traceId", "policyVersion"],
+    "types": { "ok": "boolean", "refused": "boolean", "toolCalls": "number", "traceId": "string|null" },
     "notes": "Unsafe/refused tasks return HTTP 200 with refused:true. There is no 4xx refusal contract."
   },
   "errors": [],
@@ -170,7 +172,8 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
       "03-feedback.json",
       "04-unsafe-injection.json",
       "05-unsafe-destructive.json",
-      "06-no-signal.json"
+      "06-no-signal.json",
+      "07-traceid-correlation.json"
     ],
     "errorCases": []
   }
