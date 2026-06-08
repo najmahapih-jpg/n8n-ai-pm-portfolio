@@ -507,9 +507,13 @@ const mapSupabaseRetrieval = node({
       jsCode: `// Map the live Supabase match_documents rows to the SAME retrieval contract the stub produces, so
 // the threshold gate / citation-integrity / response downstream are source-agnostic. Recover the full
 // run context from Normalize (the live HTTP nodes only carried the embedding/rows through). On NO rows
-// (unreachable Supabase, empty table, or a failed query embedding) we degrade to an EMPTY retrieval
-// (maxScore 0) -> the threshold gate routes to a clean abstain, and retrievalSource is labelled
-// 'supabase-fallback' so the response truthfully reflects that the live store yielded nothing.
+// (unreachable Supabase, empty table, or a failed query embedding) we DO NOT emit a false abstain:
+// we FALL BACK to the in-corpus deterministic TF-IDF retriever (the SAME algorithm + corpus the 'Stub
+// Embed + Retrieve' node runs, byte-faithful to rag-core.stubRetrieveCore) and return real topK/citations,
+// labelled retrievalSource:'supabase-fallback-stub' so the response truthfully reflects that the live store
+// yielded nothing AND that the grounded answer came from the deterministic stub over the committed corpus.
+// This is the portfolio rule "live-degrade to a deterministic stub, NEVER to a false abstain" — a degrade
+// is a reliable GROUNDED answer, not a missed one.
 const base = $('Normalize Request').item.json;
 const rows = Array.isArray(items) ? items.map((it) => it.json).filter((r) => r && (r.id || r.content || typeof r.similarity !== 'undefined')) : [];
 
@@ -527,31 +531,130 @@ const mapped = rows.map((r) => {
 
 // Rank by similarity desc (ties by chunkId), clamp to topK (the RPC already limited to match_count).
 mapped.sort((a, b) => (b.score - a.score) || (a.chunkId < b.chunkId ? -1 : a.chunkId > b.chunkId ? 1 : 0));
-const topKFull = mapped.slice(0, base.runtime.topK);
-const maxScore = topKFull.length > 0 ? topKFull[0].score : 0;
-const live = topKFull.length > 0;
+const liveTopKFull = mapped.slice(0, base.runtime.topK);
+const live = liveTopKFull.length > 0;
 
-// PER-SOURCE abstention floor for the LIVE supabase path (nomic-embed-text-v2-moe cosine): default 0.35,
-// which separates live in-corpus (~0.63-0.68) from out-of-corpus (~0.15-0.17). The stub's 0.08 floor would
-// NEVER abstain here (out-of-corpus sits above it). An explicit per-request body.threshold overrides it.
-const threshold = base.runtime.thresholdOverride ?? 0.35;
+// GENUINE-CLEAN-HIT path (non-empty live rows) — UNCHANGED. PER-SOURCE abstention floor for the LIVE
+// supabase path (nomic-embed-text-v2-moe cosine): default 0.35, which separates live in-corpus
+// (~0.63-0.68) from out-of-corpus (~0.15-0.17). The stub's 0.08 floor would NEVER abstain here
+// (out-of-corpus sits above it). An explicit per-request body.threshold overrides it.
+if (live) {
+  const maxScore = liveTopKFull[0].score;
+  const threshold = base.runtime.thresholdOverride ?? 0.35;
+  return [{
+    json: {
+      ...base,
+      runtime: { ...base.runtime, retrievalSource: 'supabase' },
+      retrieval: {
+        topK: liveTopKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score })),
+        maxScore,
+        threshold,
+        retrievalSource: 'supabase'
+      },
+      retrievedChunks: liveTopKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, url: c.url, score: c.score, text: c.text }))
+    }
+  }];
+}
 
+// FALLBACK path (empty/unreachable live rows). Reuse the IDENTICAL deterministic TF-IDF retriever the
+// 'Stub Embed + Retrieve' node runs over the SAME committed corpus (this is rag-core.stubRetrieveCore's
+// algorithm + CORPUS, inlined verbatim so the live branch is self-contained). It returns the SAME
+// retrieval contract — retrieval.topK=[{chunkId,source,score}], maxScore, threshold(stub 0.08 default),
+// retrievedChunks(+text) — so the threshold gate / grounded answer / citation-integrity downstream stay
+// source-agnostic and a degrade routes to a GROUNDED, cited answer instead of a false abstain.
+//
+// CORPUS (source of truth: fixtures/corpus/*.md — 19 chunks: 13 Chinese "AI 时代产品经理" + 6 English
+// product-support known-issues/docs). Kept VERBATIM (byte-for-byte) from the 'Stub Embed + Retrieve'
+// node's CORPUS so the grounded quote matches; MUST stay in sync (the differential proves byte-identity).
+const CORPUS = [
+  { chunkId: "rag-eval-faithfulness", source: "Hugging Face LLM/Agents Course(mlabonne 等)与 Ragas / DeepEval 开源评测框架", url: "https://github.com/mlabonne/llm-course", text: "开源社区给出了评测 RAG 的标准做法:要分别评检索与生成两段——检索看 context precision / recall(召回到的上下文准不准、全不全),生成看 faithfulness(忠实度:答案是否扎根于检索到的上下文)与 answer relevancy(答案相关性);这些可用开源工具 Ragas / DeepEval 简化。RAG 本身则是\\"无需微调即可扩展模型知识\\"的常用手段。" },
+  { chunkId: "trust-reliability", source: "Lenny Rachitsky 等 — Lenny's Newsletter《Why most AI products fail》(2026)", url: "https://www.lennysnewsletter.com/p/what-openai-and-google-engineers-learned", text: "在 OpenAI、Google、Amazon 等公司 50+ 个企业级 AI 部署中,一条反复出现的教训是:\\"obsessing about customer trust and reliability is an underrated driver of successful AI products\\"(对客户信任与可靠性的执着,是 AI 产品成功被严重低估的驱动力)。评测必要但非万灵药——为可靠性与\\"优雅失败\\"路径而设计,才是把 demo 变成用户敢依赖的产品的关键。" },
+  { chunkId: "how-to-learn", source: "InstitutePM《How to Become an AI Product Manager in 2026》(2026)", url: "https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026", text: "对 PM 而言,技术学习的\\"正确深度\\"是 \\"competent enough to make decisions and pressure-test your engineers\\"(足以做决策、并能向工程师施压检验)——既不必推导反向传播,也不能只刷一张证书。推荐路径:读 Anthropic 与 OpenAI 的 prompt 工程指南,然后 \\"build a RAG app, a tool-calling agent, and a fine-tuned classifier\\"(亲手做一个 RAG 应用、一个工具调用 agent、一个微调分类器,哪怕都很小)——三个一起做才会逼你学会其中的取舍;并把一套 eval 框架端到端做透。" },
+  { chunkId: "portfolio-proof", source: "InstitutePM《How to Become an AI Product Manager in 2026》(2026)", url: "https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026", text: "转型最高杠杆的一步,是一份能证明\\"你能交付、并能就 AI 产品做推理\\"的作品集——因为招聘官\\"在简历上花 90 秒,在一份强 case study 上花 8 分钟\\"。能让你进面试的三件套:一个上线的产品(哪怕是 side project,有 URL 或仓库)、一篇带真实数字的 eval 驱动 case study、一套可演示的 eval 套件。" },
+  { chunkId: "model-as-coach", source: "Marty Cagan — Silicon Valley Product Group《Product Coaching and AI》(2026)", url: "https://www.svpg.com/product-coaching-and-ai/", text: "SVPG 现在建议产品人把基础模型本身当作\\"个人产品教练\\"来加速培养 product sense——用你的目标、约束与战略背景把它配置好。在他们的表述里,\\"prompt engineering has evolved into context engineering\\"(提示工程已演进为上下文工程);一个配置得当的模型,提供的产品教练水准可以不输给多数管理者,而且是持续在线、而非每周一次的 1:1。" },
+  { chunkId: "yujun-growth", source: "俞军 —《俞军产品方法论》(中信出版社,2019);《深度对话俞军》", url: "https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g", text: "俞军给出一条本土化的成长路径:产品经理的能力按\\"为企业创造价值的能力\\"分五级——可行性 → 创造 → 权衡 → 变迁 → 方法论。第一级\\"可行性\\"要求对用户价值、技术可行性、商业可行性有基本判断力;往上依次是为问题找最优解(创造)、跳出单点做全局取舍(权衡)、预判世事变迁(变迁),直到输出成体系的方法论。" },
+  { chunkId: "pm-more-essential", source: "Marty Cagan — Silicon Valley Product Group《AI Product Management》(2024)", url: "https://www.svpg.com/ai-product-management/", text: "Marty Cagan(SVPG 创始人、《INSPIRED》作者)认为,几乎所有产品经理都将需要成为 AI 产品经理;且与\\"AI 让 PM 变多余\\"的流行担忧相反——他说 \\"the PM role becomes more essential but also more difficult with generative AI-powered products, not less\\"(在生成式 AI 产品中,PM 角色变得更关键、也更难,而不是更不重要)。AI 素养只是又一个例证:产品经理需要扎实的技术基础。" },
+  { chunkId: "genuine-value", source: "Marty Cagan — Silicon Valley Product Group《AI Product Management》(2024)", url: "https://www.svpg.com/ai-product-management/", text: "按 SVPG 的说法,AI 产品经理的首要职责,是确保 AI 功能交付 \\"genuine, incremental value\\"(真实、增量的价值)——以明显优于现有方案的方式解决真问题。要极力避免的失败模式,是做出 \\"AI in name only\\" 的产品:为营销或竞争跟风而加 AI,而非为价值。" },
+  { chunkId: "yujun-user-value", source: "俞军 —《俞军产品方法论》(中信出版社,2019);亦见《深度对话俞军》", url: "https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g", text: "俞军(《俞军产品方法论》作者、前百度产品副总裁)给出一个根基性定义:\\"产品经理是一个用科学方法研究复杂且非科学的人性,并转化为可执行的商业方案的实践验证学科。\\" 在他看来,产品经理的工作是找到\\"真的用户价值\\";一个具备人文逻辑的产品经理,最重要的是拥有批判性思维,其次是愿意并能够理解人和世界。" },
+  { chunkId: "evals-defining-skill", source: "Aman Khan — Lenny's Newsletter《Beyond vibe checks: A PM's complete guide to evals》(2025)", url: "https://www.lennysnewsletter.com/p/beyond-vibe-checks-a-pms-complete", text: "写好评测(eval)正在成为做 AI 产品的决定性技能。Aman Khan(Arize AI 产品总监,与 Andrew Ng 合作开设 eval 课程)直言:写好 eval 的能力 \\"is rapidly becoming the defining skill for AI PMs in 2025 and beyond\\"(正迅速成为 2025 年及以后 AI 产品经理的决定性技能)。评测像传统软件的回归测试一样,为非确定性系统定义\\"什么叫好\\",让你能度量每次 prompt/模型/检索改动的影响,而不是靠\\"感觉\\"(vibe check)。" },
+  { chunkId: "three-skill-clusters", source: "InstitutePM《How to Become an AI Product Manager in 2026》(2026)", url: "https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026", text: "转型 AI 产品经理要同时补齐三大技能簇:技术素养(足以做 eval/模型/成本决策——看得懂模型卡、算得清延迟预算、能用代码跑 eval)、适配 AI 不确定性的产品功力(写 eval 驱动的 spec 而非功能 spec,指标树看质量分布而非只看均值)、以及 AI 专属判断(模型选型、失败态 UX、成本-质量-延迟三角)。其中\\"判断\\"这一簇被认为\\"最难伪装,也是多数候选人最被低估的一项\\"。" },
+  { chunkId: "hanniman-humanity", source: "黄钊 hanniman —《AI产品经理能力模型的重点素质:人文素养和灵魂境界》,人人都是产品经理 (2022);摘自《AI产品经理的实操手册》", url: "https://www.woshipm.com/pmd/5396083.html", text: "在 AI 产品经理的能力模型里,黄钊(hanniman,前腾讯 PM、\\"AI产品经理大本营\\"创始人)提出一个中文社区独有的关键差异点:\\"人文素养和灵魂境界\\"。他认为,常规产品能力、AI 知识、行业认知决定你产出价值的下限,而\\"人文素养和灵魂境界\\"决定上限——\\"如果你想成为 TOP 5%、甚至 TOP 1% 的 AI 产品经理,就一定不能忽视这个方面\\"。" },
+  { chunkId: "geektime-abilities", source: "刘海丰 — 极客时间专栏《成为AI产品经理》,极客时间(time.geekbang.org)", url: "https://time.geekbang.org", text: "极客时间专栏《成为 AI 产品经理》(刘海丰)把 AI 产品经理的核心能力概括为三大能力:项目管控、算法技能、模型评估,并强调要能\\"主导 AI 项目、带领算法同学达成业务目标\\"。其中\\"模型评估\\"能力,与\\"eval 是 AI PM 决定性技能\\"的判断相互印证。" },
+  { chunkId: "known-export-mobile-crash", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "The data export button crashes the mobile app on both iOS and Android when a report is exported to CSV or PDF. This is a known issue affecting mobile app versions 2.2 and 2.3; a fix is scheduled for version 2.4. Workaround: run the export from the desktop web app instead, where export works normally. Owning team: product-engineering. Severity: high." },
+  { chunkId: "known-dashboard-slow", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "The analytics dashboard loads slowly, often taking ten seconds or more, for workspaces with large datasets. The known cause is unbounded client-side aggregation of the trend charts. A server-side aggregation fix is in progress. Workaround: narrow the dashboard date range, or open a saved view with fewer segments. Owning team: product-engineering. Severity: medium." },
+  { chunkId: "known-sso-login-loop", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "Single sign-on users are sometimes stuck in a login redirect loop after their session expires. The known cause is the browser blocking third-party cookies. Workaround: allow cookies for the app domain, or sign in with the email-and-password fallback. Owning team: platform-security. Severity: high." },
+  { chunkId: "doc-export-howto", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "To export data, open any report or dashboard, click the Export button, and choose a format: CSV, XLSX, or PDF. Exports run in the background, and you receive an email with a download link when the file is ready. Large exports over one million rows are queued and may take a few minutes." },
+  { chunkId: "doc-dashboard-overview", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The analytics dashboard has three areas. KPI cards at the top show headline metrics, trend charts in the middle show changes over time, and a data table at the bottom lists the underlying records. You can filter the whole dashboard by date range, by segment, and by saved views that you create and share with your team." },
+  { chunkId: "faq-mobile-support", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The mobile app supports viewing dashboards, reports, and notifications. Some administrative features, including data export, user management, and billing, are available on the desktop web app only and not on mobile." }
+];
+
+// terms/STOP/IDF/vec/scoring — BYTE-FAITHFUL to the 'Stub Embed + Retrieve' node (= rag-core.stubRetrieveCore).
+const STOP = new Set(['the','a','an','and','or','of','to','in','is','are','was','were','be','as','at','by','for','on','it','its','that','this','these','those','with','from','into','your','you','my','our','their','his','her','do','does','how','what','why','when','where','which','who','whom','can','could','would','should','will','also','any','all','so','such','than','then','out','up','down','over']);
+function terms(s) {
+  const arr = [];
+  const str = String(s ?? '');
+  (str.toLowerCase().match(/[a-z0-9]+/g) || []).forEach((w) => { if (w.length >= 2 && !STOP.has(w)) arr.push(w); });
+  const han = str.match(/[\\u4e00-\\u9fff]/g) || [];
+  for (let i = 0; i < han.length - 1; i += 1) arr.push(han[i] + han[i + 1]);
+  return arr;
+}
+// stubRetrieveCore — the SAME deterministic TF-IDF cosine retriever as the stub node / rag-core, parameterized
+// by (query, corpus, topKLimit, thresholdOverride). Returns { topK, maxScore, threshold, retrievedChunks }.
+function stubRetrieveCore(query, corpus, topKLimit, thresholdOverride) {
+  const docTerms = corpus.map((c) => terms(c.text + ' ' + c.chunkId.replace(/-/g, ' ')));
+  const N = docTerms.length;
+  const df = new Map();
+  for (const d of docTerms) { for (const t of new Set(d)) df.set(t, (df.get(t) || 0) + 1); }
+  function idf(t) { return Math.log((1 + N) / (1 + (df.get(t) || 0))) + 1; }
+  function vec(arr) {
+    const tf = new Map();
+    for (const t of arr) tf.set(t, (tf.get(t) || 0) + 1);
+    const v = new Map();
+    let norm = 0;
+    tf.forEach((f, t) => { const w = f * idf(t); v.set(t, w); norm += w * w; });
+    norm = Math.sqrt(norm) || 1;
+    v.forEach((w, t) => v.set(t, w / norm));
+    return v;
+  }
+  const docVecs = docTerms.map(vec);
+  const qVec = vec(terms(query));
+  const scored = corpus.map((c, i) => {
+    const dVec = docVecs[i];
+    let dot = 0;
+    const [small, big] = qVec.size <= dVec.size ? [qVec, dVec] : [dVec, qVec];
+    small.forEach((w, t) => { if (big.has(t)) dot += w * big.get(t); });
+    const score = Number(dot.toFixed(4));
+    return { chunkId: c.chunkId, source: c.source, url: c.url, score, text: c.text };
+  });
+  scored.sort((a, b) => (b.score - a.score) || (a.chunkId < b.chunkId ? -1 : a.chunkId > b.chunkId ? 1 : 0));
+  const topKFull = scored.slice(0, topKLimit);
+  const maxScore = topKFull.length > 0 ? topKFull[0].score : 0;
+  const topK = topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score }));
+  const threshold = thresholdOverride ?? 0.08;
+  return {
+    topK,
+    maxScore,
+    threshold,
+    retrievedChunks: topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, url: c.url, score: c.score, text: c.text }))
+  };
+}
+
+// The live store yielded nothing -> deterministic TF-IDF over the committed corpus (stub 0.08 floor). The
+// SAME retrieval contract the stub produces, so a degrade routes to a GROUNDED, cited answer (NOT a false
+// abstain). retrievalSource is 'supabase-fallback-stub' so the response is truthful: live missed, the stub
+// retriever over the committed corpus produced the grounding.
+const r = stubRetrieveCore(base.query, CORPUS, base.runtime.topK, base.runtime.thresholdOverride);
 return [{
   json: {
     ...base,
-    runtime: {
-      ...base.runtime,
-      // Truthful provenance: 'supabase' when the live store returned ranked rows; 'supabase-fallback'
-      // when it yielded nothing (so a clean abstain on the live path is visibly a live miss, not a stub).
-      retrievalSource: live ? 'supabase' : 'supabase-fallback'
-    },
+    runtime: { ...base.runtime, retrievalSource: 'supabase-fallback-stub' },
     retrieval: {
-      topK: topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score })),
-      maxScore,
-      threshold,
-      retrievalSource: live ? 'supabase' : 'supabase-fallback'
+      topK: r.topK,
+      maxScore: r.maxScore,
+      threshold: r.threshold,
+      retrievalSource: 'supabase-fallback-stub'
     },
-    retrievedChunks: topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, url: c.url, score: c.score, text: c.text }))
+    retrievedChunks: r.retrievedChunks
   }
 }];`
     }
