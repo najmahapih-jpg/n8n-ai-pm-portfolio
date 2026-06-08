@@ -44,6 +44,7 @@ Run-level fields:
 
 - `runId`
 - `requestedAt`
+- `traceId` or `requestId` (optional correlation id; captured and echoed, never generated — see Correlation below)
 - `sutMode` or `mode`: `stub` (default), `workflow`, or `model`
 - `sutExtract`: dot-path for extracting the workflow SUT output; default `response.theme`
 - `sutModels`: model list for `sutMode:"model"`; the `stub` lane is always included
@@ -81,6 +82,7 @@ Successful responses return HTTP 200:
 {
   "ok": true,
   "runId": "run_...",
+  "traceId": "trace-eval-123 | null",
   "sutMode": "stub|workflow|model",
   "sutModels": ["stub"],
   "judgeSource": "stub|ollama|fallback",
@@ -145,6 +147,14 @@ Successful responses return HTTP 200:
 
 `results` is the per-case, per-model proof surface. It intentionally omits raw prompts, raw expected answers, raw SUT outputs, and judge rationale text; those values may be sensitive and should stay in redacted test artifacts only.
 
+### Correlation (optional `traceId`)
+
+- A caller (or upstream gateway) may supply an optional correlation id as `traceId`, falling back to `requestId` when `traceId` is absent.
+- The workflow **captures and echoes** this value: it is **never generated** in-workflow (no random/UUID), so the deterministic offline differential stays reproducible.
+- On the successful eval path it surfaces as `response.traceId`, on the redacted `auditEvent.traceId`, and on `runtime.traceId`, letting a caller correlate the response and the audit record to the originating request.
+- When neither `traceId` nor `requestId` is supplied, all three fields are `null` — purely additive, with no other change to the response or audit event (the deterministic `runId`/`auditEventId` hashes are unaffected by `traceId`; it feeds no id/hash seed).
+- The missing-golden error response does not carry `traceId`; correlation is scoped to the successful eval response and its audit event.
+
 ## Error Contract
 
 Missing or invalid golden cases return an error response with:
@@ -185,6 +195,7 @@ Primary fixtures:
 - `fixtures/golden/connected-product-feedback.json`
 - `fixtures/golden/connected-rag.json`
 - `fixtures/golden/bench-model-slice.json`
+- `fixtures/golden/traceid-correlation.json`
 - `fixtures/calibration/calibration-slice.json`
 - `fixtures/baseline/regression-baseline.json`
 
@@ -207,7 +218,7 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   "contractVersion": "eval-harness-v0.6.0",
   "webhookPath": "webhook/portfolio/llm-eval-harness",
   "request": {
-    "accepted": ["golden", "cases", "dataset", "runId", "requestedAt", "sutMode", "mode", "sutExtract", "sutModels", "judgeSource", "judgeModel", "baseline", "baselineSource", "regressionTolerance", "priceTable", "sutWebhookUrl", "sutModelUrl"],
+    "accepted": ["golden", "cases", "dataset", "runId", "requestedAt", "traceId", "requestId", "sutMode", "mode", "sutExtract", "sutModels", "judgeSource", "judgeModel", "baseline", "baselineSource", "regressionTolerance", "priceTable", "sutWebhookUrl", "sutModelUrl"],
     "oneOfRequired": [["golden", "cases", "dataset"]],
     "limits": { "bodyBytes": 262144, "inputChars": 8000 },
     "limitsEnforcedBy": "gateway"
@@ -219,7 +230,7 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   "errors": [],
   "fixtures": {
     "dir": "fixtures/golden",
-    "valid": ["bench-model-slice.json", "connected-product-feedback.json", "connected-rag.json", "echo-fail.json", "echo-pass.json"],
+    "valid": ["bench-model-slice.json", "connected-product-feedback.json", "connected-rag.json", "echo-fail.json", "echo-pass.json", "traceid-correlation.json"],
     "errorCases": []
   }
 }
