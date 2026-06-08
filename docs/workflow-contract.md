@@ -30,6 +30,7 @@ Optional fields and aliases:
 - `receivedAt`
 - `source`
 - `accountId` or `customerId`
+- `traceId` or `requestId` (caller-supplied correlation id; see `traceId` below)
 
 Normalization rules:
 
@@ -37,6 +38,7 @@ Normalization rules:
 - `title` maps to `subject`.
 - `description` maps to `message`.
 - `customerId` maps to `accountId`.
+- `traceId` is captured from `traceId` (else `requestId`) when supplied; otherwise a deterministic id is generated.
 
 Example:
 
@@ -91,6 +93,8 @@ Successful responses return HTTP 200 with a safe triage payload:
 }
 ```
 
+`traceId` is a correlation id captured from the caller (`traceId`, else `requestId`) when supplied, falling back to a deterministic generated `trace-<hash>` (over `customerEmail|subject|receivedAt`) when the caller supplies neither. The captured-or-generated `traceId` is propagated to the success response, the redacted audit event, the validation-error response, and the Feishu alert card. When the caller supplies no id, the generated value is byte-identical to prior releases.
+
 The response must not include Feishu webhook URLs, signing secrets, raw credentials, Authorization headers, cookies, or private n8n URLs.
 
 ## Error Contract
@@ -124,7 +128,7 @@ Operational Limits above).
   "contractVersion": "supportops-triage-v0.3.0-local-feishu",
   "webhookPath": "webhook/portfolio/support-triage",
   "request": {
-    "accepted": ["customerEmail", "email", "subject", "title", "message", "description", "plan", "customerTier", "receivedAt", "source", "accountId", "customerId"],
+    "accepted": ["customerEmail", "email", "subject", "title", "message", "description", "plan", "customerTier", "receivedAt", "source", "accountId", "customerId", "traceId", "requestId"],
     "oneOfRequired": [["customerEmail", "email"], ["subject", "title"], ["message", "description"]],
     "limits": { "bodyBytes": 65536, "subjectChars": 200, "messageChars": 8000 },
     "limitsEnforcedBy": "gateway"
