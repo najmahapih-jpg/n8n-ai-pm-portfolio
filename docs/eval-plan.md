@@ -50,9 +50,20 @@ answer(query, mode) -> {
   the response is invalid (`passed=false`). A model that cites a chunk it wasn't given is hallucinating
   attribution — caught deterministically.
 - **Abstain rule:** `abstained=true` ⟺ `retrieval.maxScore < threshold`. When abstained,
-  `answer=null` and `citations=[]` (no fabricated citation to dress up a non-answer).
+  `answer=null` and `citations=[]` (no fabricated citation to dress up a non-answer). An abstain
+  reflects a genuine retrieval miss on the chosen retriever — it is **never** a stand-in for a live
+  backend that was simply unreachable (see the live-degrade rule below).
 - **Default sources are stub** (`retrievalSource:"stub"`, `generationSource:"stub"`), deterministic
   and offline. Live `supabase`/`ollama` are opt-in per request and never touched by CI.
+- **Live-degrade rule (no false abstain):** when live Supabase retrieval returns no rows (unreachable
+  store, empty table, or a failed query embedding), the workflow **falls back to the deterministic
+  in-corpus TF-IDF stub retriever** over the committed corpus — the SAME algorithm as
+  `retrievalSource:"stub"` — and returns real `topK`/citations, labelled
+  `retrievalSource:"supabase-fallback-stub"`. So a live miss degrades to a reliable **grounded** answer,
+  not a false abstain. (Live generation that returns no text degrades to the stub grounded extract,
+  labelled `generationSource:"ollama-fallback"`.) This is the portfolio rule "live-degrade to a
+  deterministic stub, never to a false abstain"; it is proven offline by extracting and running the
+  compiled `Map Supabase Retrieval` node against empty rows in `verify:workflow`.
 
 ## Golden dataset (planned)
 
