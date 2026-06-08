@@ -14,7 +14,7 @@
     "verify:gateway": "node ./scripts/test-gateway-core.mjs",
     "verify:workflow": "node ./scripts/test-gateway-workflow.mjs",
     "verify:canonical": "node ./scripts/test-canonical-matches-sdk.mjs",
-    "verify:live": "pwsh -NoProfile -File ./scripts/Test-GatewayLive.ps1"
+    "verify:live": "pwsh -NoProfile -File ./scripts/Reactivate-Workflow.ps1 && pwsh -NoProfile -File ./scripts/Test-GatewayLive.ps1"
   },
   "dependencies": {
     "@n8n/workflow-sdk": "0.15.1"
