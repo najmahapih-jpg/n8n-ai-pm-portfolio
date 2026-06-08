@@ -92,6 +92,13 @@ export function normalizeRequest(source, opts = {}) {
   const genModel = text(body.genModel) || 'llama3.2:3b';
   const supabaseRpcUrl = text(body.supabaseRpcUrl) || '__SUPABASE_RPC_URL__';
 
+  // Optional correlation id: capture-and-echo only (never generated, so the deterministic offline differential
+  // stays reproducible). traceId falls back to requestId when traceId is absent; null when neither is supplied.
+  // Threaded onto runtime.traceId and echoed by buildAuditEvent + buildResponse (the grounded AND abstain
+  // paths both flow through Build Response). Additive: when absent it is null and changes nothing else — it
+  // feeds NO id/hash seed and does not affect retrieval/citations/the abstain decision.
+  const traceId = body.traceId ?? body.requestId ?? null;
+
   // The node uses Date.now()/new Date() when requestId/requestedAt are absent; the core takes them via opts
   // so the differential can pin both sides to the same instant + id. Falls back to wall-clock like the node.
   const requestIdFallback = opts.requestIdFallback != null ? String(opts.requestIdFallback) : ('req_' + Date.now().toString(36));
@@ -106,6 +113,9 @@ export function normalizeRequest(source, opts = {}) {
     validation: { hasQuery },
     runtime: {
       entrypoint,
+      // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when
+      // absent. Echoed by buildAuditEvent + buildResponse; feeds no id/hash seed (purely additive).
+      traceId,
       topK,
       thresholdOverride,
       retrievalSource,
@@ -337,6 +347,8 @@ export function buildAuditEvent(input, opts = {}) {
     ...input,
     auditEvent: {
       auditEventId: 'audit_' + hash(runSeed),
+      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when absent.
+      traceId: input.runtime.traceId ?? null,
       requestId: input.request.requestId,
       retrievalSource: input.runtime.retrievalSource,
       generationSource: input.runtime.generationSource,
@@ -370,6 +382,9 @@ export function buildResponse(input, opts = {}) {
     response: {
       ok: true,
       requestId: input.request.requestId,
+      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when
+      // absent. Surfaced on BOTH the grounded answer and the clean-abstain response (this node serves both).
+      traceId: input.runtime.traceId ?? null,
       abstained: gen.abstained === true,
       answer: gen.abstained === true ? null : gen.answer,
       note: gen.abstained === true ? (gen.note || '信息不足,无法回答') : null,
