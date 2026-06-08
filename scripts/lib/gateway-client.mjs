@@ -11,11 +11,16 @@ import crypto from 'node:crypto';
 // Build the EXACT signed request the deployed gateway verifies. rawBody = compact JSON { intent, payload, requestId }
 // (the exact signed bytes; the client POSTs it as text/plain so n8n leaves it unparsed). signature = 'sha256=' +
 // HMAC-SHA256(secret, `${timestamp}.${rawBody}`). PURE — no network, no env, deterministic given its inputs.
+//
+// (B) FORWARD: when the caller supplies opts.traceId, it is added to the envelope BEFORE serializing + signing (so
+// the gateway captures it via body.traceId and forwards it to the sub-sibling). The signature covers the EXACT bytes,
+// so traceId is signed correctly. When opts.traceId is absent the envelope + signed bytes are byte-identical to before.
 export function buildSignedRequest(intent, payload, opts) {
   const requestId = String(opts.requestId);
   const timestamp = String(opts.timestamp);
   const secret = opts.signingSecret;
   const envelope = { intent, payload: payload || {}, requestId };
+  if (opts.traceId != null) envelope.traceId = String(opts.traceId);
   const rawBody = JSON.stringify(envelope);
   const signature = 'sha256=' + crypto.createHmac('sha256', String(secret)).update(timestamp + '.' + rawBody).digest('hex');
   return { rawBody, signature, timestamp, requestId, envelope };
@@ -41,16 +46,19 @@ export function makeGatewayCallTool(opts) {
   const signingSecret = opts.signingSecret;
   const fetchImpl = opts.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   const now = opts.now || (() => Math.floor(Date.now() / 1000));
+  // (B) FORWARD: the agent's run-level correlation id. When present it is signed into EVERY gateway request body so
+  // the gateway captures it (body.traceId) and forwards it to the sub-sibling. null/absent -> byte-identical to before.
+  const agentTraceId = opts.traceId != null ? String(opts.traceId) : null;
   let seq = 0;
   const makeRequestId = opts.makeRequestId || (() => 'agent-' + String(++seq).padStart(4, '0'));
   if (!gatewayUrl) throw new Error('makeGatewayCallTool requires gatewayUrl');
   if (signingSecret === undefined || signingSecret === null || signingSecret === '') throw new Error('makeGatewayCallTool requires signingSecret');
   if (typeof fetchImpl !== 'function') throw new Error('makeGatewayCallTool requires a fetch implementation');
 
-  // One signed round-trip to the gateway -> { ok, summary, data }. data.degradedAbstain flags a rag live call
-  // that transiently degraded (retrievalSource '*-fallback') AND abstained — the signal the retry below acts on.
+  // One signed round-trip to the gateway -> { ok, summary, traceId, data }. data.degradedAbstain flags a rag live
+  // call that transiently degraded (retrievalSource '*-fallback') AND abstained — the signal the retry below acts on.
   async function callOnce(intent, sendArgs) {
-    const { rawBody, signature, timestamp } = buildSignedRequest(intent, sendArgs, { signingSecret, requestId: makeRequestId(), timestamp: now() });
+    const { rawBody, signature, timestamp } = buildSignedRequest(intent, sendArgs, { signingSecret, requestId: makeRequestId(), timestamp: now(), traceId: agentTraceId });
     let res;
     let text;
     try {
@@ -75,7 +83,10 @@ export function makeGatewayCallTool(opts) {
     const summary = perTarget.length
       ? perTarget.map((t) => summarizeTarget(t.target, t.result)).join(' | ')
       : (json && json.routedTo ? 'routedTo ' + JSON.stringify(json.routedTo) + ' (not executed)' : 'no result');
-    return { ok: json.ok === true && executed && siblingsOk, summary, data: { traceId: json.traceId, routedTo: json.routedTo, executed, siblingsOk, degradedAbstain, perTarget } };
+    // (C) THREAD: surface the gateway's RESPONSE traceId at the top level so the agent loop records it on the
+    // trajectory step (correlating the agent run to the gateway/sibling run). null when the gateway echoed none.
+    const respTraceId = (json && json.traceId != null) ? json.traceId : null;
+    return { ok: json.ok === true && executed && siblingsOk, summary, traceId: respTraceId, data: { traceId: respTraceId, routedTo: json.routedTo, executed, siblingsOk, degradedAbstain, perTarget } };
   }
 
   return async function callTool(intent, args) {
