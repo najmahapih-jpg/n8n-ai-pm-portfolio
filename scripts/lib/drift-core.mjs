@@ -53,6 +53,12 @@ export function normalizeRunConfig(source, opts = {}) {
   const stubDigestProse = typeof body.stubDigestProse === 'string' ? body.stubDigestProse : null;
 
   const summarySource = text(body.summarySource).toLowerCase() === 'stub' ? 'stub' : (mode === 'live' ? 'ollama' : 'stub');
+
+  // Optional correlation id: capture-and-echo only (never generated). traceId falls back to requestId, then null
+  // (a bare scheduled run carries none). Threaded onto runtime.traceId; echoed by the audit event + run-output
+  // record. Additive: feeds NO id/hash/digest seed and is kept OUT of the digest prose (digest-integrity safe).
+  const traceId = body.traceId ?? body.requestId ?? null;
+
   const trustOverrides = entrypoint !== 'webhook';
   const pick = (v, def) => ((trustOverrides && text(v)) ? text(v) : def);
   const aEvalUrl = pick(body.aEvalUrl, 'http://host.docker.internal:5678/webhook/portfolio/llm-eval-harness');
@@ -70,7 +76,7 @@ export function normalizeRunConfig(source, opts = {}) {
       runId: text(body.runId) || runIdFallback,
       requestedAt: text(body.requestedAt) || nowIso
     },
-    runtime: { entrypoint, mode, requestedMode, summarySource, reportOnly, driftThreshold, staleAfterDays, asOf, monitors, aEvalUrl, ragSutUrl, ollamaChatUrl, genModel, userAgent },
+    runtime: { entrypoint, mode, requestedMode, summarySource, reportOnly, driftThreshold, staleAfterDays, asOf, monitors, traceId, aEvalUrl, ragSutUrl, ollamaChatUrl, genModel, userAgent },
     inject: { stubSources, stubQuality, priorBaseline, stubDigestProse },
     sourcePayloadKeys: Object.keys(body)
   };
@@ -325,6 +331,9 @@ export function buildAuditEvent(input, opts = {}) {
     auditEvent: {
       auditEventId: 'audit_' + hash(runSeed),
       runId: input.request.runId,
+      // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when absent.
+      // A string id (not a source url or digest prose), so the masking invariant is unaffected; feeds no id/hash seed.
+      traceId: input.runtime.traceId,
       mode: input.runtime.mode,
       reportOnly: input.runtime.reportOnly,
       evalSource: input.quality.evalSource,
@@ -355,6 +364,10 @@ export function buildRunOutput(input, opts = {}) {
   return {
     runId: input.request.runId,
     entrypoint: input.runtime.entrypoint,
+    // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when absent
+    // (a scheduled run carries none). A structured top-level field only — NOT in the digest prose — so the
+    // digest-integrity prose scan never sees it; feeds no id/hash/digest seed (purely additive).
+    traceId: input.runtime.traceId,
     asOf: input.runtime.asOf,
     mode: input.runtime.mode,
     requestedMode: input.runtime.requestedMode,
