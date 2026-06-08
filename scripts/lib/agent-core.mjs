@@ -85,6 +85,16 @@ function synthesize(kind, history) {
   return '[' + kind + '] ' + (parts.length ? parts.join(' | ') : 'no successful tool results');
 }
 
+// Build one trajectory step. The gateway/sibling traceId (captured by the gateway tool executor) is recorded ONLY
+// when the tool returned one — additive: a stub tool returns none, so the stub trajectory stays byte-identical, and
+// traceId feeds NO id/hash seed and is NOT scored by scoreTrajectory. (Mirrored verbatim in the deployed Agent Loop
+// node + agent-loop-async, so the deployed copy can't drift from this core.)
+export function trajectoryStep(step, intent, args, result) {
+  const s = { step, intent, args: args || {}, ok: result.ok === true, summary: result.summary ?? null };
+  if (result.traceId != null) s.traceId = result.traceId;
+  return s;
+}
+
 // The PURE agent loop. callTool(intent, args) -> { ok, summary, data } is INJECTED (stub offline / gateway live).
 // GUARDRAILS: REFUSAL (unsafe task), NON-ALLOWLISTED-TOOL (never execute an off-allowlist intent), MAX-STEPS
 // (bounded loop), NO-FABRICATED-RESULT (the trajectory records only real callTool results; a tool failure is
@@ -116,7 +126,7 @@ export function runAgentLoop(task, opts = {}) {
       let result;
       try { result = callTool(decision.intent, decision.args || {}); } catch (e) { result = { ok: false, summary: 'tool error: ' + e.message }; }
       if (!result || typeof result !== 'object') result = { ok: false, summary: 'tool returned a bad shape' };
-      trajectory.push({ step, intent: decision.intent, args: decision.args || {}, ok: result.ok === true, summary: result.summary ?? null });
+      trajectory.push(trajectoryStep(step, decision.intent, decision.args, result));
       history.push({ intent: decision.intent, result });
       continue;
     }
