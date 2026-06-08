@@ -241,6 +241,16 @@ for (const ff of goldenFixtures) {
   const auditStr = JSON.stringify(final.auditEvent);
   check(ff.id, 'audit omits raw query/answer/chunk-text/quote',
     !/"query"/.test(auditStr) && !/"answer"/.test(auditStr) && !/"text"/.test(auditStr) && !/"quote"/.test(auditStr) && !/"note"/.test(auditStr));
+
+  // (e) traceId capture-and-echo (additive correlation): the optional caller-supplied traceId/requestId surfaces
+  // in BOTH the response (grounded or abstain) and the redacted audit event AND on runtime, never generated. The
+  // expected value is resolved from the request (NOT a derived hash: traceId ?? requestId ?? null), so it ALSO
+  // proves traceId feeds no id/hash seed. The whole-record differential above proves the field stays in sync with
+  // the core; these reproducible-stub fixtures carry a requestId (= runId) so traceId echoes it here.
+  const expectedTraceId = req.traceId ?? req.requestId ?? null;
+  check(ff.id, 'response.traceId echoes caller (traceId ?? requestId)', resp.traceId === expectedTraceId, JSON.stringify(resp.traceId));
+  check(ff.id, 'auditEvent.traceId echoes caller (traceId ?? requestId)', final.auditEvent.traceId === expectedTraceId, JSON.stringify(final.auditEvent.traceId));
+  check(ff.id, 'runtime.traceId echoes caller (traceId ?? requestId)', final.runtime.traceId === expectedTraceId, JSON.stringify(final.runtime.traceId));
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -339,7 +349,88 @@ for (const missing of [
   check(missing.id, 'policyVersion == ' + POLICY_VERSION, compiledErr.response.policyVersion === POLICY_VERSION, compiledErr.response.policyVersion);
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// traceId correlation pins — a caller-supplied traceId is echoed (capture-and-echo, never generated) into the
+// response, the redacted audit event, AND runtime, on BOTH the grounded answer and the clean-abstain path
+// (both flow through Build Response). A request WITHOUT a traceId AND without a requestId carries traceId:null
+// in all three (additive). requestId is the documented fallback. traceId must NOT perturb the requestId-derived
+// auditEventId, and must NOT change retrieval/the abstain decision. Each case is also DIFFERENTIALLY checked
+// (compiled jsCode record == core), so the new field is proven byte-identical to the audited core.
+// ---------------------------------------------------------------------------------------------------------
+const TRACE = 'trace-rag-123';
+// Build a reproducible stub request with explicit control of traceId/requestId (toReproducibleStubRequest
+// always injects requestId, which would mask the absent-fallback case; here we choose each field explicitly).
+function reproStubReq(fields, runId) {
+  const req = { requestedAt: PINNED_AT, ...fields };
+  return { req, opts: { now: PINNED_AT, requestIdFallback: runId } };
+}
+// Run BOTH the compiled jsCode pipeline and the audited core for the same request; return { final, coreRecord }.
+function runBoth({ req, opts }) {
+  const compiled = runCompiledHappy(req, {});
+  const coreNorm = normalizeRequest(req, opts);
+  const coreRet = stubRetrieve(coreNorm);
+  const coreClears = coreRet.retrieval.maxScore >= coreRet.retrieval.threshold;
+  const coreGen = coreClears ? stubGroundedAnswer(coreRet) : cleanAbstain(coreRet);
+  const coreRecord = buildResponse(buildAuditEvent(enforceCitationIntegrity(coreGen), opts), opts);
+  return { final: compiled.final, coreRecord, clears: compiled.snap.__clears, coreClears };
+}
+
+// (1) GROUNDED-HIT case carrying body.traceId — in-corpus zh query clears the stub floor (grounded answer).
+{
+  const supplied = reproStubReq({ requestId: 'rid-grounded', traceId: TRACE, query: '转型 AI 产品经理要补齐哪三大技能簇?' }, 'rid-grounded');
+  const { final, coreRecord, clears } = runBoth(supplied);
+  const r = final.response;
+  check('pin:traceid-grounded', 'is the grounded branch (not abstain)', clears === true && r.abstained === false, String(r.abstained));
+  check('pin:traceid-grounded', 'supplied traceId echoed in response', r.traceId === TRACE, JSON.stringify(r.traceId));
+  check('pin:traceid-grounded', 'supplied traceId echoed in audit event', final.auditEvent.traceId === TRACE, JSON.stringify(final.auditEvent.traceId));
+  check('pin:traceid-grounded', 'supplied traceId carried on runtime', final.runtime.traceId === TRACE, JSON.stringify(final.runtime.traceId));
+  check('pin:traceid-grounded', 'DIFF whole record == core (traceId in sync)',
+    eq(blankVolatileTimestamps(final), blankVolatileTimestamps(coreRecord)), 'records diverge');
+}
+
+// (2) ABSTAIN case carrying body.traceId — out-of-corpus query stays below the 0.08 stub floor (clean abstain).
+{
+  const supplied = reproStubReq({ requestId: 'rid-abstain', traceId: TRACE, query: '法国的首都是哪里?' }, 'rid-abstain');
+  const { final, coreRecord, clears } = runBoth(supplied);
+  const r = final.response;
+  check('pin:traceid-abstain', 'is the clean-abstain branch', clears === false && r.abstained === true, String(r.abstained));
+  check('pin:traceid-abstain', 'answer == null on abstain (unchanged by traceId)', r.answer === null, JSON.stringify(r.answer));
+  check('pin:traceid-abstain', 'citations == [] on abstain (unchanged by traceId)', Array.isArray(r.citations) && r.citations.length === 0, String(r.citations.length));
+  check('pin:traceid-abstain', 'supplied traceId echoed in response', r.traceId === TRACE, JSON.stringify(r.traceId));
+  check('pin:traceid-abstain', 'supplied traceId echoed in audit event', final.auditEvent.traceId === TRACE, JSON.stringify(final.auditEvent.traceId));
+  check('pin:traceid-abstain', 'supplied traceId carried on runtime', final.runtime.traceId === TRACE, JSON.stringify(final.runtime.traceId));
+  check('pin:traceid-abstain', 'DIFF whole record == core (traceId in sync)',
+    eq(blankVolatileTimestamps(final), blankVolatileTimestamps(coreRecord)), 'records diverge');
+}
+
+// (3) ABSENT in all three — neither traceId nor requestId supplied -> traceId is null everywhere (additive).
+{
+  const bare = reproStubReq({ query: '转型 AI 产品经理要补齐哪三大技能簇?' }, 'rid-bare');
+  const { final } = runBoth(bare);
+  check('pin:traceid-absent', 'absent traceId is null in response (additive)', final.response.traceId === null, JSON.stringify(final.response.traceId));
+  check('pin:traceid-absent', 'absent traceId is null in audit event (additive)', final.auditEvent.traceId === null, JSON.stringify(final.auditEvent.traceId));
+  check('pin:traceid-absent', 'absent traceId is null on runtime (additive)', final.runtime.traceId === null, JSON.stringify(final.runtime.traceId));
+}
+
+// (4) requestId FALLBACK — traceId absent but requestId present -> echoed (proves the ?? requestId fallback).
+{
+  const fb = reproStubReq({ requestId: 'req-rag-789', query: '转型 AI 产品经理要补齐哪三大技能簇?' }, 'req-rag-789');
+  const { final } = runBoth(fb);
+  check('pin:traceid-fallback', 'requestId fallback echoed in response when traceId absent', final.response.traceId === 'req-rag-789', JSON.stringify(final.response.traceId));
+  check('pin:traceid-fallback', 'requestId fallback echoed in audit when traceId absent', final.auditEvent.traceId === 'req-rag-789', JSON.stringify(final.auditEvent.traceId));
+}
+
+// (5) traceId feeds NO id/hash seed: the auditEventId for the SAME run (requestId+requestedAt) is identical
+// with and without a traceId (the supplied-traceId grounded run vs the same run without a traceId).
+{
+  const withTrace = runBoth(reproStubReq({ requestId: 'rid-seed', traceId: TRACE, query: '转型 AI 产品经理要补齐哪三大技能簇?' }, 'rid-seed')).final;
+  const noTrace = runBoth(reproStubReq({ requestId: 'rid-seed', query: '转型 AI 产品经理要补齐哪三大技能簇?' }, 'rid-seed')).final;
+  check('pin:traceid-seed', 'auditEventId unaffected by traceId (no hash seed)',
+    withTrace.auditEvent.auditEventId === noTrace.auditEvent.auditEventId,
+    withTrace.auditEvent.auditEventId + ' vs ' + noTrace.auditEvent.auditEventId);
+}
+
 console.log('');
 console.log('rag-workflow behavioral self-test: ' + pass + ' passed, ' + fail + ' failed ('
-  + goldenFixtures.length + ' golden fixtures + headline pins + missing-query, OFFLINE, compiled jsCode + differential vs core)');
+  + goldenFixtures.length + ' golden fixtures + headline pins + traceId pins + missing-query, OFFLINE, compiled jsCode + differential vs core)');
 process.exit(fail > 0 ? 1 : 0);
