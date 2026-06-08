@@ -123,6 +123,7 @@ Error responses always include `ok: false` and `traceId`.
 ## External Integrations
 
 - Callable siblings are reached via n8n Execute Workflow (in-process). Each sibling must expose an `executeWorkflowTrigger` node to be callable.
+- The gateway **forwards its own `traceId` into the in-process sibling payload** (as `payload.traceId`, with `payload.requestId` set to the same value for the `traceId ?? requestId` fallback, and also at the item top level). A routed sibling that captures `body.traceId ?? body.requestId` therefore echoes back the SAME gateway `traceId`, making the gateway→sibling chain end-to-end correlatable. The gateway reuses its existing `traceId` (never generates a second id), and the forward is additive — the cleaned payload fields are preserved.
 - No external HTTP calls to sibling workflows (no credentials over the wire).
 - `verify:live` (`scripts/Test-GatewayLive.ps1`) signs a real request to the deployed gateway and asserts `valid→200+traceId` and `tampered→401`. It skips honestly when n8n, the secret, or the webhook is absent.
 
@@ -146,7 +147,7 @@ npm run verify:gateway
 npm run verify:workflow
 ```
 
-`verify:gateway` (20 assertions) pins the pure security-core functions. `verify:workflow` (166 assertions across 16 golden scenarios) runs the compiled pipeline and differentially pins every security decision against the core so the deployed logic cannot silently drift.
+`verify:gateway` (20 assertions) pins the pure security-core functions. `verify:workflow` (171 assertions across 16 golden scenarios plus a live-branch traceId-forward check) runs the compiled pipeline and differentially pins every security decision against the core so the deployed logic cannot silently drift. The traceId-forward check drives an accepted, callable request through the compiled `Prepare Sibling Input` node and asserts the gateway's `traceId` is forwarded into the sibling payload (the live branch is otherwise uncovered by the offline differential pipeline).
 
 Live gate is opt-in: `npm run verify:live`.
 
