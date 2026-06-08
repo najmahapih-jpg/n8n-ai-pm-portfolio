@@ -35,6 +35,8 @@ Optional fields:
 - `summarySource`: `stub` or `ollama`
 - `genModel`
 - `userAgent`
+- `traceId`: optional caller/gateway-supplied correlation id. Captured-and-echoed only — it is **never generated** by the workflow. Falls back to `requestId` when `traceId` is absent, and is `null` when neither is supplied (a bare schedule run carries none, so it is `null` on schedule runs). It is echoed onto `runtime.traceId`, into the redacted audit event, and onto the top-level run record. It is **additive** (feeds no id/hash/digest seed; the run record is otherwise byte-identical with or without it), is kept **out of the digest prose** (so it never reaches the digest-integrity prose scan), and is **not** surfaced on any error path.
+- `requestId`: the documented fallback source for `traceId` when `traceId` is absent.
 
 Operator/test-driver fields:
 
@@ -79,6 +81,7 @@ Webhook runs return the structured run record:
 {
   "ok": true,
   "runId": "run_demo",
+  "traceId": "trace-drift-123",
   "asOf": "2026-05-31",
   "mode": "stub|live",
   "reportOnly": true,
@@ -172,6 +175,7 @@ Primary fixtures:
 - `fixtures/golden/source-stale.json`
 - `fixtures/golden/source-unreachable.json`
 - `fixtures/golden/digest-must-be-real.json`
+- `fixtures/golden/traceid-correlation.json`
 
 Required gates (offline — no running n8n needed):
 
@@ -198,19 +202,19 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
   "contractVersion": "scheduled-drift-monitor-v0.3.0",
   "webhookPath": "webhook/portfolio/scheduled-drift-monitor",
   "request": {
-    "accepted": ["mode", "reportOnly", "monitors", "driftThreshold", "staleAfterDays", "asOf", "runId", "requestedAt", "summarySource", "stubSources", "stubQuality", "priorBaseline", "stubDigestProse", "aEvalUrl", "ragSutUrl", "ollamaChatUrl", "genModel", "userAgent", "manualExecution"],
+    "accepted": ["mode", "reportOnly", "monitors", "driftThreshold", "staleAfterDays", "asOf", "runId", "requestedAt", "traceId", "requestId", "summarySource", "stubSources", "stubQuality", "priorBaseline", "stubDigestProse", "aEvalUrl", "ragSutUrl", "ollamaChatUrl", "genModel", "userAgent", "manualExecution"],
     "limits": { "bodyBytes": 262144 },
     "limitsEnforcedBy": "gateway"
   },
   "response": {
-    "required": ["runId", "entrypoint", "asOf", "mode", "requestedMode", "reportOnly", "monitors", "freshness", "quality", "drift", "digest", "digestIntegrity", "history", "passed", "auditEvent", "policyVersion", "processedAt"],
+    "required": ["runId", "entrypoint", "traceId", "asOf", "mode", "requestedMode", "reportOnly", "monitors", "freshness", "quality", "drift", "digest", "digestIntegrity", "history", "passed", "auditEvent", "policyVersion", "processedAt"],
     "types": { "mode": "string", "reportOnly": "boolean", "passed": "boolean", "policyVersion": "string" }
   },
   "errors": [],
   "fixtures": {
     "dir": "fixtures/golden",
     "requestPath": "request",
-    "valid": ["all-clear.json", "quality-regressed.json", "source-changed.json", "source-stale.json", "source-unreachable.json", "digest-must-be-real.json"],
+    "valid": ["all-clear.json", "quality-regressed.json", "source-changed.json", "source-stale.json", "source-unreachable.json", "digest-must-be-real.json", "traceid-correlation.json"],
     "errorCases": []
   }
 }
