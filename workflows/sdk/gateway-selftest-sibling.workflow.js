@@ -61,7 +61,7 @@ const overview = sticky(
   'keyword urgency classification) and returns an acknowledgement. Not active (Execute Workflow calls by id ' +
   'regardless of active state). The real business siblings get the same executeWorkflowTrigger per-repo.',
   [calledByGateway, handleRoutedRequest],
-  { color: 5 }
+  { name: 'gateway-selftest-sibling overview', color: 5 }
 );
 
 export default workflow('gateway-selftest-sibling', 'Portfolio - Gateway Selftest Sibling')
