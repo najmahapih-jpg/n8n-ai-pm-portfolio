@@ -24,6 +24,14 @@ const signed2 = buildSignedRequest('rag', { query: 'x' }, { signingSecret: 'test
 check('signing is deterministic', signed.signature === signed2.signature);
 check('a different secret changes the signature', buildSignedRequest('rag', { query: 'x' }, { signingSecret: 'other', requestId: 'r1', timestamp: '1700000000' }).signature !== signed.signature);
 
+// (B) FORWARD: an opts.traceId is added to the envelope BEFORE signing — present in the exact signed bytes, and the
+// signature covers it (recomputed independently). When traceId is ABSENT the bytes are byte-identical to before.
+const signedTrace = buildSignedRequest('rag', { query: 'x' }, { signingSecret: 'test-secret', requestId: 'r1', timestamp: '1700000000', traceId: 'trace-agent-123' });
+check('traceId is in the exact signed envelope bytes', signedTrace.rawBody === '{"intent":"rag","payload":{"query":"x"},"requestId":"r1","traceId":"trace-agent-123"}', signedTrace.rawBody);
+const expectedSigTrace = 'sha256=' + crypto.createHmac('sha256', 'test-secret').update('1700000000.' + signedTrace.rawBody).digest('hex');
+check('signature covers the traceId-bearing body (independent HMAC)', signedTrace.signature === expectedSigTrace);
+check('absent traceId -> byte-identical envelope (no behavior change)', signed.rawBody === '{"intent":"rag","payload":{"query":"x"},"requestId":"r1"}');
+
 // (2)+(3) makeGatewayCallTool — request wiring + response parsing, via a stub fetch that captures the request.
 const cannedRag = { ok: true, traceId: 'gw-agent-0001', intent: 'rag', routedTo: ['rag'], result: { mode: 'live', executed: true, fanout: false, perTarget: [{ target: 'rag', result: { statusCode: 200, response: { ok: true, abstained: true, answer: null, citations: [], passed: true } } }] } };
 let captured = null;
@@ -60,6 +68,22 @@ const stCalls = [];
 const stFetch = async (_url, init) => { stCalls.push(init.body); return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { executed: true, perTarget: [{ target: 'support-triage', result: { statusCode: 200, response: { routingTeam: 'x' } } }] } }) }; };
 await makeGatewayCallTool({ gatewayUrl: 'http://gw.local/x', signingSecret: 's', fetchImpl: stFetch })('support-triage', { subject: 's' });
 check('non-rag: 1 call, no retrievalSource', stCalls.length === 1 && !/retrievalSource/.test(stCalls[0]), stCalls[0]);
+
+// (B)+(C) traceId end-to-end via the tool factory: an opts.traceId is signed into the POST body (forwarded to the
+// gateway), AND the gateway's RESPONSE traceId is captured onto the tool result (so the agent's trajectory step can
+// correlate to the gateway/sibling run). A non-rag intent is used so the body is a single, exact signed envelope.
+let traceBody = null;
+const traceFetch = async (_url, init) => { traceBody = init.body; return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, traceId: 'gw-echoed-123', result: { executed: true, perTarget: [{ target: 'support-triage', result: { statusCode: 200, response: { routingTeam: 'x' } } }] } }) }; };
+const traceOut = await makeGatewayCallTool({ gatewayUrl: 'http://gw.local/x', signingSecret: 's', fetchImpl: traceFetch, now: () => 1700000000, makeRequestId: () => 'r1', traceId: 'trace-agent-123' })('support-triage', { subject: 's' });
+check('(B) agent traceId is in the signed POST body', traceBody === '{"intent":"support-triage","payload":{"subject":"s"},"requestId":"r1","traceId":"trace-agent-123"}', traceBody);
+check('(C) gateway response traceId captured on result.traceId', traceOut.traceId === 'gw-echoed-123', 'traceId=' + traceOut.traceId);
+check('(C) gateway response traceId also on data.traceId', traceOut.data.traceId === 'gw-echoed-123', 'data.traceId=' + traceOut.data.traceId);
+// No agent traceId -> the body omits traceId (byte-identical to the pre-feature envelope); a captured response traceId is null when none echoed.
+let noTraceBody = null;
+const noTraceFetch = async (_url, init) => { noTraceBody = init.body; return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { executed: true, perTarget: [{ target: 'support-triage', result: { statusCode: 200, response: { routingTeam: 'x' } } }] } }) }; };
+const noTraceOut = await makeGatewayCallTool({ gatewayUrl: 'http://gw.local/x', signingSecret: 's', fetchImpl: noTraceFetch, now: () => 1700000000, makeRequestId: () => 'r1' })('support-triage', { subject: 's' });
+check('no agent traceId -> body omits traceId (byte-identical envelope)', noTraceBody === '{"intent":"support-triage","payload":{"subject":"s"},"requestId":"r1"}', noTraceBody);
+check('no echoed traceId -> result.traceId null', noTraceOut.traceId === null, 'traceId=' + noTraceOut.traceId);
 
 // (4) failure handling — never a fabricated success.
 const httpErr = await makeGatewayCallTool({ gatewayUrl: 'http://gw.local/x', signingSecret: 's', fetchImpl: async () => ({ ok: false, status: 500, text: async () => 'boom' }) })('rag', {});
