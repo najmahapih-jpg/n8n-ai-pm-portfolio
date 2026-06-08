@@ -302,7 +302,7 @@ const overview = sticky(
   'core, so the deployed copy cannot silently drift. webhook -> normalize -> Agent Loop -> respond. ' +
   'policyVersion autonomous-agent-v0.1.0.',
   [receiveTask, runFromUi, buildDemoTask, normalizeTask, agentLoop, buildResponse, respond],
-  { color: 6 }
+  { name: 'autonomous-agent overview', color: 6 }
 );
 
 export default workflow('autonomous-agent', 'Portfolio - Autonomous Agent')
