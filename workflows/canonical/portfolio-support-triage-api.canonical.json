@@ -1,10 +1,11 @@
 {
-  "id": "portfolio-support-triage-api",
   "name": "Portfolio - Support Triage API",
+  "description": "Local Feishu SupportOps triage: validate tickets, classify/score/route/SLA, escalate, create redacted audit events, optionally notify Feishu, respond.",
+  "active": false,
+  "isArchived": false,
   "nodes": [
     {
-      "id": "e1a9883d-1d50-4aa9-8f0f-f1e7d07c201c",
-      "name": "Sticky Note e1a9883d",
+      "name": "Sticky Note 1",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -19,7 +20,6 @@
       }
     },
     {
-      "id": "674c1ff3-4dcb-490b-b7c0-12168be86db1",
       "name": "Receive Support Ticket",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -35,11 +35,9 @@
         "options": {
           "allowedOrigins": "*"
         }
-      },
-      "webhookId": "242e3f8c-7e37-4b7d-891d-a168f1d73fbf"
+      }
     },
     {
-      "id": "707efc1f-89fa-41a9-a481-0a7b69f7205e",
       "name": "Normalize Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -54,7 +52,6 @@
       }
     },
     {
-      "id": "82c8f577-a74d-4c18-84cf-f44db6405fcd",
       "name": "Validate Required Fields",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -87,7 +84,6 @@
       }
     },
     {
-      "id": "596c3e84-b413-4f6b-a984-17c5bdedbf95",
       "name": "Generate Ticket Metadata",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -102,7 +98,6 @@
       }
     },
     {
-      "id": "9d1cd9f8-09cc-4280-a03d-c35155f107c7",
       "name": "Redact Customer PII",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -117,7 +112,6 @@
       }
     },
     {
-      "id": "f6ed62d1-535f-41d0-b181-c528722fdd28",
       "name": "Classify Ticket Category",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -132,7 +126,6 @@
       }
     },
     {
-      "id": "8518e5f2-179e-4d97-a2f7-26fa9dbb0f55",
       "name": "Score Urgency",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -147,7 +140,6 @@
       }
     },
     {
-      "id": "29419456-2302-42d6-9195-02edc5d88357",
       "name": "Route Owning Team",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -162,7 +154,6 @@
       }
     },
     {
-      "id": "819f960e-0511-42ea-a7e7-b954eed7f53c",
       "name": "Build SLA Policy",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -177,7 +168,6 @@
       }
     },
     {
-      "id": "a622bcdf-92bd-48be-af7f-1e984c260e41",
       "name": "Escalation Needed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -210,7 +200,6 @@
       }
     },
     {
-      "id": "5818b9ef-4183-49ac-96d0-c23125d3ec3b",
       "name": "Build Escalation Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -225,7 +214,6 @@
       }
     },
     {
-      "id": "81ecd472-9daa-4835-84a9-cd32531fd8ba",
       "name": "Create Escalation Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -240,7 +228,6 @@
       }
     },
     {
-      "id": "f460b0be-8a77-4662-8356-de45fd54cae1",
       "name": "Load Feishu Runtime Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -270,7 +257,6 @@
       }
     },
     {
-      "id": "8340c401-2231-40ef-8261-51c4aa126666",
       "name": "Build Feishu Alert Card",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -285,7 +271,6 @@
       }
     },
     {
-      "id": "24c6a529-5dfa-4554-bb52-0eea77ea26e9",
       "name": "Feishu Enabled?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -318,7 +303,6 @@
       }
     },
     {
-      "id": "75ae44f9-df4e-4ba7-a0aa-219783127aee",
       "name": "Send Feishu Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -357,7 +341,6 @@
       }
     },
     {
-      "id": "1903f028-9e72-431f-a638-f2888e0be67c",
       "name": "Record Feishu Sent",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -372,7 +355,6 @@
       }
     },
     {
-      "id": "b2757a1d-e6dc-4b6e-8df2-7abb89e79177",
       "name": "Build Escalation Customer Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -387,7 +369,6 @@
       }
     },
     {
-      "id": "decfa825-d4dc-4479-b8d7-2fdb9482aaa2",
       "name": "Return Escalation Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -412,7 +393,6 @@
       }
     },
     {
-      "id": "3cad08cd-7ef0-4735-b62e-6fbd533cbf70",
       "name": "Record Feishu Skipped",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -427,7 +407,6 @@
       }
     },
     {
-      "id": "95633a25-8cf6-47c6-afab-ef3c5e329579",
       "name": "Build Standard Handling Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -442,7 +421,6 @@
       }
     },
     {
-      "id": "4f54a0c2-29e1-42b7-a4be-9e1b7177a48a",
       "name": "Create Standard Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -457,7 +435,6 @@
       }
     },
     {
-      "id": "7cf914cf-a6c3-4d60-8caa-494f33d84191",
       "name": "Build Standard Customer Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -472,7 +449,6 @@
       }
     },
     {
-      "id": "f383e1c0-24c0-418e-80c1-70e75e931c88",
       "name": "Return Standard Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -497,7 +473,6 @@
       }
     },
     {
-      "id": "d6c10d76-95f7-4aa0-b459-9ee7f3f0799c",
       "name": "Build Validation Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -512,7 +487,6 @@
       }
     },
     {
-      "id": "689a6a6c-22a9-48f0-abe7-eab2f5fb8152",
       "name": "Return Validation Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -537,7 +511,6 @@
       }
     },
     {
-      "id": "a27ec6a0-04df-43f9-aae8-00f59b591555",
       "name": "Called By Gateway (Execute Workflow)",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
@@ -837,5 +810,14 @@
       ]
     }
   },
-  "settings": {}
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": []
 }
