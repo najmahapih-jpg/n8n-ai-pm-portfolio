@@ -63,7 +63,7 @@ Example:
 - `topK` is clamped to `1..8`; the default is 3. `threshold` is clamped to `0..1`.
 - Idempotency: `requestId` is a caller correlation key only. The workflow performs no writes and does not deduplicate repeated questions.
 - Live retrieval timeout: 60,000 ms for query embedding and 60,000 ms for Supabase RPC. Live generation timeout: 120,000 ms for Ollama chat.
-- Retry behavior: no automatic retry is part of the public contract. Live failures degrade to `supabase-fallback`, `ollama-fallback`, or a clean abstain.
+- Retry behavior: no automatic retry is part of the public contract. Live failures degrade as follows: live Supabase retrieval that returns no rows (unreachable store, empty table, or a failed query embedding) **falls back to the deterministic in-corpus TF-IDF stub retriever** over the committed corpus (labelled `supabase-fallback-stub`) so the run yields a grounded, cited answer instead of a false abstain; live generation that returns no text degrades to the deterministic stub grounded extract (`ollama-fallback`). A true retrieval miss (no chunk clears the threshold on the chosen retriever) is still a clean abstain.
 - URL override boundary: only trusted operator/test drivers may set `ollamaEmbedUrl`, `ollamaChatUrl`, or `supabaseRpcUrl`; public callers may select `retrievalSource`/`generationSource` but must not choose arbitrary hosts.
 - Rate limiting is not implemented inside the workflow. Public deployment must enforce authentication, request size, rate limits, and replay controls at the gateway/platform layer.
 
@@ -98,7 +98,7 @@ Successful responses return HTTP 200:
     "maxScore": 0.42,
     "threshold": 0.08
   },
-  "retrievalSource": "stub|supabase|supabase-fallback",
+  "retrievalSource": "stub|supabase|supabase-fallback-stub",
   "generationSource": "stub|ollama|ollama-fallback",
   "passed": true,
   "integrity": {
@@ -138,7 +138,7 @@ Missing or empty `query` returns a validation response:
 }
 ```
 
-Live Supabase or Ollama failure must degrade to an abstain or deterministic fallback and label the actual source as `supabase-fallback` or `ollama-fallback`.
+Live Supabase or Ollama failure must degrade to a deterministic fallback and label the actual source truthfully. Live Supabase returning no rows degrades to the deterministic in-corpus TF-IDF stub retriever over the committed corpus, labelled `supabase-fallback-stub`, which produces real `topK`/citations so the run routes to a grounded answer (the portfolio rule: degrade to a deterministic stub, **never to a false abstain**). Live Ollama returning no text degrades to the deterministic stub grounded extract, labelled `ollama-fallback`. A clean abstain occurs only on a genuine retrieval miss (no chunk clears the threshold).
 
 ## External Integrations
 
