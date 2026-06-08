@@ -35,7 +35,11 @@ const STRIP = 'Strip Secrets';
 const ROUTE = 'Resolve Route (422)';
 const COMPOSE = 'Route To Siblings (decision)';
 const BUILD = 'Build Response';
+const PREPARE = 'Prepare Sibling Input';
 const PIPELINE = [NORMALIZE, SIZE, SIGNATURE, STRIP, ROUTE, COMPOSE, BUILD];
+// Security pipeline up to the route decision; the live-branch (PREPARE) is driven separately below so the
+// otherwise-uncovered traceId forward is gate-protected (finding interaction-gateway-01).
+const SECURITY_THROUGH_ROUTE = [NORMALIZE, SIZE, SIGNATURE, STRIP, ROUTE];
 
 function runNode(name, items, env) {
   const node = nodeByName[name];
@@ -133,6 +137,44 @@ for (const f of files) {
   // route differential is fed the SAME (cleaned) intent the node routed on, so ok AND reason are pinned.
   const coreRoute = resolveRoute(snap[STRIP].gateway.request.intent);
   check(g.id, 'DIFF route == core (ok+reason)', snap[ROUTE].gateway.stages.route.ok === coreRoute.ok && snap[ROUTE].gateway.stages.route.reason === coreRoute.reason);
+}
+
+// --- X3 traceId FORWARD into the in-process sibling payload (live-branch coverage) ---
+// The live-branch nodes (Prepare Sibling Input / Execute Sibling / Merge Sibling Result) are NOT part of the
+// PIPELINE above, so the otherwise-uncovered forward is pinned HERE: drive an accepted, callable request through
+// the security pipeline to the route decision, then through the COMPILED 'Prepare Sibling Input' node, and assert
+// each emitted sibling item carries the gateway's EXISTING traceId both inside the forwarded payload (so a sibling
+// reading body.traceId ?? body.requestId echoes the SAME id back) and at item top level. Uses the deterministic
+// requestId-derived traceId (gw-<requestId>) so the assertion is exact, not just non-empty.
+{
+  const SCEN = 'traceid-forward-to-sibling';
+  const fwdReq = { intent: 'rag', payload: { query: 'what is an AI PM' }, requestId: 'req-fwd-001', timestamp: 1000000, sign: true };
+  const fwdEnv = { GATEWAY_SIGNING_SECRET: 'gateway-test-secret', GATEWAY_NOW_SECONDS: 1000000, GATEWAY_REPLAY_WINDOW_SECONDS: 300, GATEWAY_MAX_BODY_BYTES: 65536 };
+  const expectedTraceId = 'gw-req-fwd-001'; // requestId-derived in Strip Secrets (safe requestId -> gw-<requestId>)
+  let items = [{ json: prepareInput(fwdReq, fwdEnv) }];
+  let routed;
+  let crashed = false;
+  try {
+    for (const stage of SECURITY_THROUGH_ROUTE) { items = runNode(stage, items, fwdEnv); }
+    routed = structuredClone(items[0].json);
+  } catch (e) { check(SCEN, 'security pipeline -> route executes', false, e.message); crashed = true; }
+  if (!crashed) {
+    const gw = routed.gateway;
+    // sanity: the request must be accepted + callable so Prepare Sibling Input emits items at all.
+    check(SCEN, 'request accepted + targetCallable (so live branch runs)', gw.accepted === true && gw.targetCallable === true, 'accepted=' + gw.accepted + ' callable=' + gw.targetCallable);
+    check(SCEN, 'gateway traceId is the requestId-derived id', gw.traceId === expectedTraceId, gw.traceId);
+    const out = runNode(PREPARE, [{ json: routed }], fwdEnv);
+    check(SCEN, 'Prepare Sibling Input emits one item per target', Array.isArray(out) && out.length === (gw.targetIds || []).length, 'emitted ' + (Array.isArray(out) ? out.length : 'n/a'));
+    let allForward = Array.isArray(out) && out.length > 0;
+    for (const it of (Array.isArray(out) ? out : [])) {
+      const p = it.json && it.json.payload;
+      if (!(p && p.traceId === expectedTraceId && p.requestId === expectedTraceId && it.json.traceId === expectedTraceId)) { allForward = false; }
+    }
+    check(SCEN, 'every sibling payload FORWARDS the gateway traceId (payload.traceId + payload.requestId + top-level == ' + expectedTraceId + ')', allForward, JSON.stringify((Array.isArray(out) ? out : []).map((it) => it.json && it.json.payload && it.json.payload.traceId)));
+    // additive guarantee: the existing clean payload fields survive the forward (no field dropped).
+    const first = Array.isArray(out) && out[0] && out[0].json && out[0].json.payload;
+    check(SCEN, 'forward is ADDITIVE (clean payload field query preserved)', !!first && first.query === 'what is an AI PM', first && first.query);
+  }
 }
 
 console.log('');
