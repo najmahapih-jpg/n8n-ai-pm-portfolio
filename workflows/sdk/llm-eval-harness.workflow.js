@@ -94,6 +94,12 @@ const body = source.body ?? source;
 const entrypoint = source.manualExecution === true || body.manualExecution === true ? 'manual' : 'webhook';
 const text = (v) => String(v ?? '').trim();
 
+// Optional correlation id: capture-and-echo only (never generated, so the deterministic offline differential
+// stays reproducible). traceId falls back to requestId when traceId is absent; null when neither is supplied.
+// It is threaded onto runtime.traceId and echoed by the audit event + the main eval response (additive: when
+// absent it is null and changes nothing else — it feeds NO id/hash seed). Not surfaced on the error response.
+const traceId = body.traceId ?? body.requestId ?? null;
+
 // Accept golden cases under a few aliases; each case must carry input + expected to be valid.
 const rawCases = Array.isArray(body.golden) ? body.golden
   : Array.isArray(body.cases) ? body.cases
@@ -253,6 +259,9 @@ return [{
     },
     runtime: {
       entrypoint,
+      // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when absent.
+      // Echoed by Create Redacted Audit Event + Build Eval Response; feeds no id/hash seed (purely additive).
+      traceId,
       // v0.3.0: sutMode:'workflow' routes each case to the LIVE product-feedback sibling.
       // v0.4.0: sutMode:'model' fans out cases x sutModels and calls Ollama per (case,model) — the
       // multi-model bench. A second IF gate downstream ('SUT Mode = Model?') routes it. Anything else
@@ -1443,6 +1452,8 @@ return [{
     ...input,
     auditEvent: {
       auditEventId: 'audit_' + hash(runSeed),
+      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when absent.
+      traceId: input.runtime.traceId ?? null,
       runId: input.run.runId,
       sutMode: input.runtime.sutMode,
       sutModels: input.runtime.sutModels,
@@ -1497,6 +1508,8 @@ return [{
     response: {
       ok: true,
       runId: input.run.runId,
+      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when absent.
+      traceId: input.runtime.traceId ?? null,
       sutMode: input.runtime.sutMode,
       sutModels: input.runtime.sutModels,
       judgeSource: input.judge.source,
