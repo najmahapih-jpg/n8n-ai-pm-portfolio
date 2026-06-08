@@ -4,7 +4,7 @@
   "nodes": [
     {
       "id": "f87240d9-54ed-4ccc-acd1-ba4000c426b1",
-      "name": "Sticky Note f87240d9",
+      "name": "autonomous-agent overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
