@@ -572,7 +572,7 @@ const overview = sticky(
   'generated traceId (the cross-workflow trace metadata the review flagged as absent). policyVersion ' +
   'interaction-gateway-v0.1.0.',
   [receiveSignedRequest, runFromUi, buildDemoRequest, normalizeRequest, enforceBodySize, verifySignature, stripSecrets, resolveRoute, routeToSiblings, buildResponse, respond],
-  { color: 4 }
+  { name: 'interaction-gateway overview', color: 4 }
 );
 
 export default workflow('interaction-gateway', 'Portfolio - Interaction Gateway')
