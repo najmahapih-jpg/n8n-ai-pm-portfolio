@@ -87,6 +87,12 @@ function toReproducibleStubRequest(fixture, fallbackRunId) {
     requestedAt,
     golden: Array.isArray(fixture.golden) ? fixture.golden : []
   };
+  // traceId/requestId capture-and-echo (additive correlation): carry the optional caller-supplied id through
+  // to the reproducible stub request only when the fixture supplies it, so the deterministic Normalize node
+  // surfaces it onto runtime.traceId (echoed by audit + response). Every fixture WITHOUT it keeps traceId:null
+  // additively (proven by the whole-record differential — the only new field is traceId:null).
+  if (fixture.traceId !== undefined) { req.traceId = fixture.traceId; }
+  if (fixture.requestId !== undefined) { req.requestId = fixture.requestId; }
   // Carry a baseline through only if the fixture itself supplies one (none of the golden fixtures do; the
   // baseline fixture is fed separately below). This keeps each fixture's documented behavior intact.
   if (fixture.baseline && typeof fixture.baseline === 'object') { req.baseline = fixture.baseline; req.baselineSource = fixture.baselineSource || 'request'; }
@@ -209,6 +215,16 @@ for (const ff of fixtureFiles) {
   const auditStr = JSON.stringify(final.auditEvent);
   check(ff.id, 'audit omits raw inputs/golden/rationale',
     !/"golden"/.test(auditStr) && !/"input"/.test(auditStr) && !/"expected"/.test(auditStr) && !/"rationale"/.test(auditStr) && !/"output"/.test(auditStr));
+
+  // (e) traceId capture-and-echo (additive correlation): the optional caller-supplied traceId/requestId surfaces
+  // in BOTH the response and the redacted audit event AND on runtime, never generated. When the fixture omits it,
+  // all three must be null (additive — the whole-record differential above proves the absent case keeps its record
+  // otherwise byte-identical; the only new field is traceId:null). The expected value is resolved from the request
+  // (NOT a derived hash), so it also proves traceId feeds no id/hash seed.
+  const expectedTraceId = req.traceId ?? req.requestId ?? null;
+  check(ff.id, 'response.traceId echoes caller (or null when absent)', resp.traceId === expectedTraceId, JSON.stringify(resp.traceId));
+  check(ff.id, 'auditEvent.traceId echoes caller (or null when absent)', final.auditEvent.traceId === expectedTraceId, JSON.stringify(final.auditEvent.traceId));
+  check(ff.id, 'runtime.traceId echoes caller (or null when absent)', final.runtime.traceId === expectedTraceId, JSON.stringify(final.runtime.traceId));
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -262,6 +278,42 @@ function runStubFixtureCompiled(fixture, fallbackRunId) {
   check('calibration-slice', 'HALLUCINATE case fails deterministically', hall && hall.deterministicPassed === false, hall ? String(hall.deterministicPassed) : 'missing');
   const grounded = r.results.find((x) => x.caseId === 'cal-grounded-exact');
   check('calibration-slice', 'grounded-exact case passes', grounded && grounded.passed === true, grounded ? String(grounded.passed) : 'missing');
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// traceId correlation pin: a caller-supplied traceId is echoed (capture-and-echo, never generated) into the
+// response, the redacted audit event, AND runtime; a fixture WITHOUT a traceId carries traceId:null in all three
+// (additive). requestId is the documented fallback. traceId must NOT perturb the requestedAt-derived auditEventId.
+// ---------------------------------------------------------------------------------------------------------
+{
+  const supplied = JSON.parse(readFileSync(join(goldenDir, 'traceid-correlation.json'), 'utf8'));
+  const withReq = toReproducibleStubRequest(supplied, 'traceid-correlation');
+  const withTrace = runCompiledHappy(withReq.req, {}).final;
+  check('pin:traceid', 'supplied traceId echoed in response', withTrace.response.traceId === 'trace-eval-123', JSON.stringify(withTrace.response.traceId));
+  check('pin:traceid', 'supplied traceId echoed in audit event', withTrace.auditEvent.traceId === 'trace-eval-123', JSON.stringify(withTrace.auditEvent.traceId));
+  check('pin:traceid', 'supplied traceId carried on runtime', withTrace.runtime.traceId === 'trace-eval-123', JSON.stringify(withTrace.runtime.traceId));
+
+  // absent traceId -> null in all three surfaces (additive). echo-pass omits it.
+  const bare = toReproducibleStubRequest(JSON.parse(readFileSync(join(goldenDir, 'echo-pass.json'), 'utf8')), 'echo-pass');
+  const noTrace = runCompiledHappy(bare.req, {}).final;
+  check('pin:traceid', 'absent traceId is null in response (additive)', noTrace.response.traceId === null, JSON.stringify(noTrace.response.traceId));
+  check('pin:traceid', 'absent traceId is null in audit event (additive)', noTrace.auditEvent.traceId === null, JSON.stringify(noTrace.auditEvent.traceId));
+  check('pin:traceid', 'absent traceId is null on runtime (additive)', noTrace.runtime.traceId === null, JSON.stringify(noTrace.runtime.traceId));
+
+  // requestId fallback: traceId absent but requestId present -> echoed (proves the ?? requestId fallback). Built
+  // by feeding the SAME echo-pass golden with a requestId, via the reproducible-stub path.
+  const fb = toReproducibleStubRequest({ ...JSON.parse(readFileSync(join(goldenDir, 'echo-pass.json'), 'utf8')), requestId: 'req-eval-789' }, 'echo-pass');
+  const reqFallback = runCompiledHappy(fb.req, {}).final;
+  check('pin:traceid', 'requestId fallback echoed in response when traceId absent', reqFallback.response.traceId === 'req-eval-789', JSON.stringify(reqFallback.response.traceId));
+  check('pin:traceid', 'requestId fallback echoed in audit when traceId absent', reqFallback.auditEvent.traceId === 'req-eval-789', JSON.stringify(reqFallback.auditEvent.traceId));
+
+  // traceId feeds NO id/hash seed: the auditEventId for the SAME run (runId+requestedAt) is identical with and
+  // without a traceId. We compare the supplied-traceId run to the no-traceId run built on the SAME runId+requestedAt.
+  const sameRunNoTrace = toReproducibleStubRequest({ runId: 'traceid-correlation', golden: supplied.golden }, 'traceid-correlation');
+  const noTraceSameRun = runCompiledHappy(sameRunNoTrace.req, {}).final;
+  check('pin:traceid', 'auditEventId unaffected by traceId (no hash seed)',
+    withTrace.auditEvent.auditEventId === noTraceSameRun.auditEvent.auditEventId,
+    withTrace.auditEvent.auditEventId + ' vs ' + noTraceSameRun.auditEvent.auditEventId);
 }
 
 // ---------------------------------------------------------------------------------------------------------
