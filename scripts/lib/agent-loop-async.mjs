@@ -3,7 +3,7 @@
 // (a live LLM) AND an async callTool (the signed gateway). The SYNC runAgentLoop in agent-core is the source of
 // truth — it drives the deployed n8n workflow and is differential-pinned by verify:workflow; this exists only
 // because real LLM + real HTTP tools are async. Keep the two in lockstep (same shape, same guardrails).
-import { TOOL_ALLOWLIST, isUnsafeTask } from './agent-core.mjs';
+import { TOOL_ALLOWLIST, isUnsafeTask, trajectoryStep } from './agent-core.mjs';
 
 export async function runAgentLoopAsync(task, opts = {}) {
   const planner = opts.planner;
@@ -25,7 +25,9 @@ export async function runAgentLoopAsync(task, opts = {}) {
       if (!allowlist.includes(decision.intent)) return { refused: false, stopReason: 'guardrail:non-allowlisted-tool', blockedIntent: decision.intent, trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'non-allowlisted-tool' };
       let result;
       try { result = await callTool(decision.intent, decision.args || {}); } catch (e) { result = { ok: false, summary: 'callTool threw: ' + (e && e.message ? e.message : 'error') }; }
-      trajectory.push({ step, intent: decision.intent, args: decision.args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary });
+      // The gateway tool executor surfaces the captured gateway/sibling traceId on the result; trajectoryStep
+      // records it (additive — null/absent leaves the step shape unchanged). Shared with the sync core so they cannot drift.
+      trajectory.push(trajectoryStep(step, decision.intent, decision.args, result));
       history.push({ intent: decision.intent, result });
       continue;
     }
