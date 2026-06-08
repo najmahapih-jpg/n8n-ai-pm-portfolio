@@ -4,7 +4,7 @@
   "nodes": [
     {
       "id": "6659fef5-90f6-4132-b8f3-3499090d4b45",
-      "name": "Sticky Note 6659fef5",
+      "name": "gateway-selftest-sibling overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
