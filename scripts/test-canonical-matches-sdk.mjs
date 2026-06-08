@@ -7,11 +7,13 @@
 // SDK change) the deploy artifact silently drifts from its source. This gate replicates compile-sdk.mjs's
 // transform EXACTLY, then deep-equals a fresh compile against the committed canonical for each pair.
 //
-// Compile output is non-deterministic in exactly two provably-volatile ways (confirmed empirically):
-//   (a) UUID-format values in id / webhookId / versionId / instanceId fields, and any bare UUID string;
-//   (b) sticky-note node NAMES carry a random hex suffix (e.g. "Sticky Note e4abdcf1").
-// The normalizer below neutralizes ONLY these. It does NOT widen to force a pass: if a pair still differs
-// after this minimal normalization, that is REAL drift and the test fails (exit 1) with a diff. No n8n, no network.
+// Compile output is non-deterministic in exactly one provably-volatile way (confirmed empirically):
+//   (a) UUID-format values in id / webhookId / versionId / instanceId fields, and any bare UUID string.
+// Sticky-note node NAMES are now pinned via a stable `name` in each sticky()'s SDK config, so they compile
+// deterministically and are compared verbatim (a future sticky-name change is now caught by this gate).
+// The normalizer below neutralizes ONLY the volatile ids. It does NOT widen to force a pass: if a pair still
+// differs after this minimal normalization, that is REAL drift and the test fails (exit 1) with a diff. No n8n,
+// no network.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -47,13 +49,11 @@ function compileFromSdk(sdkPath) {
 // --- minimal, provably-volatile-only normalizer (deep) ---
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const VOLATILE_ID_KEYS = new Set(['id', 'webhookId', 'versionId', 'instanceId']);
-const STICKY_NAME_RE = /^Sticky Note [0-9a-f]{6,}$/;
 
 // `key` is the property name this value sits under (undefined for array elements / the root). We normalize:
 //   - string values of keys id/webhookId/versionId/instanceId -> '<volatile-id>'
 //   - any string fully matching the UUID format            -> '<uuid>'
-//   - a NAME string matching the sticky-note hex pattern    -> 'Sticky Note <hex>'
-// Nothing else is touched.
+// Nothing else is touched (sticky-note names are pinned at the SDK and compared verbatim).
 function normalize(value, key) {
   if (Array.isArray(value)) {
     return value.map((v) => normalize(v, undefined));
@@ -68,7 +68,6 @@ function normalize(value, key) {
   if (typeof value === 'string') {
     if (key !== undefined && VOLATILE_ID_KEYS.has(key)) { return '<volatile-id>'; }
     if (UUID_RE.test(value)) { return '<uuid>'; }
-    if (key === 'name' && STICKY_NAME_RE.test(value)) { return 'Sticky Note <hex>'; }
     return value;
   }
   return value;
@@ -114,7 +113,7 @@ for (const pair of PAIRS) {
   const compiledStr = show(normalize(compiled, undefined));
   const canonicalStr = show(normalize(canonical, undefined));
   const equal = compiledStr === canonicalStr;
-  check(pair.name + ': committed canonical == fresh SDK compile (volatile-ids/uuid/sticky-name normalized only)', equal);
+  check(pair.name + ': committed canonical == fresh SDK compile (volatile-ids/uuid normalized only)', equal);
   if (!equal) {
     const diff = firstDiff(compiledStr, canonicalStr);
     if (diff) {
