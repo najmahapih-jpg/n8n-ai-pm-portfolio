@@ -29,7 +29,8 @@ import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import {
   normalizeRequest, stubRetrieve, stubGroundedAnswer, cleanAbstain,
-  enforceCitationIntegrity, buildAuditEvent, buildResponse, buildMissingQueryError, POLICY_VERSION
+  enforceCitationIntegrity, buildAuditEvent, buildResponse, buildMissingQueryError, POLICY_VERSION,
+  stubRetrieveCore, CORPUS
 } from './lib/rag-core.mjs';
 
 // The deployed Code nodes assume n8n's sandbox globals (items, Buffer, $env, require, $). The deterministic
@@ -430,7 +431,95 @@ function runBoth({ req, opts }) {
     withTrace.auditEvent.auditEventId + ' vs ' + noTrace.auditEvent.auditEventId);
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// X4 — LIVE-DEGRADE TO DETERMINISTIC STUB (NOT a false abstain). The 'Map Supabase Retrieval' node is on the
+// LIVE branch (otherwise live-only), so this is the only OFFLINE proof of its degrade behavior. The node now,
+// on EMPTY/unreachable Supabase rows, FALLS BACK to the in-corpus deterministic TF-IDF retriever (the SAME
+// algorithm + corpus as 'Stub Embed + Retrieve' = rag-core.stubRetrieveCore) and returns real topK/citations
+// labelled retrievalSource:'supabase-fallback-stub', so the threshold gate routes to a GROUNDED answer rather
+// than a false abstain. On NON-EMPTY rows it is UNCHANGED (retrievalSource:'supabase', live similarity scores).
+// We extract the COMPILED node jsCode and run it directly, injecting the $('Normalize Request') accessor the
+// live node uses to recover the run context (the deterministic-stub runNode above never needs $).
+// ---------------------------------------------------------------------------------------------------------
+const MAP_SUPABASE = 'Map Supabase Retrieval';
+
+// Run the compiled 'Map Supabase Retrieval' node with the given input rows (the items the live RPC produced)
+// and a Normalize-Request base item the node recovers via $('Normalize Request'). Mirrors n8n's $ accessor.
+function runMapSupabaseRetrieval(rowItems, normalizeJson) {
+  const nodeDef = nodeByName[MAP_SUPABASE];
+  if (!nodeDef) { throw new Error('missing Code node in compiled JSON: ' + MAP_SUPABASE); }
+  if (nodeDef.type !== 'n8n-nodes-base.code') { throw new Error('not a Code node: ' + MAP_SUPABASE); }
+  const $ = (name) => {
+    if (name === NORMALIZE) { return { item: { json: normalizeJson } }; }
+    throw new Error('unexpected $() target in ' + MAP_SUPABASE + ': ' + name);
+  };
+  const fn = new Function('items', 'Buffer', '$env', 'require', '$', nodeDef.parameters.jsCode);
+  return fn(rowItems, Buffer, {}, require, $);
+}
+
+// Build the Normalize base the node recovers (the live path defaults to the supabase retriever + stub generator).
+function supabaseNormalizeBase(query, runId) {
+  const req = { requestId: runId, requestedAt: PINNED_AT, query, retrievalSource: 'supabase' };
+  return normalizeRequest(req, { now: PINNED_AT, requestIdFallback: runId });
+}
+
+// (a) EMPTY live rows -> TF-IDF FALLBACK (NOT abstain). The export-mobile-crash query is a known in-corpus
+// product-support query that the stub retriever grounds on chunk:known-export-mobile-crash.
+{
+  const query = 'the export button crashes on mobile — is this a known issue?';
+  const base = supabaseNormalizeBase(query, 'x4-empty-rows');
+  // The live RPC produced nothing: n8n passes a single empty item (or rows that the node's filter rejects).
+  const out = runMapSupabaseRetrieval([{ json: {} }], base);
+  const ok = Array.isArray(out) && out[0] && out[0].json;
+  check('x4:fallback-empty', 'compiled Map Supabase Retrieval executes on empty rows', !!ok, ok ? '' : 'bad item shape');
+  if (ok) {
+    const j = out[0].json;
+    // retrievalSource label is the new fallback-stub provenance (truthful: live missed, stub grounded), on BOTH
+    // runtime and retrieval. The OLD behavior was 'supabase-fallback' with an empty retrieval -> false abstain.
+    check('x4:fallback-empty', "retrievalSource == 'supabase-fallback-stub' (runtime)", j.runtime.retrievalSource === 'supabase-fallback-stub', j.runtime.retrievalSource);
+    check('x4:fallback-empty', "retrievalSource == 'supabase-fallback-stub' (retrieval)", j.retrieval.retrievalSource === 'supabase-fallback-stub', j.retrieval.retrievalSource);
+    // GROUNDED, not abstain: real topK + retrievedChunks (the eventual citations>0 source), maxScore clears the
+    // stub 0.08 floor for this in-corpus query.
+    check('x4:fallback-empty', 'retrieval.topK is non-empty (citations>0 source, NOT abstain)', Array.isArray(j.retrieval.topK) && j.retrieval.topK.length > 0, String(j.retrieval.topK && j.retrieval.topK.length));
+    check('x4:fallback-empty', 'retrievedChunks is non-empty (grounding text available)', Array.isArray(j.retrievedChunks) && j.retrievedChunks.length > 0, String(j.retrievedChunks && j.retrievedChunks.length));
+    check('x4:fallback-empty', 'threshold == stub 0.08 floor (thresholdOverride null)', j.retrieval.threshold === 0.08, String(j.retrieval.threshold));
+    check('x4:fallback-empty', 'maxScore >= threshold (clears -> grounded, NOT a false abstain)', j.retrieval.maxScore >= j.retrieval.threshold, j.retrieval.maxScore + ' >= ' + j.retrieval.threshold);
+    // The fallback retrieves the EXACT known-issue chunk for the export-mobile-crash query.
+    const ids = j.retrieval.topK.map((c) => c.chunkId);
+    check('x4:fallback-empty', 'topK includes known-export-mobile-crash (in-corpus hit)', ids.includes('known-export-mobile-crash'), ids.join(','));
+    // DIFFERENTIAL: the compiled node's fallback retrieval is BYTE-IDENTICAL to rag-core.stubRetrieveCore over
+    // the SAME corpus/topK/thresholdOverride (proves no algorithm fork — the single source of TF-IDF logic).
+    const core = stubRetrieveCore(query, { corpus: CORPUS, topK: base.runtime.topK, thresholdOverride: base.runtime.thresholdOverride });
+    check('x4:fallback-empty', 'DIFF fallback topK == stubRetrieveCore', eq(j.retrieval.topK, core.topK), 'topK diverges');
+    check('x4:fallback-empty', 'DIFF fallback maxScore/threshold == stubRetrieveCore', j.retrieval.maxScore === core.maxScore && j.retrieval.threshold === core.threshold);
+    check('x4:fallback-empty', 'DIFF fallback retrievedChunks == stubRetrieveCore', eq(j.retrievedChunks, core.retrievedChunks), 'retrievedChunks diverge');
+  }
+}
+
+// (b) NON-EMPTY live rows -> UNCHANGED (retrievalSource 'supabase', live similarity scores, NO fallback).
+{
+  const query = 'the export button crashes on mobile — is this a known issue?';
+  const base = supabaseNormalizeBase(query, 'x4-live-rows');
+  const liveRows = [
+    { json: { id: 'uuid-1', content: 'live chunk one', metadata: { chunkId: 'known-export-mobile-crash', source: 'Internal Product Knowledge Base — Known Issues', url: '' }, similarity: 0.66 } },
+    { json: { id: 'uuid-2', content: 'live chunk two', metadata: { chunkId: 'doc-export-howto', source: 'Internal Product Knowledge Base — Product Docs', url: '' }, similarity: 0.41 } }
+  ];
+  const out = runMapSupabaseRetrieval(liveRows, base);
+  const ok = Array.isArray(out) && out[0] && out[0].json;
+  check('x4:live-rows', 'compiled Map Supabase Retrieval executes on live rows', !!ok, ok ? '' : 'bad item shape');
+  if (ok) {
+    const j = out[0].json;
+    check('x4:live-rows', "retrievalSource == 'supabase' (unchanged, runtime)", j.runtime.retrievalSource === 'supabase', j.runtime.retrievalSource);
+    check('x4:live-rows', "retrievalSource == 'supabase' (unchanged, retrieval)", j.retrieval.retrievalSource === 'supabase', j.retrieval.retrievalSource);
+    // Live similarity scores + the live supabase 0.35 floor (NOT the stub 0.08), proving the clean-hit path is untouched.
+    check('x4:live-rows', 'threshold == supabase 0.35 floor (live path unchanged)', j.retrieval.threshold === 0.35, String(j.retrieval.threshold));
+    check('x4:live-rows', 'maxScore == top live similarity (0.66)', j.retrieval.maxScore === 0.66, String(j.retrieval.maxScore));
+    check('x4:live-rows', 'topK carries the live chunkIds in similarity order', eq(j.retrieval.topK.map((c) => c.chunkId), ['known-export-mobile-crash', 'doc-export-howto']), j.retrieval.topK.map((c) => c.chunkId).join(','));
+    check('x4:live-rows', 'retrievedChunks carry the live content (not corpus)', j.retrievedChunks[0].text === 'live chunk one', j.retrievedChunks[0].text);
+  }
+}
+
 console.log('');
 console.log('rag-workflow behavioral self-test: ' + pass + ' passed, ' + fail + ' failed ('
-  + goldenFixtures.length + ' golden fixtures + headline pins + traceId pins + missing-query, OFFLINE, compiled jsCode + differential vs core)');
+  + goldenFixtures.length + ' golden fixtures + headline pins + traceId pins + missing-query + X4 live-degrade fallback, OFFLINE, compiled jsCode + differential vs core)');
 process.exit(fail > 0 ? 1 : 0);
