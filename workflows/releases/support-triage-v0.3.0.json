@@ -48,7 +48,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const raw = items[0]?.json?.body ?? items[0]?.json ?? {};\nconst normalized = {\n  customerEmail: String(raw.customerEmail ?? raw.email ?? '').trim().toLowerCase(),\n  subject: String(raw.subject ?? raw.title ?? '').trim(),\n  message: String(raw.message ?? raw.description ?? '').trim(),\n  plan: String(raw.plan ?? raw.customerTier ?? 'free').trim().toLowerCase(),\n  receivedAt: String(raw.receivedAt ?? new Date().toISOString()),\n  source: String(raw.source ?? 'webhook').trim().toLowerCase(),\n  accountId: String(raw.accountId ?? raw.customerId ?? '').trim()\n};\n\nconst requiredFields = ['customerEmail', 'subject', 'message'];\nconst missingFields = requiredFields.filter((field) => !normalized[field]);\nconst traceSeed = [normalized.customerEmail, normalized.subject, normalized.receivedAt].join('|');\nlet hash = 0;\nfor (const char of traceSeed) {\n  hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;\n}\nconst traceId = 'trace-' + Math.abs(hash).toString(16).padStart(8, '0');\n\nreturn [{\n  json: {\n    ...normalized,\n    isValid: missingFields.length === 0,\n    missingFields,\n    traceId,\n    normalizedAt: new Date().toISOString()\n  }\n}];"
+        "jsCode": "const raw = items[0]?.json?.body ?? items[0]?.json ?? {};\nconst normalized = {\n  customerEmail: String(raw.customerEmail ?? raw.email ?? '').trim().toLowerCase(),\n  subject: String(raw.subject ?? raw.title ?? '').trim(),\n  message: String(raw.message ?? raw.description ?? '').trim(),\n  plan: String(raw.plan ?? raw.customerTier ?? 'free').trim().toLowerCase(),\n  receivedAt: String(raw.receivedAt ?? new Date().toISOString()),\n  source: String(raw.source ?? 'webhook').trim().toLowerCase(),\n  accountId: String(raw.accountId ?? raw.customerId ?? '').trim()\n};\n\nconst requiredFields = ['customerEmail', 'subject', 'message'];\nconst missingFields = requiredFields.filter((field) => !normalized[field]);\nconst traceSeed = [normalized.customerEmail, normalized.subject, normalized.receivedAt].join('|');\nlet hash = 0;\nfor (const char of traceSeed) {\n  hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;\n}\nconst traceId = raw.traceId ?? raw.requestId ?? ('trace-' + Math.abs(hash).toString(16).padStart(8, '0'));\n\nreturn [{\n  json: {\n    ...normalized,\n    isValid: missingFields.length === 0,\n    missingFields,\n    traceId,\n    normalizedAt: new Date().toISOString()\n  }\n}];"
       }
     },
     {
@@ -509,6 +509,18 @@
           }
         }
       }
+    },
+    {
+      "name": "Called By Gateway (Execute Workflow)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        980
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
     }
   ],
   "connections": {
@@ -780,6 +792,17 @@
         [
           {
             "node": "Return Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called By Gateway (Execute Workflow)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
             "type": "main",
             "index": 0
           }
