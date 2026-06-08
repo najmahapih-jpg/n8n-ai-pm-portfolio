@@ -57,6 +57,14 @@ check('guardrail-max-steps', 'bounded at maxSteps=3', g2.stopReason === 'guardra
 const g3 = runAgentLoop({ text: 'the app is broken' }, { planner: keywordPlanner, callTool: () => ({ ok: false, summary: 'sibling unreachable' }), maxSteps: 4 });
 check('guardrail-no-fabrication', 'tool failure recorded ok:false (not fabricated)', g3.trajectory.length > 0 && g3.trajectory.every((t) => t.ok === false), 'oks=' + JSON.stringify(g3.trajectory.map((t) => t.ok)));
 
+// (C) THREAD — a callTool that returns a gateway/sibling traceId surfaces it on the trajectory step (correlation);
+// a callTool that returns NONE leaves the step shape byte-identical (additive). traceId is NOT scored by the rubric.
+const tcTrace = runAgentLoop({ text: 'how do I export?' }, { planner: keywordPlanner, callTool: () => ({ ok: true, summary: 'ok', traceId: 'gw-trace-789' }), maxSteps: 4 });
+check('traceid-thread', 'gateway traceId recorded on the trajectory step', tcTrace.trajectory.length > 0 && tcTrace.trajectory.every((t) => t.traceId === 'gw-trace-789'), JSON.stringify(tcTrace.trajectory.map((t) => t.traceId)));
+check('traceid-thread', 'traceId does not change the trajectory score', scoreTrajectory(tcTrace, { tools: ['rag'], stopReason: 'finished', refused: false }).passed);
+const tcNone = runAgentLoop({ text: 'how do I export?' }, { planner: keywordPlanner, callTool: () => ({ ok: true, summary: 'ok' }), maxSteps: 4 });
+check('traceid-thread', 'no tool traceId -> step omits traceId (byte-identical, additive)', tcNone.trajectory.every((t) => !('traceId' in t)), JSON.stringify(tcNone.trajectory[0]));
+
 // --- LLM-planner machinery (OFFLINE, with an INJECTED stub chat) — proves the prompt -> parse -> loop -> rubric
 // path with a deterministic chat, so the LIVE script's only new variable is the real LLM's output, not the plumbing.
 // P1: parse robustness — fenced/prose/garbage all yield a SAFE shape; garbage -> no-op finish, never a fabricated call.
@@ -110,5 +118,5 @@ check('llm-classifier', 'routeByClass bug @step1 -> rag', routeByClass('bug', { 
 check('llm-classifier', 'routeByClass bug after rag+triage -> finish', routeByClass('bug', { text: 'x is broken' }, [{ intent: 'rag' }, { intent: 'support-triage' }]).action === 'finish');
 
 console.log('');
-console.log('agent-core self-test: ' + pass + ' passed, ' + fail + ' failed (' + files.length + ' golden tasks + 3 guardrail negatives + LLM-planner machinery [free-form parse/integration/calibration + classifier route], OFFLINE, deterministic)');
+console.log('agent-core self-test: ' + pass + ' passed, ' + fail + ' failed (' + files.length + ' golden tasks + 3 guardrail negatives + traceId-thread + LLM-planner machinery [free-form parse/integration/calibration + classifier route], OFFLINE, deterministic)');
 process.exit(fail > 0 ? 1 : 0);
