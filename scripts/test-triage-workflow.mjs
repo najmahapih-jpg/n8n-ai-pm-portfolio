@@ -344,6 +344,78 @@ for (const file of fixtureFiles) {
     eq(compiled.final.response.missingFields, ['customerEmail', 'subject', 'message']), JSON.stringify(compiled.final.response.missingFields));
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// TRACEID CAPTURE-OR-GENERATE: Normalize echoes a caller-supplied raw.traceId (else raw.requestId); absent
+// both, it FALLS BACK to the deterministic generated 'trace-<hash>'. These cases prove (a) a caller id OVERRIDES
+// the generated hash and surfaces in BOTH the customer response AND the audit event, (b) requestId is the
+// fallback when traceId is absent, (c) traceId wins over requestId when both are present, and (d) EVERY existing
+// pin-data fixture (none of which supply a caller id) keeps its generated 'trace-<hash>' byte-identical — i.e.
+// the change is behavior-preserving for the absent case. Compiled jsCode == core on each.
+// ---------------------------------------------------------------------------------------------------------
+// The local deterministic generator, re-derived here so we can assert the caller id is NOT the generated hash.
+function generatedTraceId(src) {
+  const customerEmail = String(src.customerEmail ?? src.email ?? '').trim().toLowerCase();
+  const subject = String(src.subject ?? src.title ?? '').trim();
+  const receivedAt = String(src.receivedAt ?? PINNED_ISO);
+  const seed = [customerEmail, subject, receivedAt].join('|');
+  let hash = 0;
+  for (const char of seed) { hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0; }
+  return 'trace-' + Math.abs(hash).toString(16).padStart(8, '0');
+}
+
+{
+  // A valid (non-escalated) ticket body, reused as the base for the caller-id cases.
+  const base = { customerEmail: 'casey@example.test', subject: 'Account login help', message: 'I cannot reset my password from the account settings page.', plan: 'pro', receivedAt: '2026-05-27T10:00:00-04:00' };
+  const genId = generatedTraceId(base);
+
+  // (a) caller supplies body.traceId -> it OVERRIDES the generated hash everywhere.
+  {
+    const src = { body: { ...base, traceId: 'trace-wac-123' } };
+    const compiled = runCompiled(src);
+    const core = runTriageCore(src, opts);
+    check('traceId-capture', 'caller traceId differs from generated (precondition)', genId !== 'trace-wac-123', genId);
+    check('traceId-capture', 'compiled normalize traceId == caller id', compiled.snap[NORMALIZE].traceId === 'trace-wac-123', compiled.snap[NORMALIZE].traceId);
+    check('traceId-capture', 'DIFF normalize traceId == core', compiled.snap[NORMALIZE].traceId === core.stages.normalize.traceId, core.stages.normalize.traceId);
+    check('traceId-capture', 'response.traceId == caller id (override)', compiled.final.response.traceId === 'trace-wac-123', compiled.final.response.traceId);
+    check('traceId-capture', 'audit event traceId == caller id (override)', compiled.final.auditEvent.traceId === 'trace-wac-123', compiled.final.auditEvent.traceId);
+    check('traceId-capture', 'whole record == core (caller id threaded everywhere)', eq(blankStamps(compiled.final), blankStamps(core.final)), 'records diverge');
+  }
+
+  // (b) no traceId but body.requestId present -> requestId is the fallback (still overrides the generated hash).
+  {
+    const src = { body: { ...base, requestId: 'req-abc-789' } };
+    const compiled = runCompiled(src);
+    const core = runTriageCore(src, opts);
+    check('requestId-fallback', 'caller requestId differs from generated (precondition)', genId !== 'req-abc-789', genId);
+    check('requestId-fallback', 'compiled normalize traceId == requestId', compiled.snap[NORMALIZE].traceId === 'req-abc-789', compiled.snap[NORMALIZE].traceId);
+    check('requestId-fallback', 'response.traceId == requestId (fallback)', compiled.final.response.traceId === 'req-abc-789', compiled.final.response.traceId);
+    check('requestId-fallback', 'audit event traceId == requestId (fallback)', compiled.final.auditEvent.traceId === 'req-abc-789', compiled.final.auditEvent.traceId);
+    check('requestId-fallback', 'whole record == core', eq(blankStamps(compiled.final), blankStamps(core.final)), 'records diverge');
+  }
+
+  // (c) both present -> traceId wins (precedence ?? body.requestId ??).
+  {
+    const src = { body: { ...base, traceId: 'trace-wins', requestId: 'req-loses' } };
+    const compiled = runCompiled(src);
+    check('traceId-precedence', 'traceId wins over requestId', compiled.final.response.traceId === 'trace-wins', compiled.final.response.traceId);
+  }
+}
+
+// (d) BYTE-IDENTITY GUARDRAIL: every existing pin-data fixture (no caller id) keeps its generated 'trace-<hash>'.
+for (const file of fixtureFiles) {
+  const id = file.replace(/\.json$/, '');
+  const fixture = JSON.parse(readFileSync(join(pinDataDir, file), 'utf8'));
+  const src = fixture.body ?? fixture;
+  // Skip fixtures missing required fields entirely (the empty-ish ones still generate a traceId, so keep all).
+  const expectedGen = generatedTraceId(src);
+  const compiled = runCompiled(fixture);
+  const core = runTriageCore(fixture, opts);
+  const compiledTrace = compiled.snap[NORMALIZE].traceId;
+  const coreTrace = core.stages.normalize.traceId;
+  check(id, 'no caller id -> generated trace-<hash> (compiled == derived)', compiledTrace === expectedGen, compiledTrace + ' vs ' + expectedGen);
+  check(id, 'no caller id -> generated trace-<hash> (compiled == core, byte-identical)', compiledTrace === coreTrace, compiledTrace + ' vs ' + coreTrace);
+}
+
 console.log('');
 console.log('triage-workflow behavioral self-test: ' + pass + ' passed, ' + fail + ' failed ('
   + fixtureFiles.length + ' pin-data fixtures + empty-body, OFFLINE, compiled jsCode + differential vs core)');
