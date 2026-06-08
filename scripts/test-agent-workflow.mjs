@@ -61,6 +61,38 @@ for (const f of files) {
   check(g.id, 'DIFF deployed-loop == agent-core', JSON.stringify(wfRun) === JSON.stringify(coreRun), 'wf=' + wfRun.stopReason + ' core=' + coreRun.stopReason);
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// traceId correlation pin: the FULL compiled chain (Normalize Task -> Agent Loop -> Build Response). A caller-supplied
+// body.traceId is captured-and-echoed (never generated) onto the response body + audit; a request WITHOUT it carries
+// traceId:null (additive). requestId is the documented fallback. traceId feeds NO id/hash seed: the auditEventId is
+// derived only from the trajectory length + stopReason, so it is identical with and without a traceId.
+// ---------------------------------------------------------------------------------------------------------
+async function runChain(rawBody) {
+  const norm = await runNode('Normalize Task', [{ json: { rawBody: JSON.stringify(rawBody) } }]);
+  const loop = await runNode('Agent Loop', [{ json: norm[0].json }]);
+  const built = await runNode('Build Response', [{ json: loop[0].json }]);
+  return built[0].json;
+}
+{
+  const bugBody = { task: { customerEmail: 'dana@example.com', subject: 'Export broken', text: 'the export button is broken and crashes on mobile' } };
+  const withTrace = await runChain(Object.assign({ traceId: 'trace-agent-123' }, bugBody));
+  check('pin:traceid', 'supplied traceId echoed on response body', withTrace.body.traceId === 'trace-agent-123', JSON.stringify(withTrace.body.traceId));
+  check('pin:traceid', 'supplied traceId echoed on audit event', withTrace.audit.traceId === 'trace-agent-123', JSON.stringify(withTrace.audit.traceId));
+
+  const noTrace = await runChain(bugBody);
+  check('pin:traceid', 'absent traceId is null on response (additive)', noTrace.body.traceId === null, JSON.stringify(noTrace.body.traceId));
+  check('pin:traceid', 'absent traceId is null on audit event (additive)', noTrace.audit.traceId === null, JSON.stringify(noTrace.audit.traceId));
+  check('pin:traceid', 'traceId feeds no id/hash seed (auditEventId identical with/without traceId)', withTrace.audit.auditEventId === noTrace.audit.auditEventId, withTrace.audit.auditEventId);
+
+  // requestId fallback: traceId absent but requestId present -> echoed (proves the ?? requestId fallback).
+  const withReqId = await runChain(Object.assign({ requestId: 'req-agent-456' }, bugBody));
+  check('pin:traceid', 'requestId fallback echoed when traceId absent', withReqId.body.traceId === 'req-agent-456' && withReqId.audit.traceId === 'req-agent-456', JSON.stringify(withReqId.body.traceId));
+
+  // traceId precedence: when BOTH traceId and requestId are supplied, traceId wins.
+  const withBoth = await runChain(Object.assign({ traceId: 'trace-wins', requestId: 'req-loses' }, bugBody));
+  check('pin:traceid', 'traceId takes precedence over requestId', withBoth.body.traceId === 'trace-wins', JSON.stringify(withBoth.body.traceId));
+}
+
 // NOTE on guardrail coverage: the deployed jsCode uses its EMBEDDED keywordPlanner, so the non-allowlisted-tool and
 // max-steps guardrails (which need an injected adversarial planner) are proven in verify:agent against agent-core.
 // The DIFFERENTIAL above proves the deployed runAgentLoop is byte-identical to agent-core, so those guardrails
