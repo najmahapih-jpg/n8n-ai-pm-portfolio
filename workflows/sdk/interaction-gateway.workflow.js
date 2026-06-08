@@ -465,13 +465,19 @@ const prepareSiblingInput = node({
 const g = items[0].json.gateway;
 const clean = g.cleanPayload || {};
 const gwMeta = { traceId: g.traceId, intent: g.request.intent, routedTo: g.routedTo, policyVersion: g.policyVersion };
+// FORWARD the gateway's traceId INTO the sibling 'payload' (X3 correlation keystone): a routed sibling captures
+// body.traceId ?? body.requestId, where its body = source.body ?? source resolves to this 'payload' object, so it
+// echoes the SAME gateway traceId back -> the gateway->sibling chain is end-to-end correlatable. We reuse the
+// gateway's EXISTING traceId (never generate a new one) and provide it as requestId too (the ?? requestId
+// fallback). Additive: clean is spread untouched, then traceId/requestId are layered on without dropping fields.
+const siblingPayload = Object.assign({}, clean, { traceId: g.traceId, requestId: g.traceId });
 // Emit ONE item per callable target -> Execute Sibling (mode 'each') invokes each IN-PROCESS; Merge collects
 // per-target. Each item spreads the clean payload at top level (business siblings read e.g. feedbackText) AND
 // keeps a 'payload' key (the selftest sibling reads src.payload) -- one shape, multiple sibling contracts.
 // __targetId drives the dynamic workflowId; __targetName + __gw are re-read after the call. Never rawBody/signature.
 return (g.targetIds || []).map(function (t) {
   return { json: Object.assign({}, clean, {
-    payload: clean,
+    payload: siblingPayload,
     intent: g.request.intent,
     traceId: g.traceId,
     __targetId: t.id,
