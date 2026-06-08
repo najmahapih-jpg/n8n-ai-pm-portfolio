@@ -24,12 +24,21 @@ export const POLICY_VERSION = 'eval-harness-v0.6.0';
 // The node defaults run.requestedAt to new Date().toISOString() when absent; that single timestamp is the
 // only nondeterminism in the deterministic chain. The differential injects the SAME requestedAt into both
 // sides (via opts.now) so the records — and the requestedAt-derived auditEventId — compare byte-identical.
+// It also captures an OPTIONAL correlation id traceId = body.traceId ?? body.requestId ?? null (pure
+// passthrough, never generated) onto runtime.traceId, which buildAuditEvent + buildEvalResponse echo. When
+// absent it is null and changes nothing else (the additive-null contract; it feeds no id/hash seed).
 // ---------------------------------------------------------------------------------------------------------
 export function normalizeEvalRequest(source, opts = {}) {
   source = source ?? {};
   const body = source.body ?? source;
   const entrypoint = source.manualExecution === true || body.manualExecution === true ? 'manual' : 'webhook';
   const text = (v) => String(v ?? '').trim();
+
+  // Optional correlation id: capture-and-echo only (never generated, so the deterministic offline differential
+  // stays reproducible). traceId falls back to requestId when traceId is absent; null when neither is supplied.
+  // It is threaded onto runtime.traceId and echoed by the audit event + the main eval response (additive: when
+  // absent it is null and changes nothing else — it feeds NO id/hash seed). Not surfaced on the error response.
+  const traceId = body.traceId ?? body.requestId ?? null;
 
   const rawCases = Array.isArray(body.golden) ? body.golden
     : Array.isArray(body.cases) ? body.cases
@@ -132,6 +141,9 @@ export function normalizeEvalRequest(source, opts = {}) {
     },
     runtime: {
       entrypoint,
+      // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when absent.
+      // Echoed by Create Redacted Audit Event + Build Eval Response; feeds no id/hash seed (purely additive).
+      traceId,
       sutMode: sutMode === 'workflow' || sutMode === 'model' ? sutMode : 'stub',
       requestedSutMode: sutMode,
       sutModels,
@@ -500,6 +512,8 @@ export function buildAuditEvent(input, opts = {}) {
     ...input,
     auditEvent: {
       auditEventId: 'audit_' + hash(runSeed),
+      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when absent.
+      traceId: input.runtime.traceId ?? null,
       runId: input.run.runId,
       sutMode: input.runtime.sutMode,
       sutModels: input.runtime.sutModels,
@@ -539,6 +553,8 @@ export function buildEvalResponse(input, opts = {}) {
     response: {
       ok: true,
       runId: input.run.runId,
+      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when absent.
+      traceId: input.runtime.traceId ?? null,
       sutMode: input.runtime.sutMode,
       sutModels: input.runtime.sutModels,
       judgeSource: input.judge.source,
