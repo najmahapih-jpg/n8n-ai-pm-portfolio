@@ -4,7 +4,7 @@
   "nodes": [
     {
       "id": "563b80b8-cdd1-4713-a228-9babfff94bf8",
-      "name": "Sticky Note 563b80b8",
+      "name": "llm-eval-harness overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
