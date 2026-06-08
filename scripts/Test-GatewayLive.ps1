@@ -55,7 +55,10 @@ function Invoke-Gateway {
 }
 
 $ts = [string]([System.DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
-$bodyObj = [ordered]@{ intent = "support-triage"; payload = [ordered]@{ subject = "live smoke"; message = "gateway live check" }; requestId = "live-0001" }
+# Route to an ACTIVE callable sibling (rag) so the live in-process route actually executes and we can prove
+# the traceId FORWARD end-to-end. (The prior intent 'support-triage' routes to a sibling kept inactive, so
+# its in-process executeWorkflow fails -> ok:false; that asserted nothing about the live route.)
+$bodyObj = [ordered]@{ intent = "rag"; payload = [ordered]@{ query = "gateway live check: export button broken on mobile" }; requestId = "live-0001" }
 $rawBody = $bodyObj | ConvertTo-Json -Depth 10 -Compress
 $sig = Get-Signature -Ts $ts -RawBody $rawBody -Key $Secret
 
@@ -86,6 +89,13 @@ Assert "response ok:true" ($null -ne $json -and $json.ok -eq $true) ""
 Assert "traceId present + echoed" ($null -ne $json -and -not [string]::IsNullOrWhiteSpace([string]$json.traceId)) ([string]$json.traceId)
 Assert "routedTo present (routing decision)" ($null -ne $json -and $null -ne $json.routedTo) ""
 
+# X3 forward: the gateway's traceId must be FORWARDED into the in-process sibling payload and ECHOED back by
+# the sibling (proves cross-workflow correlation end-to-end, not just the gateway edge).
+Assert "sibling executed in-process" ($null -ne $json -and $null -ne $json.result -and $json.result.executed -eq $true) ""
+$siblingTrace = $null
+try { $siblingTrace = [string]$json.result.perTarget[0].result.response.traceId } catch { }
+Assert "gateway traceId forwarded to + echoed by sibling" (-not [string]::IsNullOrWhiteSpace($siblingTrace) -and $siblingTrace -eq [string]$json.traceId) "sibling=$siblingTrace gw=$([string]$json.traceId)"
+
 # Tampered body -> the DEPLOYED jsCode must reject with 401 (proven live, not just offline).
 $tampered = $rawBody + " "
 try {
@@ -101,5 +111,5 @@ if ($anyFail) {
   exit 1
 }
 
-Write-Host "Live gateway tier passed (deployed edge: valid->200+traceId, tampered->401; routing is decision-only in v0.1.0)."
+Write-Host "Live gateway tier passed (deployed edge: valid->200+traceId, tampered->401; in-process sibling route executes + forwards/echoes traceId)."
 exit 0
