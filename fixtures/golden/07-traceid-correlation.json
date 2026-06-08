@@ -1,0 +1,7 @@
+{
+  "id": "traceid-correlation",
+  "description": "Correlation id: a caller-supplied body.traceId is captured-and-echoed (never generated) onto the agent response + audit, and (in live mode) forwarded to each gateway tool call. The trajectory is a normal 2-step bug route, so the same fixture also scores under the trajectory rubric (traceId feeds NO id/hash seed and is NOT scored).",
+  "traceId": "trace-agent-123",
+  "task": { "customerEmail": "dana@example.com", "subject": "Export broken", "text": "the export button is broken and crashes on mobile" },
+  "expect": { "tools": ["rag", "support-triage"], "stopReason": "finished", "refused": false }
+}
