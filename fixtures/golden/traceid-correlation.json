@@ -1,0 +1,6 @@
+{
+  "id": "traceid-correlation",
+  "description": "Optional caller/gateway-supplied correlation id. A webhook-triggered run carries body.traceId; the monitor CAPTURES-AND-ECHOES it (never generated) onto runtime.traceId and into both the redacted audit event and the run-output record. It feeds NO id/hash/digest seed and is kept OUT of the digest prose (digest-integrity safe). traceId falls back to requestId when absent, and is null on a bare schedule run. Additive: every other field stays byte-identical to the same run without a traceId.",
+  "request": { "mode": "stub", "runId": "run_traceid-correlation", "asOf": "2026-05-31", "traceId": "trace-drift-123" },
+  "expect": { "driftAny": false, "regressed": false, "changed": 0, "stale": 0, "unreachable": 0, "reembedded": 0, "passed": true, "traceId": "trace-drift-123" }
+}
