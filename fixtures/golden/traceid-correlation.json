@@ -1,0 +1,12 @@
+{
+  "runId": "traceid-correlation",
+  "traceId": "trace-eval-123",
+  "golden": [
+    {
+      "id": "echo-pass",
+      "input": "ping",
+      "expected": "ping",
+      "assertions": { "contains": "ping", "maxLength": 64 }
+    }
+  ]
+}
