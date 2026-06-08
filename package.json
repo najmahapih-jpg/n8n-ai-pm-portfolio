@@ -12,7 +12,7 @@
     "smoke": "pwsh -NoProfile -File ./scripts/Invoke-SmokeTest.ps1",
     "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
     "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 30 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0",
-    "verify:live": "pwsh -NoProfile -File ./scripts/Test-N8nConnection.ps1 && pwsh -NoProfile -File ./scripts/Sync-N8nWorkflowFromSdk.ps1 && pwsh -NoProfile -File ./scripts/Test-EvalHarnessWorkflow.ps1",
+    "verify:live": "pwsh -NoProfile -File ./scripts/Test-N8nConnection.ps1 && pwsh -NoProfile -File ./scripts/Sync-N8nWorkflowFromSdk.ps1 && pwsh -NoProfile -File ./scripts/Reactivate-Workflow.ps1 && pwsh -NoProfile -File ./scripts/Test-EvalHarnessWorkflow.ps1",
     "verify:judge": "pwsh -NoProfile -File ./scripts/Test-LiveJudge.ps1",
     "verify:connected": "pwsh -NoProfile -File ./scripts/Test-ConnectedEval.ps1",
     "verify:connected-rag": "pwsh -NoProfile -File ./scripts/Test-ConnectedRagEval.ps1",
