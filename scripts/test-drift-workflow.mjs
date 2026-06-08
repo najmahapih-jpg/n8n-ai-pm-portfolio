@@ -225,6 +225,67 @@ for (const f of goldenFiles) {
   const auditStr = JSON.stringify(rec.auditEvent);
   check(id, 'audit omits source urls + digest prose (masking)',
     !/"url"/.test(auditStr) && !/"markdown"/.test(auditStr) && !/https?:\/\//.test(auditStr) && !/"sources"/.test(auditStr));
+
+  // (e) traceId capture-and-echo (additive correlation): the optional caller-supplied traceId/requestId surfaces
+  // in the run-output record, the redacted audit event, AND on runtime — never generated. When the fixture omits
+  // it, all three are null (additive — the whole-record differential above proves the absent case keeps its record
+  // otherwise byte-identical; the only new field is traceId:null). The expected value is resolved from the request
+  // (NOT a derived hash), so it also proves traceId feeds no id/hash seed. It is NOT in the digest prose, so it
+  // cannot reach the digest-integrity prose scan (the negatives below still reject independently).
+  const expectedTraceId = req.traceId ?? req.requestId ?? null;
+  check(id, 'record.traceId echoes caller (or null when absent)', rec.traceId === expectedTraceId, JSON.stringify(rec.traceId));
+  check(id, 'auditEvent.traceId echoes caller (or null when absent)', rec.auditEvent.traceId === expectedTraceId, JSON.stringify(rec.auditEvent.traceId));
+  check(id, 'runtime.traceId echoes caller (or null when absent)', compiled.snap[NORMALIZE].runtime.traceId === expectedTraceId, JSON.stringify(compiled.snap[NORMALIZE].runtime.traceId));
+  if (exp.traceId !== undefined) { check(id, 'traceId == ' + JSON.stringify(exp.traceId), rec.traceId === exp.traceId, JSON.stringify(rec.traceId)); }
+  // traceId is kept OUT of the digest prose -> the digest markdown must NOT contain the trace id token.
+  if (expectedTraceId) { check(id, 'traceId absent from digest prose (digest-integrity safe)', !String(rec.digest.markdown || '').includes(String(expectedTraceId)), 'trace id leaked into digest'); }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// traceId correlation pin (additive capture-and-echo, never generated): a WEBHOOK-triggered run carrying
+// body.traceId echoes it into runtime.traceId, the redacted audit event, AND the run-output record. A BARE
+// SCHEDULE run carries traceId:null in all three (the documented "null on schedule runs" guarantee). requestId
+// is the documented fallback. CRITICAL: traceId must NOT perturb the runId/asOf-derived auditEventId (it feeds
+// no id/hash seed) and must NOT leak into the digest prose (so the digest-integrity prose scan never sees it).
+// We feed requests DIRECTLY (no toStubRequest body-wrapper coercion) so the webhook entrypoint is real.
+// ---------------------------------------------------------------------------------------------------------
+{
+  const opts = { now: PINNED_NOW, runIdFallback: 'run_trace' };
+  // (1) webhook-triggered run with a supplied traceId: source.body present -> entrypoint=webhook; body.traceId captured.
+  const webhookReq = { body: { mode: 'stub', runId: 'run_trace', requestedAt: PINNED_NOW, asOf: '2026-05-31', traceId: 'trace-drift-123' } };
+  const wfRun = await runCompiled(webhookReq, {});
+  const wfRec = wfRun.final;
+  check('pin:traceid', 'webhook entrypoint detected', wfRec.entrypoint === 'webhook', wfRec.entrypoint);
+  check('pin:traceid', 'supplied traceId on runtime', wfRun.snap[NORMALIZE].runtime.traceId === 'trace-drift-123', JSON.stringify(wfRun.snap[NORMALIZE].runtime.traceId));
+  check('pin:traceid', 'supplied traceId echoed in run record', wfRec.traceId === 'trace-drift-123', JSON.stringify(wfRec.traceId));
+  check('pin:traceid', 'supplied traceId echoed in audit event', wfRec.auditEvent.traceId === 'trace-drift-123', JSON.stringify(wfRec.auditEvent.traceId));
+  check('pin:traceid', 'traceId NOT in digest prose (digest-integrity safe)', !String(wfRec.digest.markdown || '').includes('trace-drift-123'), 'leaked into digest');
+  check('pin:traceid', 'digest integrity still holds with a traceId present', wfRec.digestIntegrity.passed === true, String(wfRec.digestIntegrity.passed));
+  // differential: webhook run record == core (ts-normalized) — the traceId path is mirrored byte-identically.
+  const wfCore = runCore(webhookReq, opts);
+  check('pin:traceid', 'DIFF webhook record == core (ts-normalized)', eq(blankVolatile(wfRec), blankVolatile(wfCore.record)), 'records diverge');
+
+  // (2) bare SCHEDULE run (no body wrapper, no traceId) -> traceId null in all three surfaces (additive).
+  const bareReq = { mode: 'stub', runId: 'run_trace', requestedAt: PINNED_NOW, asOf: '2026-05-31' };
+  const bareRun = await runCompiled(bareReq, {});
+  const bareRec = bareRun.final;
+  check('pin:traceid', 'bare schedule run -> entrypoint schedule', bareRec.entrypoint === 'schedule', bareRec.entrypoint);
+  check('pin:traceid', 'absent traceId is null on runtime (additive)', bareRun.snap[NORMALIZE].runtime.traceId === null, JSON.stringify(bareRun.snap[NORMALIZE].runtime.traceId));
+  check('pin:traceid', 'absent traceId is null in run record (additive)', bareRec.traceId === null, JSON.stringify(bareRec.traceId));
+  check('pin:traceid', 'absent traceId is null in audit event (additive)', bareRec.auditEvent.traceId === null, JSON.stringify(bareRec.auditEvent.traceId));
+
+  // (3) requestId fallback: traceId absent but requestId present -> echoed (proves the ?? requestId fallback).
+  const fbReq = { body: { mode: 'stub', runId: 'run_trace', requestedAt: PINNED_NOW, asOf: '2026-05-31', requestId: 'req-drift-789' } };
+  const fbRun = await runCompiled(fbReq, {});
+  check('pin:traceid', 'requestId fallback echoed in record when traceId absent', fbRun.final.traceId === 'req-drift-789', JSON.stringify(fbRun.final.traceId));
+  check('pin:traceid', 'requestId fallback echoed in audit when traceId absent', fbRun.final.auditEvent.traceId === 'req-drift-789', JSON.stringify(fbRun.final.auditEvent.traceId));
+
+  // (4) traceId feeds NO id/hash seed: the auditEventId for the SAME run (runId+asOf) is identical with and
+  // without a traceId. The webhook run (with traceId) vs the bare run (without) share runId+asOf, so the
+  // runId/asOf-derived auditEventId must match.
+  check('pin:traceid', 'auditEventId unaffected by traceId (no hash seed)',
+    wfRec.auditEvent.auditEventId === bareRec.auditEvent.auditEventId,
+    wfRec.auditEvent.auditEventId + ' vs ' + bareRec.auditEvent.auditEventId);
 }
 
 // ---------------------------------------------------------------------------------------------------------
