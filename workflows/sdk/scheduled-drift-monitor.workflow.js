@@ -136,6 +136,13 @@ const stubDigestProse = typeof body.stubDigestProse === 'string' ? body.stubDige
 
 // summarySource: the digest prose engine. DEFAULT stub; in live mode default ollama; explicit 'stub' wins.
 const summarySource = text(body.summarySource).toLowerCase() === 'stub' ? 'stub' : (mode === 'live' ? 'ollama' : 'stub');
+
+// Optional correlation id: capture-and-echo only (never generated, so the deterministic offline differential
+// stays reproducible). traceId falls back to requestId when traceId is absent; null when neither is supplied
+// (a bare scheduled run carries none -> null). It is threaded onto runtime.traceId and echoed by the audit
+// event + the run-output record (additive: when absent it is null and changes nothing else — it feeds NO
+// id/hash/digest seed and is kept OUT of the digest prose so the digest-integrity prose scan never sees it).
+const traceId = body.traceId ?? body.requestId ?? null;
 // SSRF GUARD: the *Url overrides below drive server-side POSTs from INSIDE the n8n container. The
 // on-demand webhook is unauthenticated (a public surface), so a caller-supplied URL arriving via the
 // 'webhook' entrypoint is IGNORED — only the trusted 'manual'/'schedule' entrypoints may retarget these
@@ -156,7 +163,7 @@ return [{
       runId: text(body.runId) || ('run_' + Date.now().toString(36)),
       requestedAt: text(body.requestedAt) || new Date().toISOString()
     },
-    runtime: { entrypoint, mode, requestedMode, summarySource, reportOnly, driftThreshold, staleAfterDays, asOf, monitors, aEvalUrl, ragSutUrl, ollamaChatUrl, genModel, userAgent },
+    runtime: { entrypoint, mode, requestedMode, summarySource, reportOnly, driftThreshold, staleAfterDays, asOf, monitors, traceId, aEvalUrl, ragSutUrl, ollamaChatUrl, genModel, userAgent },
     inject: { stubSources, stubQuality, priorBaseline, stubDigestProse },
     sourcePayloadKeys: Object.keys(body)
   }
@@ -561,6 +568,9 @@ return [{
     auditEvent: {
       auditEventId: 'audit_' + hash(runSeed),
       runId: input.request.runId,
+      // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when absent.
+      // It is a string id (not a source url or digest prose), so the masking invariant is unaffected; feeds no id/hash seed.
+      traceId: input.runtime.traceId,
       mode: input.runtime.mode,
       reportOnly: input.runtime.reportOnly,
       evalSource: input.quality.evalSource,
@@ -600,6 +610,10 @@ return [{
   json: {
     runId: input.request.runId,
     entrypoint: input.runtime.entrypoint,
+    // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when absent
+    // (a scheduled run carries none). Surfaced as a structured top-level field only — NOT in the digest prose —
+    // so the digest-integrity prose scan never sees it; feeds no id/hash/digest seed (purely additive).
+    traceId: input.runtime.traceId,
     asOf: input.runtime.asOf,
     mode: input.runtime.mode,
     requestedMode: input.runtime.requestedMode,
