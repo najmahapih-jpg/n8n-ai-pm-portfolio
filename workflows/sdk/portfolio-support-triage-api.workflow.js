@@ -56,7 +56,7 @@ let hash = 0;
 for (const char of traceSeed) {
   hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
 }
-const traceId = 'trace-' + Math.abs(hash).toString(16).padStart(8, '0');
+const traceId = raw.traceId ?? raw.requestId ?? ('trace-' + Math.abs(hash).toString(16).padStart(8, '0'));
 
 return [{
   json: {
