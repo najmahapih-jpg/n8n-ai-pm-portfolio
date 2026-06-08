@@ -4,7 +4,7 @@
   "nodes": [
     {
       "id": "7b2fe09e-35b1-4e8e-99c3-132a1d268404",
-      "name": "Sticky Note 7b2fe09e",
+      "name": "interaction-gateway overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
