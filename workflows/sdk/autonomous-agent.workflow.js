@@ -62,9 +62,14 @@ const maxSteps = num(envGet('AGENT_MAX_STEPS'), 4);
 // agentMode is an opt-in request flag: 'live' runs the real LLM planner + signed gateway tools; default 'stub' is
 // the deterministic, differential-pinned path. A caller can request live; it cannot widen maxSteps (env only).
 const agentMode = (body.agentMode === 'live' || src.agentMode === 'live') ? 'live' : 'stub';
+// Optional correlation id: capture-and-echo only (NEVER generated, so the deterministic offline differential stays
+// reproducible). traceId falls back to requestId when traceId is absent; null when neither is supplied. It is echoed
+// by Build Response + the audit event, forwarded to each gateway tool call (so the sub-sibling captures it via
+// body.traceId), and feeds NO id/hash seed — purely additive (when absent it is null and changes nothing else).
+const traceId = body.traceId != null ? String(body.traceId) : (body.requestId != null ? String(body.requestId) : null);
 const normTask = { subject: String(task.subject || ''), text: String(task.text || task.message || '') };
 const email = task.customerEmail || task.email; if (email) normTask.customerEmail = String(email);
-return [{ json: { task: normTask, config: { maxSteps: maxSteps, agentMode: agentMode }, entrypoint: entrypoint, policyVersion: '${POLICY_VERSION}' } }];`
+return [{ json: { task: normTask, config: { maxSteps: maxSteps, agentMode: agentMode }, traceId: traceId, entrypoint: entrypoint, policyVersion: '${POLICY_VERSION}' } }];`
     }
   }
 });
@@ -95,6 +100,9 @@ const UNSAFE_PATTERNS = [
 ];
 function isUnsafeTask(task) { const text = taskText(task); for (const p of UNSAFE_PATTERNS) { if (p.test(text)) return { unsafe: true, reason: 'refused: destructive / prompt-injection / out-of-scope request' }; } return { unsafe: false }; }
 function synthesize(kind, history) { const parts = history.filter((h) => h.result && h.result.ok).map((h) => h.intent + ':' + (h.result.summary == null ? 'ok' : h.result.summary)); return '[' + kind + '] ' + (parts.length ? parts.join(' | ') : 'no successful tool results'); }
+// Build one trajectory step; the gateway/sibling traceId is recorded ONLY when the tool returned one (additive — a
+// stub tool returns none, so the stub trajectory stays byte-identical). traceId feeds no id/hash + no scoring.
+function trajectoryStep(step, intent, args, result) { const s = { step: step, intent: intent, args: args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary }; if (result.traceId != null) s.traceId = result.traceId; return s; }
 function keywordPlanner(task, history) {
   const text = taskText(task).toLowerCase();
   const called = history.map((h) => h.intent);
@@ -142,7 +150,7 @@ function runAgentLoop(task, opts) {
       let result;
       try { result = callTool(decision.intent, decision.args || {}); } catch (e) { result = { ok: false, summary: 'tool error: ' + e.message }; }
       if (!result || typeof result !== 'object') result = { ok: false, summary: 'tool returned a bad shape' };
-      trajectory.push({ step: step, intent: decision.intent, args: decision.args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary });
+      trajectory.push(trajectoryStep(step, decision.intent, decision.args, result));
       history.push({ intent: decision.intent, result: result });
       continue;
     }
@@ -189,7 +197,11 @@ function summarizeTarget(target, tr) {
 async function gatewayCallOnce(intent, sendArgs, ctx) {
   const crypto = require('crypto');
   const ts = String(Math.floor(Date.now() / 1000)); const requestId = 'agent-node-' + ctx.seq; ctx.seq += 1;
-  const rawBody = JSON.stringify({ intent: intent, payload: sendArgs, requestId: requestId });
+  // (B) FORWARD: the agent's traceId is added to the envelope BEFORE signing (only when present, so a no-traceId run
+  // signs the exact same bytes as before). The gateway captures it via body.traceId and forwards it to the sub-sibling.
+  const envelope = { intent: intent, payload: sendArgs, requestId: requestId };
+  if (ctx.traceId != null) envelope.traceId = ctx.traceId;
+  const rawBody = JSON.stringify(envelope);
   const sig = 'sha256=' + crypto.createHmac('sha256', String(ctx.secret)).update(ts + '.' + rawBody).digest('hex');
   let resp; try { resp = await ctx.helpers.httpRequest({ method: 'POST', url: GATEWAY_URL, body: rawBody, headers: { 'Content-Type': 'text/plain', 'X-Timestamp': ts, 'X-Signature': sig } }); } catch (e) { return { ok: false, summary: 'gateway error: ' + (e && e.message ? e.message : 'failed'), degradedAbstain: false }; }
   let json = resp; if (typeof resp === 'string') { try { json = JSON.parse(resp); } catch (e) { return { ok: false, summary: 'gateway non-JSON', degradedAbstain: false }; } }
@@ -199,7 +211,9 @@ async function gatewayCallOnce(intent, sendArgs, ctx) {
   const r0 = (perTarget.length && perTarget[0].result) ? (perTarget[0].result.response || perTarget[0].result) : null;
   const degradedAbstain = !!(r0 && typeof r0.retrievalSource === 'string' && /-fallback$/.test(r0.retrievalSource) && r0.abstained === true);
   const summary = perTarget.length ? perTarget.map(function (t) { return summarizeTarget(t.target, t.result); }).join(' | ') : 'no result';
-  return { ok: (json && json.ok === true) && executed && siblingsOk, summary: summary, degradedAbstain: degradedAbstain };
+  // (C) THREAD: capture the gateway's RESPONSE traceId (previously discarded) so the trajectory step correlates the
+  // agent's run to the gateway/sibling run. null when the gateway echoed none.
+  return { ok: (json && json.ok === true) && executed && siblingsOk, summary: summary, degradedAbstain: degradedAbstain, traceId: (json && json.traceId != null) ? json.traceId : null };
 }
 async function gatewayCall(intent, args, ctx) {
   // rag tool policy: try LIVE (supabase, real embeddings) first; on a transient *-fallback abstain, retry ONCE with
@@ -217,7 +231,7 @@ async function runAgentLoopLive(task, opts) {
   const maxStepsL = Number.isFinite(opts.maxSteps) ? opts.maxSteps : 4;
   const safe = isUnsafeTask(task);
   if (safe.unsafe) return { refused: true, stopReason: 'refused', reason: safe.reason, trajectory: [], toolCalls: 0, finalAnswer: null, guardrail: 'refusal' };
-  const trajectory = []; const history = []; const ctx = { helpers: opts.helpers, secret: opts.secret, seq: 1 };
+  const trajectory = []; const history = []; const ctx = { helpers: opts.helpers, secret: opts.secret, seq: 1, traceId: opts.traceId != null ? opts.traceId : null };
   for (let step = 1; step <= maxStepsL; step += 1) {
     let label; try { label = await llmClassify(task, opts.helpers); } catch (e) { return { refused: false, stopReason: 'planner-error', reason: (e && e.message ? e.message : 'classify failed'), trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null }; }
     const decision = routeByClass(label, task, history);
@@ -225,7 +239,7 @@ async function runAgentLoopLive(task, opts) {
     if (decision.action === 'call') {
       if (TOOL_ALLOWLIST.indexOf(decision.intent) < 0) return { refused: false, stopReason: 'guardrail:non-allowlisted-tool', blockedIntent: decision.intent, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'non-allowlisted-tool' };
       const result = await gatewayCall(decision.intent, decision.args || {}, ctx);
-      trajectory.push({ step: step, intent: decision.intent, args: decision.args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary });
+      trajectory.push(trajectoryStep(step, decision.intent, decision.args, result));
       history.push({ intent: decision.intent, result: result });
       continue;
     }
@@ -236,18 +250,19 @@ async function runAgentLoopLive(task, opts) {
 const input = items[0].json;
 const mode = (input.config && input.config.agentMode) === 'live' ? 'live' : 'stub';
 const maxSteps = (input.config && input.config.maxSteps) || 4;
+const traceId = input.traceId != null ? input.traceId : null;
 let run; let plannerSource; let toolSource;
 if (mode === 'live') {
   const helpers = (this && this.helpers) ? this.helpers : ((typeof $helpers !== 'undefined') ? $helpers : null);
   const secret = (typeof $env !== 'undefined' && $env) ? $env.GATEWAY_SIGNING_SECRET : undefined;
   if (!helpers || typeof helpers.httpRequest !== 'function') { run = { refused: false, stopReason: 'live-unavailable', reason: 'no httpRequest helper in this runtime', trajectory: [], toolCalls: 0, finalAnswer: null }; }
-  else { run = await runAgentLoopLive(input.task, { maxSteps: maxSteps, helpers: helpers, secret: secret }); }
+  else { run = await runAgentLoopLive(input.task, { maxSteps: maxSteps, helpers: helpers, secret: secret, traceId: traceId }); }
   plannerSource = 'llm:' + LLM_MODEL; toolSource = 'gateway';
 } else {
   run = runAgentLoop(input.task, { planner: keywordPlanner, callTool: stubTools, maxSteps: maxSteps, allowlist: TOOL_ALLOWLIST });
   plannerSource = 'stub'; toolSource = 'stub';
 }
-return [{ json: { run: run, policyVersion: input.policyVersion, plannerSource: plannerSource, toolSource: toolSource } }];`
+return [{ json: { run: run, policyVersion: input.policyVersion, plannerSource: plannerSource, toolSource: toolSource, traceId: traceId } }];`
     }
   }
 });
@@ -262,8 +277,11 @@ const buildResponse = node({
       mode: 'runOnceForAllItems',
       language: 'javaScript',
       jsCode: `const g = items[0].json; const run = g.run;
-const body = { ok: !run.refused, refused: run.refused === true, stopReason: run.stopReason, trajectory: run.trajectory, toolCalls: run.toolCalls, finalAnswer: run.finalAnswer, guardrail: run.guardrail || null, plannerSource: g.plannerSource, toolSource: g.toolSource, policyVersion: g.policyVersion };
-const audit = { auditEventId: 'agent_' + (run.trajectory.length) + '_' + run.stopReason, stopReason: run.stopReason, toolCalls: run.toolCalls, refused: run.refused === true, tools: run.trajectory.map(function (t) { return t.intent; }) };
+// traceId is captured-and-echoed (never generated): the caller's correlation id, echoed on the response + audit and
+// (in live mode) forwarded to each gateway tool call. null when the caller supplied neither traceId nor requestId.
+const traceId = g.traceId != null ? g.traceId : null;
+const body = { ok: !run.refused, refused: run.refused === true, stopReason: run.stopReason, trajectory: run.trajectory, toolCalls: run.toolCalls, finalAnswer: run.finalAnswer, guardrail: run.guardrail || null, plannerSource: g.plannerSource, toolSource: g.toolSource, traceId: traceId, policyVersion: g.policyVersion };
+const audit = { auditEventId: 'agent_' + (run.trajectory.length) + '_' + run.stopReason, stopReason: run.stopReason, toolCalls: run.toolCalls, refused: run.refused === true, tools: run.trajectory.map(function (t) { return t.intent; }), traceId: traceId };
 return [{ json: { statusCode: 200, body: body, audit: audit } }];`
     }
   }
