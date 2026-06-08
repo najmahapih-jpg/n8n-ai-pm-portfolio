@@ -41,6 +41,9 @@ export const POLICY_VERSION = 'supportops-triage-v0.3.0-local-feishu';
 // new Date().toISOString(). normalizedAt is the only unconditional nondeterminism; the differential injects
 // the SAME instant into both sides (via opts.now) so the records compare byte-identical. receivedAt is taken
 // from the request in every golden fixture, so it is deterministic from input.
+// traceId is CAPTURE-OR-GENERATE: it echoes a caller-supplied raw.traceId (else raw.requestId); when the caller
+// supplies neither it FALLS BACK to the deterministic generated 'trace-<hash>' over [email|subject|receivedAt],
+// so requests without a caller id stay byte-identical to the pre-capture behavior (the existing golden fixtures).
 // ---------------------------------------------------------------------------------------------------------
 export function normalizePayload(source, opts = {}) {
   const now = opts.now;
@@ -63,7 +66,7 @@ export function normalizePayload(source, opts = {}) {
   for (const char of traceSeed) {
     hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
   }
-  const traceId = 'trace-' + Math.abs(hash).toString(16).padStart(8, '0');
+  const traceId = raw.traceId ?? raw.requestId ?? ('trace-' + Math.abs(hash).toString(16).padStart(8, '0'));
 
   return {
     ...normalized,
