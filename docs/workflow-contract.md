@@ -26,6 +26,7 @@ Optional fields:
 
 - `requestId`
 - `requestedAt`
+- `traceId`: optional caller/gateway-supplied correlation id. Captured and echoed only (never generated). Falls back to `requestId` when `traceId` is absent, and is `null` when neither is supplied. Echoed onto `runtime.traceId`, the redacted audit event, and the response — on **both** the grounded answer and the clean-abstain paths. It is **not** surfaced on the missing-query error response, and it feeds no id/hash seed and does not affect retrieval, citations, or the abstain decision (purely additive).
 - `topK`: integer, clamped to `1..8`, default `3`
 - `threshold`: optional similarity threshold override, clamped to `0..1`
 - `retrievalSource`: `stub` (default) or `supabase`
@@ -74,6 +75,7 @@ Successful responses return HTTP 200:
 {
   "ok": true,
   "requestId": "req_demo",
+  "traceId": "trace-rag-123",
   "abstained": false,
   "answer": "简体中文答案",
   "note": null,
@@ -114,12 +116,15 @@ Clean abstain shape:
 ```json
 {
   "ok": true,
+  "traceId": "trace-rag-123",
   "abstained": true,
   "answer": null,
   "note": "信息不足,无法回答",
   "citations": []
 }
 ```
+
+`traceId` is `null` when neither `traceId` nor `requestId` was supplied. The missing-query error response does **not** carry `traceId`.
 
 ## Error Contract
 
@@ -180,7 +185,7 @@ The golden fixtures carry test metadata (`id`, `expect*`) alongside the request,
   "contractVersion": "rag-knowledge-assistant-v0.3.0",
   "webhookPath": "webhook/portfolio/rag-knowledge-assistant",
   "request": {
-    "accepted": ["query", "requestId"],
+    "accepted": ["query", "requestId", "traceId"],
     "limits": { "bodyBytes": 32768, "queryChars": 2000 },
     "limitsEnforcedBy": "gateway"
   },
