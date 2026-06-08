@@ -136,6 +136,13 @@ const genModel = text(body.genModel) || 'llama3.2:3b';
 // yields no rows and the run cleanly abstains (supabase-fallback) — never a crash.
 const supabaseRpcUrl = text(body.supabaseRpcUrl) || '__SUPABASE_RPC_URL__';
 
+// Optional correlation id: capture-and-echo only (never generated, so the deterministic offline differential
+// stays reproducible). traceId falls back to requestId when traceId is absent; null when neither is supplied.
+// It is threaded onto runtime.traceId and echoed by the audit event + the grounded AND clean-abstain response
+// paths (both flow through Build Response). Additive: when absent it is null and changes nothing else — it
+// feeds NO id/hash seed and does not affect retrieval/citations/the abstain decision. Not on the 400 error.
+const traceId = body.traceId ?? body.requestId ?? null;
+
 return [{
   json: {
     request: {
@@ -146,6 +153,9 @@ return [{
     validation: { hasQuery },
     runtime: {
       entrypoint,
+      // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when
+      // absent. Echoed by Create Redacted Audit Event + Build Response; feeds no id/hash seed (purely additive).
+      traceId,
       topK,
       // thresholdOverride = the EXPLICIT per-request abstention floor, or null. Each retrieval branch
       // resolves the effective threshold as thresholdOverride ?? <its per-source default> (stub 0.08,
@@ -898,6 +908,8 @@ return [{
     ...input,
     auditEvent: {
       auditEventId: 'audit_' + hash(runSeed),
+      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when absent.
+      traceId: input.runtime.traceId ?? null,
       requestId: input.request.requestId,
       retrievalSource: input.runtime.retrievalSource,
       generationSource: input.runtime.generationSource,
@@ -944,6 +956,9 @@ return [{
     response: {
       ok: true,
       requestId: input.request.requestId,
+      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when
+      // absent. Surfaced on BOTH the grounded answer and the clean-abstain response (this node serves both).
+      traceId: input.runtime.traceId ?? null,
       abstained: gen.abstained === true,
       answer: gen.abstained === true ? null : gen.answer,
       // On abstain, surface the CHINESE 'insufficient information' message (answer stays null); on a
