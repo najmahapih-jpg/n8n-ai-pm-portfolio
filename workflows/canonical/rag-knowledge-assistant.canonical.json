@@ -4,7 +4,7 @@
   "nodes": [
     {
       "id": "6e2eeac3-8a07-4f2a-ae86-b42923dc2b2e",
-      "name": "Sticky Note 6e2eeac3",
+      "name": "rag-knowledge-assistant overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
