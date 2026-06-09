@@ -6,8 +6,9 @@
 // the release silently drifts. This gate catches that. Finding #13 was exactly this scenario.
 //
 // Volatile-only normalization: same as test-canonical-matches-sdk.mjs —
-//   (a) UUID-format values in id / webhookId / versionId / instanceId fields, and any bare UUID string;
-//   (b) sticky-note node NAMES carry a random hex suffix (e.g. "Sticky Note e4abdcf1").
+//   (a) UUID-format values in id / webhookId / versionId / instanceId fields, and any bare UUID string.
+// Sticky-note node NAMES are now pinned via a stable `name` in the SDK config and mirrored verbatim into the
+// canonical and the cut release snapshot, so they are compared verbatim (no name normalization).
 // Nothing else is widened. A structural difference after normalization is REAL drift and exits 1.
 // No n8n, no network.
 import { readFileSync } from 'node:fs';
@@ -29,7 +30,6 @@ const PAIRS = [
 // Mirrors the normalizer in test-canonical-matches-sdk.mjs exactly.
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const VOLATILE_ID_KEYS = new Set(['id', 'webhookId', 'versionId', 'instanceId']);
-const STICKY_NAME_RE = /^Sticky Note [0-9a-f]{6,}$/;
 
 function normalize(value, key) {
   if (Array.isArray(value)) {
@@ -45,7 +45,6 @@ function normalize(value, key) {
   if (typeof value === 'string') {
     if (key !== undefined && VOLATILE_ID_KEYS.has(key)) { return '<volatile-id>'; }
     if (UUID_RE.test(value)) { return '<uuid>'; }
-    if (key === 'name' && STICKY_NAME_RE.test(value)) { return 'Sticky Note <hex>'; }
     return value;
   }
   return value;
@@ -90,7 +89,7 @@ for (const pair of PAIRS) {
   const releaseStr = show(normalize(release, undefined));
   const canonicalStr = show(normalize(canonical, undefined));
   const equal = releaseStr === canonicalStr;
-  check(pair.name + ': committed release == canonical (volatile-ids/uuid/sticky-name normalized only)', equal);
+  check(pair.name + ': committed release == canonical (volatile-ids/uuid normalized only)', equal);
   if (!equal) {
     const diff = firstDiff(releaseStr, canonicalStr);
     if (diff) {
