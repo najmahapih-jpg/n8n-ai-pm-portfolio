@@ -4,7 +4,7 @@
   "nodes": [
     {
       "id": "e674fc99-ef5a-4549-bc8e-ba6916779457",
-      "name": "Sticky Note e674fc99",
+      "name": "scheduled-drift-monitor overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
