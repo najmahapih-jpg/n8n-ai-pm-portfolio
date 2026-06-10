@@ -18,6 +18,22 @@ explicitly pointed to.
 > secret scan + node-floor + registry freshness) is green. Built **eval-first**: the requirement
 > spec, eval plan, and ADR were authored before any node.
 
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static     # offline gate: secret scan, JSON shape, registry freshness
+npm run verify:workflow   # pin-data behavioral regression (deterministic fallback path, no n8n)
+npm run verify:release    # release snapshot integrity
+npm run smoke             # fixture smoke pass
+```
+
+Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. To run it
+live (optional), import `workflows/canonical/product-feedback-intelligence.canonical.json` into your
+n8n, copy `.env.example` → `.env`, then `npm run verify:live`.
+
 ## Why this project (AI-PM framing)
 
 Turning unstructured user feedback into actionable roadmap signal is the canonical AI-PM job.
