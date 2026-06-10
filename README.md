@@ -10,6 +10,18 @@ test — asserting the workflow still honors its published request/response inte
 > (standard-path responses omit the contract-required `feishuDelivery`). Adopted by **1 of 6** sibling
 > contracts so far (support-triage, the reference target).
 
+## Quickstart (offline, zero config)
+
+Prereqs: just [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`). Zero npm dependencies — nothing to install.
+
+```bash
+npm run verify:self        # 6/6 self-test: every synthetic contract defect is caught
+npm run verify:portfolio   # contract-checks every sibling repo cloned NEXT TO this one
+```
+
+Both are fully offline. Live conformance is opt-in: copy `.env.example` → `.env`, then
+`pwsh ./scripts/Test-Contract.ps1 -Live -RepoPath <sibling>` — it honestly SKIPS when n8n is unreachable.
+
 ## Why
 
 The portfolio's standout signal is *honest-eval discipline*. Each project publishes a contract, but until
