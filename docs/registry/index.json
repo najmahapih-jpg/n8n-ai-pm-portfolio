@@ -54,7 +54,7 @@
         "source-changed"
       ],
       "localOnly": true,
-      "nodeCount": 22,
+      "nodeCount": 23,
       "nodeTypes": [
         "n8n-nodes-base.code",
         "n8n-nodes-base.executeWorkflowTrigger",
