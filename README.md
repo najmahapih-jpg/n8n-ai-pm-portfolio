@@ -19,6 +19,23 @@ subject-under-test, turning the portfolio into a connected system.
 > abstain message. The stub remains the default everywhere CI touches; the live path is proven end-to-end
 > through the deployed webhook (`npm run verify:rag-live`).
 
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static     # offline gate: secret scan, JSON shape, canonical==SDK, differential
+npm run verify:workflow   # golden-fixture behavioral regression (8 cases / 127 assertions, no n8n)
+npm run smoke             # fixture smoke pass
+```
+
+Every gate is **stub-default**: the deterministic TF-IDF retriever over the committed corpus runs
+green with no n8n, no Supabase, no Ollama, no keys. The live retrieval path (Supabase pgvector +
+Ollama embeddings) is opt-in — see **Setup you need to do** below and `docs/supabase-setup.md`;
+note the deploy caveat there (the live workflow carries credential injection, so use the surgical
+deploy path, not a plain canonical sync).
+
 ## What it does
 
 ```
