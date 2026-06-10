@@ -3,7 +3,7 @@
   "name": "Portfolio - Scheduled Drift Monitor",
   "nodes": [
     {
-      "id": "e674fc99-ef5a-4549-bc8e-ba6916779457",
+      "id": "7936f720-d2ca-4aad-af1f-b6a3feee2819",
       "name": "scheduled-drift-monitor overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -19,7 +19,7 @@
       }
     },
     {
-      "id": "01823a91-fcdb-47f7-b747-450e8465224a",
+      "id": "03423559-0979-4f0f-a861-530a3154f372",
       "name": "Run Weekly (Schedule)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
@@ -44,7 +44,7 @@
       }
     },
     {
-      "id": "43c18ffa-0c7c-4ab6-aa59-c76ed134fa3e",
+      "id": "64ab7b1f-24a2-4c80-963a-13956d4bbc8f",
       "name": "Normalize Run Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -59,7 +59,7 @@
       }
     },
     {
-      "id": "3d6bfe0f-2a38-403d-8629-26ce156a3e1a",
+      "id": "dbd8fe99-ee95-4870-887b-455201038b99",
       "name": "Load Prior Baseline",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -74,7 +74,7 @@
       }
     },
     {
-      "id": "2edd7f37-3cad-448d-8d28-16e5da87f0b3",
+      "id": "fcfc8590-2e0a-40f5-9aa0-f89cd3f1fb0b",
       "name": "M1 Collect Sources (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -89,7 +89,7 @@
       }
     },
     {
-      "id": "19bd60f2-f8be-45c3-8912-b8d4c7124e1a",
+      "id": "daf28d28-85e2-4e3a-8958-5b2afff6b1ff",
       "name": "M1 Detect Source Drift",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -104,7 +104,7 @@
       }
     },
     {
-      "id": "4c8f3186-9788-4597-b466-d63db1866039",
+      "id": "3c241390-752d-4814-898a-7c628633f425",
       "name": "M2 Collect Eval Reading (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -119,7 +119,7 @@
       }
     },
     {
-      "id": "403336ca-8545-4796-8916-47282fb41332",
+      "id": "c93f53a1-af99-4b0e-92d5-cf5485ee9812",
       "name": "M2 Detect Quality Drift",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -134,7 +134,7 @@
       }
     },
     {
-      "id": "64e2ad3c-4a8c-4e7c-ac3f-6c6ac2488221",
+      "id": "4fcab9d0-2cbc-4c70-866f-e44811416a3f",
       "name": "Aggregate Run Record",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -149,7 +149,7 @@
       }
     },
     {
-      "id": "36ac0799-805d-4835-ad52-f1008caded23",
+      "id": "9da00c97-7281-4301-bae8-965ace9b7223",
       "name": "Summarize Digest (stub)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -164,7 +164,7 @@
       }
     },
     {
-      "id": "ed248955-eb51-4ef9-a4e0-c5d0b56274ca",
+      "id": "00d71897-80b2-4e41-a269-184fd93a4e44",
       "name": "Enforce Digest Integrity",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -179,7 +179,7 @@
       }
     },
     {
-      "id": "5d6adc56-3400-42c1-bc40-234b482f632f",
+      "id": "dad0c5a8-e07e-4ed7-8ff9-1c9c3b57f875",
       "name": "Create Redacted Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -194,7 +194,7 @@
       }
     },
     {
-      "id": "dc9f98b4-b84d-478f-aa34-27835edb479b",
+      "id": "4beb33fb-2f96-4dca-8323-66d2a1d464cf",
       "name": "Build Run Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -209,7 +209,7 @@
       }
     },
     {
-      "id": "06b2b381-371c-43c5-b3cc-b6ac6ff44d77",
+      "id": "2e81c5f9-27d0-4c88-b83e-200e93ded25d",
       "name": "Webhook Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -243,7 +243,7 @@
       }
     },
     {
-      "id": "24e7785f-343b-4ef8-a6dd-08e8c910d73f",
+      "id": "85386660-dbb9-4957-8917-4026abc52a11",
       "name": "Return Run Record",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -260,7 +260,7 @@
       }
     },
     {
-      "id": "ca8f8bfd-a19d-43a3-81bc-e551bbf02bbe",
+      "id": "d984d617-aa38-4618-a94e-b8269ac36cfb",
       "name": "Manual UI Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -294,7 +294,7 @@
       }
     },
     {
-      "id": "ae089363-49cf-4ba5-a55a-f4f626721b85",
+      "id": "f53916f3-c8b1-4509-97db-12a65229e100",
       "name": "Show Run Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -309,7 +309,7 @@
       }
     },
     {
-      "id": "47c539b2-6deb-45a5-bdf5-77167ef62d30",
+      "id": "6bb4fe34-5629-4769-b6f3-3f31c26cdd9e",
       "name": "Emit Digest Artifact",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -324,7 +324,22 @@
       }
     },
     {
-      "id": "8a4b4168-40a2-416b-8341-810a2a233c59",
+      "id": "415d5124-a771-45e6-99dc-f6deb0eeb691",
+      "name": "Notify Feishu Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4060,
+        440
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Outbound Feishu digest card (custom bot webhook). Reached ONLY on the Emit Digest branch —\n// scheduled runs and gateway-called (Execute Workflow) runs; the on-demand webhook + manual-UI paths\n// respond without notifying, so live webhook test scenarios never spam the group. Reads the webhook\n// URL + optional signing secret from the runner env: unconfigured -> honest SKIP\n// (feishuDelivery.status='skipped'); a live send error -> status='failed' (degrade, never crash —\n// the digest already exists). The card is built DETERMINISTICALLY from the run record (mirrors\n// drift-core.buildFeishuDigestCard; the offline differential proves byte-identity with a stubbed\n// HTTP helper), so the digest-integrity guarantee extends to what lands in the chat.\nconst input = items[0].json;\nconst run = input.run && typeof input.run === 'object' ? input.run : input;\nfunction buildFeishuDigestCard(r) {\n  r = r && typeof r === 'object' ? r : {};\n  const d = r.drift && typeof r.drift === 'object' ? r.drift : { any: false, reasons: [] };\n  const dg = r.digest && typeof r.digest === 'object' ? r.digest : { title: '', markdown: '', summarySource: '' };\n  const integrityPassed = !!(r.digestIntegrity && r.digestIntegrity.passed === true);\n  return {\n    config: { wide_screen_mode: true },\n    header: {\n      template: d.any ? 'red' : 'green',\n      title: { tag: 'plain_text', content: (d.any ? '🚨 检测到漂移' : '✅ 无漂移') + ' · Scheduled Drift Monitor · ' + String(r.asOf || '') }\n    },\n    elements: [\n      { tag: 'markdown', content: String(dg.markdown || '').slice(0, 4000) },\n      { tag: 'hr' },\n      { tag: 'note', elements: [{ tag: 'plain_text', content: 'runId ' + String(r.runId || '') + ' · digestIntegrity ' + (integrityPassed ? 'passed' : 'FAILED') + ' · summarySource ' + String(dg.summarySource || '') }] }\n    ]\n  };\n}\nconst card = buildFeishuDigestCard(run);\nconst url = String($env.FEISHU_BOT_WEBHOOK_URL || '');\nconst secret = String($env.FEISHU_BOT_SIGNING_SECRET || '');\nif (!url) {\n  return [{ json: { ...input, feishuDelivery: { status: 'skipped', reason: 'FEISHU_BOT_WEBHOOK_URL not configured', card } } }];\n}\nconst payload = { msg_type: 'interactive', card };\nif (secret) {\n  // Feishu custom-bot signing: HMAC-SHA256 with key = timestamp + '\\n' + secret over an EMPTY message, base64.\n  const crypto = require('crypto');\n  const ts = String(Math.floor(Date.now() / 1000));\n  payload.timestamp = ts;\n  payload.sign = crypto.createHmac('sha256', ts + '\\n' + secret).update('').digest('base64');\n}\ntry {\n  const res = await this.helpers.httpRequest({ method: 'POST', url, body: payload, json: true });\n  const code = res && typeof res === 'object' && typeof res.code === 'number' ? res.code : null;\n  const ok = code === 0;\n  return [{ json: { ...input, feishuDelivery: { status: ok ? 'sent' : 'failed', code, msg: res && res.msg != null ? String(res.msg).slice(0, 120) : '', card } } }];\n} catch (e) {\n  return [{ json: { ...input, feishuDelivery: { status: 'failed', error: String(e && e.message ? e.message : e).slice(0, 200), card } } }];\n}"
+      }
+    },
+    {
+      "id": "0bf79900-af28-4775-8117-c40830f2f994",
       "name": "Run Demo From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -334,7 +349,7 @@
       ]
     },
     {
-      "id": "431d51a9-54d6-4c9e-a12b-54a858f761ab",
+      "id": "fde8bc9d-4958-4700-9c4c-f828ede34c75",
       "name": "Build Demo Run Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -349,7 +364,7 @@
       }
     },
     {
-      "id": "465b8a33-9e8a-4107-afb2-379564be8802",
+      "id": "98f7e1a7-6569-48ff-b423-a97fd2d8c7c5",
       "name": "Receive Run Request (on-demand)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -366,10 +381,10 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "aa37cf68-32a6-4b87-88f6-84a855f4efe7"
+      "webhookId": "b4337a1a-2156-4097-830c-e47b7c7d845b"
     },
     {
-      "id": "2075221a-3737-44f1-a7d4-f633066df1e0",
+      "id": "aaa2ab0e-8dca-4c8a-8ea2-f906da4e43e6",
       "name": "Called By Gateway (Execute Workflow)",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
@@ -545,6 +560,17 @@
         [
           {
             "node": "Emit Digest Artifact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Digest Artifact": {
+      "main": [
+        [
+          {
+            "node": "Notify Feishu Digest",
             "type": "main",
             "index": 0
           }
