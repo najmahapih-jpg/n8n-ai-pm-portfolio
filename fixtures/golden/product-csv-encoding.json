@@ -1,0 +1,8 @@
+{
+  "id": "product-csv-encoding",
+  "exercises": "known-issue retrieval over the EXPANDED product-support corpus (2026-06-10 growth, 19->34 chunks)",
+  "query": "imported CSV file shows garbled Chinese characters - known issue?",
+  "expectAbstain": false,
+  "expectAnswerContains": [],
+  "expectCiteChunkIds": ["known-import-csv-encoding"]
+}
