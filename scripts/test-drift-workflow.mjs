@@ -29,7 +29,7 @@ import { createRequire } from 'node:module';
 import {
   normalizeRunConfig, loadPriorBaseline, collectSourcesStub, detectSourceDrift,
   collectEvalReadingStub, detectQualityDrift, aggregateRunRecord, summarizeDigestStub,
-  enforceDigestIntegrity, buildAuditEvent, buildRunOutput, POLICY_VERSION
+  enforceDigestIntegrity, buildAuditEvent, buildRunOutput, buildFeishuDigestCard, POLICY_VERSION
 } from './lib/drift-core.mjs';
 
 // The deployed Code nodes assume n8n's sandbox globals (items, Buffer, $env, require) plus `this.helpers` on
@@ -71,6 +71,15 @@ async function runNode(name, items, env) {
   if (!node) { throw new Error('missing Code node in compiled JSON: ' + name); }
   const fn = new AsyncFunction('items', 'Buffer', '$env', 'require', node.parameters.jsCode);
   return await fn(items, Buffer, env || {}, require);
+}
+
+// Same as runNode but with an injected `this.helpers` (n8n's Code-node binding) so a node's live HTTP branch
+// can be exercised offline against a LOCAL stub — used by the Feishu notify scenarios (no network).
+async function runNodeWith(name, items, env, helpers) {
+  const node = nodeByName[name];
+  if (!node) { throw new Error('missing Code node in compiled JSON: ' + name); }
+  const fn = new AsyncFunction('items', 'Buffer', '$env', 'require', node.parameters.jsCode);
+  return await fn.call({ helpers }, items, Buffer, env || {}, require);
 }
 
 let pass = 0;
@@ -353,7 +362,50 @@ for (const neg of [
   }
 }
 
+// FEISHU NOTIFY: the additive outbound card node on the Emit Digest branch (schedule + gateway-called runs;
+// webhook/manual paths never reach it). Offline we prove the WHOLE node with a LOCAL httpRequest stub:
+// (1) unconfigured env -> honest skip, envelope passes through untouched, card == core builder (byte);
+// (2) configured -> POSTs {msg_type:'interactive', card} to the env URL, card byte-identical to the core's;
+// (3) a signing secret attaches timestamp + base64 HMAC sign (Feishu custom-bot scheme);
+// (4) a send error degrades to status='failed' — a notification failure must NEVER crash the run.
+{
+  const id = 'feishu-notify';
+  const FEISHU = 'Notify Feishu Digest';
+  const req = { asOf: '2026-05-31', runId: 'run_feishu', requestedAt: PINNED_NOW };
+  const core = runCore(req, { now: PINNED_NOW, runIdFallback: req.runId });
+  const coreCard = buildFeishuDigestCard(core.record);
+  const envelope = { ok: true, executionMode: 'scheduled', emitted: { artifact: 'artifacts/runs/run_feishu.json', notified: false }, run: core.record };
+
+  const skipOut = await runNode(FEISHU, [{ json: envelope }], {});
+  const skip = skipOut[0].json;
+  check(id, 'unconfigured env -> status=skipped (honest skip)', skip.feishuDelivery && skip.feishuDelivery.status === 'skipped', skip.feishuDelivery && skip.feishuDelivery.status);
+  check(id, 'skip passes the digest envelope through untouched', eq({ ...skip, feishuDelivery: 0 }, { ...envelope, feishuDelivery: 0 }), 'envelope mutated');
+  check(id, 'DIFF card == core buildFeishuDigestCard (byte)', eq(skip.feishuDelivery.card, coreCard), 'cards diverge');
+
+  let captured = null;
+  const okHelpers = { httpRequest: async (opts) => { captured = opts; return { code: 0, msg: 'success' }; } };
+  const sentOut = await runNodeWith(FEISHU, [{ json: envelope }], { FEISHU_BOT_WEBHOOK_URL: 'https://stub.invalid/hook' }, okHelpers);
+  const sent = sentOut[0].json;
+  check(id, 'configured -> status=sent (stubbed code 0)', sent.feishuDelivery.status === 'sent', sent.feishuDelivery.status);
+  check(id, 'POST targets the env webhook URL', captured && captured.url === 'https://stub.invalid/hook', captured && captured.url);
+  check(id, 'payload is an interactive card', captured && captured.body && captured.body.msg_type === 'interactive', captured && captured.body && captured.body.msg_type);
+  check(id, 'DIFF posted card == core card (byte)', captured && eq(captured.body.card, coreCard), 'cards diverge');
+  check(id, 'no secret -> no timestamp/sign fields', captured && !('timestamp' in captured.body) && !('sign' in captured.body), 'unexpected signing fields');
+
+  captured = null;
+  await runNodeWith(FEISHU, [{ json: envelope }], { FEISHU_BOT_WEBHOOK_URL: 'https://stub.invalid/hook', FEISHU_BOT_SIGNING_SECRET: 's3cret' }, okHelpers);
+  const signedBody = captured && captured.body;
+  check(id, 'secret -> timestamp attached', !!(signedBody && typeof signedBody.timestamp === 'string' && signedBody.timestamp.length > 0), signedBody && signedBody.timestamp);
+  check(id, 'secret -> base64 HMAC sign attached', !!(signedBody && typeof signedBody.sign === 'string' && /^[A-Za-z0-9+/]+=*$/.test(signedBody.sign)), signedBody && signedBody.sign);
+
+  const errHelpers = { httpRequest: async () => { throw new Error('feishu unreachable (stub)'); } };
+  const failOut = await runNodeWith(FEISHU, [{ json: envelope }], { FEISHU_BOT_WEBHOOK_URL: 'https://stub.invalid/hook' }, errHelpers);
+  const failed = failOut[0].json;
+  check(id, 'send error -> status=failed (degrade, never crash)', failed.feishuDelivery.status === 'failed', failed.feishuDelivery.status);
+  check(id, 'failure reports the error reason', /unreachable/.test(String(failed.feishuDelivery.error || '')), failed.feishuDelivery.error);
+}
+
 console.log('');
 console.log('drift-workflow behavioral self-test: ' + pass + ' passed, ' + fail + ' failed ('
-  + goldenFiles.length + ' golden/regression fixtures + integrity negatives + safe-degrade, OFFLINE, compiled jsCode + differential vs core)');
+  + goldenFiles.length + ' golden/regression fixtures + integrity negatives + safe-degrade + feishu-notify, OFFLINE, compiled jsCode + differential vs core)');
 process.exit(fail > 0 ? 1 : 0);
