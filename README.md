@@ -16,6 +16,23 @@ as tools**, under guardrails, graded by **agent-trajectory evals**.
 > live: `rag → support-triage` with real routing); **stub stays the default**, differential-pinned. The agent's
 > tools ARE the portfolio, over the signed gateway.
 
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static          # full offline gate (static + json + canonical==SDK + differential)
+npm run verify:agent           # 59-assertion trajectory eval of the pure agent core
+npm run verify:workflow        # compiled n8n node == core, byte-identical run records
+npm run verify:gateway-client  # signed gateway tool client (stubbed fetch)
+```
+
+Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. The live
+tiers are opt-in: `verify:llm` (local Ollama planner) and `verify:tools` (real gateway + siblings) —
+copy `.env.example` → `.env` first. To deploy, import `workflows/canonical/autonomous-agent.canonical.json`
+into your n8n (siblings + interaction-gateway must be deployed first; see the gateway repo).
+
 ## What it is
 
 Given a task, the agent runs a **tool-use loop**: plan → pick a tool (an allowlisted **intent**) → call it →
@@ -48,7 +65,7 @@ tool is never executed) · `max-steps` (bounded loop) · `no-fabricated-result` 
 - Eval plan: [`docs/eval-plan.md`](docs/eval-plan.md)
 - Architecture decision: [`docs/adr/0001-autonomous-agent-architecture.md`](docs/adr/0001-autonomous-agent-architecture.md)
 
-## Next increments
+## Shipped increments (all ✅)
 
 1. ✅ The SDK workflow (the n8n agent loop wrapping the core) + `verify:static` / `verify:json` — **deployed +
    live-verified** (id `fIAHA00y4Rft2BrC`).
