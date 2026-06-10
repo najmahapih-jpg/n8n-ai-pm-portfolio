@@ -8,6 +8,21 @@ Current local n8n workflow ID: `xhZ0XMNvi4LeVWzk`
 
 You can now open the workflow in n8n and click `Execute Workflow` directly. The manual branch starts at `Run Demo Lead From n8n UI`, builds a demo enterprise lead, and ends at `Show UI Execution Result` instead of waiting for the webhook Test URL.
 
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static     # offline gate: secret scan, JSON shape, registry freshness
+npm run verify:workflow   # pin-data behavioral regression (no n8n needed)
+npm run smoke             # fixture smoke pass
+```
+
+Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. To run it
+live (optional), import `workflows/canonical/lead-intelligence.canonical.json` into your n8n, copy
+`.env.example` → `.env`, then `npm run verify:live`.
+
 ## What It Does
 
 The workflow receives a lead intake request, normalizes payload aliases, validates required fields, rejects malformed email, detects duplicates, enriches locally with deterministic company and intent rules, scores ICP fit and buyer intent, assigns a lead grade, routes the owner queue, builds a CRM-ready payload, emits a redacted audit event, and returns a structured response.
