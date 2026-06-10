@@ -17,7 +17,8 @@ npm run verify:feishu     # Feishu notification layer (skips gracefully when unc
 Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. To run it
 live (optional), import `workflows/canonical/portfolio-support-triage-api.canonical.json` into your
 n8n, copy `.env.example` → `.env`, then `npm run verify:live`. Outbound Feishu alerts are documented
-in `docs/feishu-local-setup.md`.
+in `docs/feishu-local-setup.md`. Deploying the **whole connected portfolio** (siblings → gateway →
+agent, with the ID-rewiring step) is covered in `docs/adopt-on-your-n8n.md`.
 
 ## What This Demonstrates
 
