@@ -6,11 +6,26 @@ so each business workflow keeps its clean JSON contract and the gateway owns the
 (HMAC signature, body-size cap, secret-stripping, intent allowlist, trace propagation).
 
 > **Status: implemented v0.4.0 (2026-06-03).** The SDK workflow + pure security core are built and proven
-> OFFLINE: `verify:gateway` (20/20 pure core) and `verify:workflow` (16 golden scenarios / 166 assertions incl. a differential
+> OFFLINE: `verify:gateway` (20/20 pure core) and `verify:workflow` (16 golden scenarios / 171 assertions incl. a differential
 > vs the core, run against the COMPILED jsCode), plus `verify:static` / `verify:json`. **v0.4.0 routes a callable
 > intent IN-PROCESS via dynamic Execute Workflow — incl. MULTI-TARGET FAN-OUT (one intent → N siblings, results
 > per-target)**; proven live vs the real product-feedback SUT + a 2-sibling fan-out. Non-callable intents stay decision-only.
 > **Deployed + live-verified 2026-06-03** (n8n id `YKT4FJmC8Xg2G9hs`, active): `verify:live` passes — valid→200 + echoed `traceId`, tampered→401.
+
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static   # everything offline: secret scan, JSON shape, 20/20 security core,
+                        # 171-assertion compiled-workflow differential, canonical==SDK gate
+```
+
+Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. The live
+tier is opt-in: deploy `workflows/canonical/interaction-gateway.canonical.json` (plus the selftest
+sibling) to your n8n, copy `.env.example` → `.env`, then `npm run verify:live` (signed probe:
+valid→200 + traceId echo, tampered→401). See **Deploying** below.
 
 ## Why generic-signed-webhook first (not Feishu)
 
