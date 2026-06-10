@@ -1,8 +1,8 @@
 {
   "name": "n8n-interaction-gateway",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Generic signed-webhook interaction gateway for the n8n Workflow-as-Code portfolio: one authenticated POST edge that HMAC-verifies, size-limits, secret-strips, and routes a request by allowlisted intent to sibling workflow(s), with trace propagation. v0.1.0 ships the SDK workflow + pure security core, with the security controls + routing DECISION proven OFFLINE (verify:gateway 17/17 + verify:workflow 9 scenarios incl. a differential vs the core). Live Execute-Workflow sibling execution is opt-in (requires each target to expose an executeWorkflowTrigger).",
+  "description": "Generic signed-webhook interaction gateway for the n8n Workflow-as-Code portfolio: one authenticated POST edge that HMAC-verifies, size-limits, secret-strips, and routes a request by allowlisted intent to sibling workflow(s), with trace propagation. v0.4.0 ships the SDK workflow + pure security core proven OFFLINE (verify:gateway 20/20 + verify:workflow 16 golden scenarios incl. a differential vs the core), plus LIVE in-process Execute-Workflow sibling routing — single-target and multi-target fan-out — with all 6 portfolio workflows wired callable via executeWorkflowTrigger and proven end-to-end (verify:live).",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
