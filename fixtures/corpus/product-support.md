@@ -27,3 +27,23 @@ The analytics dashboard has three areas. KPI cards at the top show headline metr
 ### chunk:faq-mobile-support
 The mobile app supports viewing dashboards, reports, and notifications. Some administrative features, including data export, user management, and billing, are available on the desktop web app only and not on mobile.
 > 来源:Internal Product Knowledge Base — Product Docs。检索 2026-06-06
+
+### chunk:known-import-csv-encoding
+Importing a CSV file that is not UTF-8 encoded (for example GBK or GB2312 exports from older spreadsheet tools) shows garbled Chinese characters in the imported records. This is a known issue; an encoding auto-detection fix is planned for version 2.5. Workaround: re-save the file as UTF-8 (in Excel use Save As - CSV UTF-8) before importing. Owning team: product-engineering. Severity: medium.
+> 来源:Internal Product Knowledge Base — Known Issues。检索 2026-06-10
+
+### chunk:known-notification-delay
+Email notifications can be delayed by up to thirty minutes during peak hours. The known cause is queue worker saturation in the notification service; an autoscaling fix is in progress. Workaround: rely on in-app notifications, which are delivered in real time and are not affected. Owning team: platform-infra. Severity: low.
+> 来源:Internal Product Knowledge Base — Known Issues。检索 2026-06-10
+
+### chunk:doc-api-rate-limits
+The public API allows 100 requests per minute per token on the standard plan and 1000 on the enterprise plan. Requests over the limit receive HTTP 429 with a Retry-After header. Integrations should use exponential backoff and batch endpoints where possible; sustained higher throughput requires an enterprise token.
+> 来源:Internal Product Knowledge Base — Product Docs。检索 2026-06-10
+
+### chunk:doc-permissions-roles
+The product has three workspace roles. Admins manage billing, users, and security settings. Editors create and edit dashboards and reports and can run exports. Viewers can view shared dashboards and export the data they can see, but cannot edit. Only an admin can change a member role, and the change takes effect the next time that member signs in.
+> 来源:Internal Product Knowledge Base — Product Docs。检索 2026-06-10
+
+### chunk:doc-data-retention
+Analytics event data is retained for thirteen months on the standard plan and thirty-six months on the enterprise plan; data older than the retention window is dropped from dashboards and exports. When a workspace is deleted, all of its data is permanently purged after a thirty-day grace period and cannot be recovered.
+> 来源:Internal Product Knowledge Base — Product Docs。检索 2026-06-10
