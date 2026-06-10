@@ -12,6 +12,22 @@ drifts**, then emits a human-readable, integrity-checked **digest**.
 It closes the portfolio's connected-projects loop: **A grades B; D keeps B fresh and watches A's grades
 drift over time** — "eval harness → drift dashboard."
 
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static     # offline gate: secret scan, JSON shape, canonical==SDK, differential
+npm run verify:workflow   # behavioral regression of the drift/refresh logic (no n8n)
+npm run verify:release    # release snapshot integrity
+npm run smoke             # fixture smoke pass
+```
+
+Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. To run it
+live (optional), import `workflows/canonical/scheduled-drift-monitor.canonical.json` into your n8n,
+copy `.env.example` → `.env`, then `npm run verify:live` / `npm run verify:drift-live`.
+
 ## Archetype (what makes D different from A, B, and the three originals)
 
 - **Trigger:** the `scheduleTrigger` (cron, default **weekly**) is the production cadence; a
