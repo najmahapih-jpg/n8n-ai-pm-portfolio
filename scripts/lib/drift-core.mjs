@@ -403,6 +403,33 @@ export function buildRunOutput(input, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// (13) buildFeishuDigestCard — mirror of the card-building half of 'Notify Feishu Digest'. Builds the outbound
+// Feishu interactive card DETERMINISTICALLY from the run record (header colour from drift.any, body = the
+// digest markdown the integrity node already verified, footer note = runId + digestIntegrity verdict +
+// summarySource), so the digest-integrity guarantee extends to what lands in the group chat. The SEND half
+// (env gating, optional custom-bot HMAC signing, this.helpers.httpRequest) is live-only and intentionally NOT
+// mirrored — offline, the differential stubs the HTTP helper and proves this card byte-identical instead.
+// ---------------------------------------------------------------------------------------------------------
+export function buildFeishuDigestCard(run) {
+  run = run && typeof run === 'object' ? run : {};
+  const d = run.drift && typeof run.drift === 'object' ? run.drift : { any: false, reasons: [] };
+  const dg = run.digest && typeof run.digest === 'object' ? run.digest : { title: '', markdown: '', summarySource: '' };
+  const integrityPassed = !!(run.digestIntegrity && run.digestIntegrity.passed === true);
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: d.any ? 'red' : 'green',
+      title: { tag: 'plain_text', content: (d.any ? '🚨 检测到漂移' : '✅ 无漂移') + ' · Scheduled Drift Monitor · ' + String(run.asOf || '') }
+    },
+    elements: [
+      { tag: 'markdown', content: String(dg.markdown || '').slice(0, 4000) },
+      { tag: 'hr' },
+      { tag: 'note', elements: [{ tag: 'plain_text', content: 'runId ' + String(run.runId || '') + ' · digestIntegrity ' + (integrityPassed ? 'passed' : 'FAILED') + ' · summarySource ' + String(dg.summarySource || '') }] }
+    ]
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------
 // runStubDrift — convenience composition of the full deterministic stub pipeline. Threads opts.now into the
 // timestamp-bearing stages (Normalize requestedAt fallback, Audit createdAt, Build processedAt) + opts.runIdFallback
 // into Normalize so a full run is reproducible end-to-end. Returns the Build Run Output record plus every
