@@ -2,6 +2,23 @@
 
 Local Workflow-as-Code project for building n8n automations with Codex or Claude through MCP.
 
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static     # offline gate: secret scan, JSON shape, registry freshness
+npm run verify:workflow   # pin-data behavioral regression of support-triage (no n8n)
+npm run smoke             # fixture smoke pass
+npm run verify:feishu     # Feishu notification layer (skips gracefully when unconfigured)
+```
+
+Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. To run it
+live (optional), import `workflows/canonical/portfolio-support-triage-api.canonical.json` into your
+n8n, copy `.env.example` → `.env`, then `npm run verify:live`. Outbound Feishu alerts are documented
+in `docs/feishu-local-setup.md`.
+
 ## What This Demonstrates
 
 - AI-assisted workflow design with template-first research.
