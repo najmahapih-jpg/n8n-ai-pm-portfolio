@@ -26,6 +26,18 @@ function loadEnvFile(path) {
 }
 loadEnvFile(join(here, '..', '.env'));
 
+// Bypass any host proxy for Feishu domains: the SDK's axios honours HTTP(S)_PROXY env vars, and a
+// host-local proxy (e.g. 127.0.0.1:10808) mangles the WS-endpoint POST into a 400. Feishu is
+// directly reachable (domestic), so force NO_PROXY for it — process-scoped, nothing global.
+for (const key of ['NO_PROXY', 'no_proxy']) {
+  const cur = process.env[key] || '';
+  const parts = cur.split(',').map((s) => s.trim()).filter(Boolean);
+  for (const host of ['.feishu.cn', 'open.feishu.cn', 'localhost', '127.0.0.1']) {
+    if (!parts.includes(host)) { parts.push(host); }
+  }
+  process.env[key] = parts.join(',');
+}
+
 const APP_ID = process.env.FEISHU_APP_ID || '';
 const APP_SECRET = process.env.FEISHU_APP_SECRET || '';
 const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:5678/webhook/portfolio/interaction-gateway';
