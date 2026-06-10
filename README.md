@@ -49,6 +49,22 @@ highest-signal AI-PM portfolio artifact.
 > and `verify:live` now asserts both the no-drift (`regressed:false`, all deltas `0`) and the regressed
 > (`regressed:true`, negative `passRateDelta`) cases. No baseline → `regressionDelta:null` (honest).
 
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static     # offline gate: secret scan, JSON shape, canonical==SDK, registry freshness
+npm run verify:workflow   # pin-data behavioral regression of the full grading pipeline (no n8n)
+npm run smoke             # fixture smoke pass
+```
+
+Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network — the
+stub judge makes the whole eval pipeline deterministic. Live tiers are opt-in (`verify:live`,
+`verify:judge`, `verify:connected*`, `verify:bench`): import
+`workflows/canonical/llm-eval-harness.canonical.json` into your n8n and copy `.env.example` → `.env` first.
+
 ## Why this project (AI-PM framing)
 
 Owning **AI quality** is the non-negotiable AI-PM differentiator, and an eval harness is the artifact
