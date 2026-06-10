@@ -720,6 +720,69 @@ return [{
   }
 });
 
+const notifyFeishu = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Notify Feishu Digest',
+    position: [4060, 440],
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `// Outbound Feishu digest card (custom bot webhook). Reached ONLY on the Emit Digest branch —
+// scheduled runs and gateway-called (Execute Workflow) runs; the on-demand webhook + manual-UI paths
+// respond without notifying, so live webhook test scenarios never spam the group. Reads the webhook
+// URL + optional signing secret from the runner env: unconfigured -> honest SKIP
+// (feishuDelivery.status='skipped'); a live send error -> status='failed' (degrade, never crash —
+// the digest already exists). The card is built DETERMINISTICALLY from the run record (mirrors
+// drift-core.buildFeishuDigestCard; the offline differential proves byte-identity with a stubbed
+// HTTP helper), so the digest-integrity guarantee extends to what lands in the chat.
+const input = items[0].json;
+const run = input.run && typeof input.run === 'object' ? input.run : input;
+function buildFeishuDigestCard(r) {
+  r = r && typeof r === 'object' ? r : {};
+  const d = r.drift && typeof r.drift === 'object' ? r.drift : { any: false, reasons: [] };
+  const dg = r.digest && typeof r.digest === 'object' ? r.digest : { title: '', markdown: '', summarySource: '' };
+  const integrityPassed = !!(r.digestIntegrity && r.digestIntegrity.passed === true);
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: d.any ? 'red' : 'green',
+      title: { tag: 'plain_text', content: (d.any ? '🚨 检测到漂移' : '✅ 无漂移') + ' · Scheduled Drift Monitor · ' + String(r.asOf || '') }
+    },
+    elements: [
+      { tag: 'markdown', content: String(dg.markdown || '').slice(0, 4000) },
+      { tag: 'hr' },
+      { tag: 'note', elements: [{ tag: 'plain_text', content: 'runId ' + String(r.runId || '') + ' · digestIntegrity ' + (integrityPassed ? 'passed' : 'FAILED') + ' · summarySource ' + String(dg.summarySource || '') }] }
+    ]
+  };
+}
+const card = buildFeishuDigestCard(run);
+const url = String($env.FEISHU_BOT_WEBHOOK_URL || '');
+const secret = String($env.FEISHU_BOT_SIGNING_SECRET || '');
+if (!url) {
+  return [{ json: { ...input, feishuDelivery: { status: 'skipped', reason: 'FEISHU_BOT_WEBHOOK_URL not configured', card } } }];
+}
+const payload = { msg_type: 'interactive', card };
+if (secret) {
+  // Feishu custom-bot signing: HMAC-SHA256 with key = timestamp + '\\n' + secret over an EMPTY message, base64.
+  const crypto = require('crypto');
+  const ts = String(Math.floor(Date.now() / 1000));
+  payload.timestamp = ts;
+  payload.sign = crypto.createHmac('sha256', ts + '\\n' + secret).update('').digest('base64');
+}
+try {
+  const res = await this.helpers.httpRequest({ method: 'POST', url, body: payload, json: true });
+  const code = res && typeof res === 'object' && typeof res.code === 'number' ? res.code : null;
+  const ok = code === 0;
+  return [{ json: { ...input, feishuDelivery: { status: ok ? 'sent' : 'failed', code, msg: res && res.msg != null ? String(res.msg).slice(0, 120) : '', card } } }];
+} catch (e) {
+  return [{ json: { ...input, feishuDelivery: { status: 'failed', error: String(e && e.message ? e.message : e).slice(0, 200), card } } }];
+}`
+    }
+  }
+});
+
 const returnResponse = node({
   type: 'n8n-nodes-base.respondToWebhook',
   version: 1.5,
@@ -789,7 +852,7 @@ export default workflow('scheduled-drift-monitor', 'Portfolio - Scheduled Drift 
     .onTrue(returnResponse)
     .onFalse(runEntrypointGate
       .onTrue(showRunResult)
-      .onFalse(emitDigest)
+      .onFalse(emitDigest.to(notifyFeishu))
     )
   )
   .add(runFromUi)
