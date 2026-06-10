@@ -1,0 +1,19 @@
+{
+  "name": "n8n-feishu-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Feishu (Lark) long-connection inbound adapter for the n8n Workflow-as-Code portfolio: a small host-side Node service that receives im.message.receive_v1 events over the Feishu WebSocket long connection (no public callback URL needed), maps a chat message to an allowlisted gateway intent, SIGNS the request (HMAC-SHA256, same scheme as the interaction-gateway edge), posts it to the local signed gateway, and replies in the chat with the sibling workflow's result. Pure core (event parsing / intent mapping / signing / reply building) is offline-tested; the WebSocket + HTTP shell is live-only.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "verify:core": "node ./scripts/test-adapter-core.mjs",
+    "adapter:start": "node ./src/adapter.mjs",
+    "verify:connect": "node ./src/adapter.mjs --connect-check"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.66.1"
+  }
+}
