@@ -22,7 +22,7 @@ $webhookUrl = "$base/$($WebhookPath.TrimStart('/'))"
 $secretRules = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot "lib\Secret-Patterns.psd1")
 $rawSecretPatterns = [string[]]$secretRules.RawSecretPatterns
 
-$expectedPolicyVersion = "rag-knowledge-assistant-v0.3.0"
+$expectedPolicyVersion = "rag-knowledge-assistant-v0.4.0"
 $expectedRetrievalSource = "stub"
 $expectedGenerationSource = "stub"
 
