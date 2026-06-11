@@ -80,55 +80,179 @@ export function buildGatewayRequest(requestId, intent, payload, secret, ts) {
   };
 }
 
+function clampText(value, limit) {
+  const s = String(value ?? '').trim();
+  if (s.length <= limit) { return s; }
+  return s.slice(0, Math.max(0, limit - 12)).trimEnd() + '...';
+}
+
+function textPayload(text) {
+  const fallbackText = String(text ?? '');
+  return { msg_type: 'text', content: { text: fallbackText }, fallbackText };
+}
+
+function unwrapFirstTarget(gatewayResponse) {
+  const g = gatewayResponse && typeof gatewayResponse === 'object' ? gatewayResponse : {};
+  const perTarget = g.result && Array.isArray(g.result.perTarget) ? g.result.perTarget : [];
+  return perTarget.length > 0 && perTarget[0] && typeof perTarget[0].result === 'object'
+    ? perTarget[0].result
+    : null;
+}
+
+function unwrapRagRun(first) {
+  if (!first || typeof first !== 'object') { return null; }
+  return first.response && typeof first.response === 'object' ? first.response : first;
+}
+
+function buildRagFallbackText(run, traceId) {
+  const rs = run && run.retrievalSource ? '\n(retrieval ' + String(run.retrievalSource) + ')' : '';
+  const trace = traceId ? '\n(traceId ' + String(traceId) + ')' : '';
+  const abstained = run && (run.abstained === true || (run.answer && run.answer.abstained === true));
+  const answerText = typeof (run && run.answer) === 'string' ? run.answer
+    : (run && run.answer && typeof run.answer.text === 'string' ? run.answer.text : '');
+  const citations = Array.isArray(run && run.citations) ? run.citations
+    : (run && run.answer && Array.isArray(run.answer.citations) ? run.answer.citations : []);
+
+  if (abstained || (!answerText && citations.length === 0)) {
+    return '知识库没有足够的信息回答这个问题(诚实弃答,不编造)。' + rs + trace;
+  }
+  const cites = citations.slice(0, 3).map((c) => {
+    const id = c && (c.chunkId || c.id) ? String(c.chunkId || c.id) : '';
+    const src = c && c.source ? String(c.source) : '';
+    return '- ' + id + (src ? ' — ' + src.slice(0, 60) : '');
+  }).join('\n');
+  return (answerText ? clampText(answerText, 800) : '(检索命中,见引用)')
+    + (cites ? '\n\n引用:\n' + cites : '') + rs + trace;
+}
+
+function buildRagCard(run, traceId) {
+  const abstained = run.abstained === true || (run.answer && run.answer.abstained === true);
+  const answerText = typeof run.answer === 'string' ? run.answer
+    : (run.answer && typeof run.answer.text === 'string' ? run.answer.text : '');
+  const citations = Array.isArray(run.citations) ? run.citations
+    : (run.answer && Array.isArray(run.answer.citations) ? run.answer.citations : []);
+  const retrieval = run.retrieval && typeof run.retrieval === 'object' ? run.retrieval : {};
+  const sourceText = [
+    run.retrievalSource ? 'retrieval: ' + String(run.retrievalSource) : '',
+    run.generationSource ? 'generation: ' + String(run.generationSource) : '',
+    typeof retrieval.maxScore === 'number' ? 'score: ' + retrieval.maxScore : '',
+    typeof retrieval.threshold === 'number' ? 'threshold: ' + retrieval.threshold : '',
+    traceId ? 'traceId: ' + String(traceId) : ''
+  ].filter(Boolean).join(' | ');
+
+  const elements = [];
+  if (abstained) {
+    elements.push({
+      tag: 'div',
+      text: {
+        tag: 'lark_md',
+        content: '**结果**\n当前知识库没有足够证据回答这个问题。系统已诚实弃答,没有生成答案或引用。'
+      }
+    });
+    if (run.note) {
+      elements.push({ tag: 'note', elements: [{ tag: 'plain_text', content: clampText(run.note, 180) }] });
+    }
+  } else {
+    elements.push({
+      tag: 'div',
+      text: {
+        tag: 'lark_md',
+        content: '**回答**\n' + clampText(answerText || '(检索命中,见引用)', 1800)
+      }
+    });
+  }
+
+  if (citations.length > 0) {
+    elements.push({ tag: 'hr' });
+    elements.push({
+      tag: 'div',
+      text: { tag: 'lark_md', content: '**依据来源**' }
+    });
+    for (const [idx, c] of citations.slice(0, 3).entries()) {
+      const id = c && (c.chunkId || c.id) ? String(c.chunkId || c.id) : 'chunk-' + (idx + 1);
+      const source = c && c.source ? String(c.source) : 'unknown source';
+      const quote = c && c.quote ? '\n> ' + clampText(c.quote, 220) : '';
+      const url = c && c.url ? String(c.url) : '';
+      elements.push({
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: String(idx + 1) + '. **' + id + '**\n' + clampText(source, 120) + quote
+        }
+      });
+      if (url) {
+        elements.push({
+          tag: 'action',
+          actions: [{
+            tag: 'button',
+            text: { tag: 'plain_text', content: '打开来源 ' + String(idx + 1) },
+            type: 'default',
+            url
+          }]
+        });
+      }
+    }
+  }
+
+  if (sourceText) {
+    elements.push({ tag: 'hr' });
+    elements.push({ tag: 'note', elements: [{ tag: 'plain_text', content: sourceText }] });
+  }
+
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: abstained ? 'yellow' : 'blue',
+      title: { tag: 'plain_text', content: abstained ? '知识库没有足够信息' : '知识库回答' }
+    },
+    elements
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
-// buildReplyText — turn a gateway response into a short, honest chat reply. Defensive against
-// shape variance; NEVER fabricates content: when the gateway reports a failure it says so, when
-// rag abstains it says so. Returns plain text (the live shell wraps it for the IM API).
+// buildReplyPayload — turn a gateway response into a Feishu message payload. RAG answers become an
+// interactive card for scanability; every branch carries fallbackText so the live shell can degrade
+// to plain text if Feishu rejects the card. The function is pure and offline-testable.
 // ---------------------------------------------------------------------------------------------
-export function buildReplyText(intent, gatewayResponse) {
+export function buildReplyPayload(intent, gatewayResponse) {
   const g = gatewayResponse && typeof gatewayResponse === 'object' ? gatewayResponse : {};
   if (g.ok !== true) {
-    return '⚠️ 请求未通过网关 (status ' + String(g.status ?? '?') + (g.error ? ': ' + String(g.error).slice(0, 120) : '') + ')';
+    return textPayload('请求未通过网关 (status ' + String(g.status ?? '?') + (g.error ? ': ' + String(g.error).slice(0, 120) : '') + ')');
   }
-  const perTarget = g.result && Array.isArray(g.result.perTarget) ? g.result.perTarget : [];
-  const first = perTarget.length > 0 && perTarget[0] && typeof perTarget[0].result === 'object' ? perTarget[0].result : null;
+  const first = unwrapFirstTarget(g);
   const trace = g.traceId ? '\n(traceId ' + String(g.traceId) + ')' : '';
 
   if (!first) {
-    return '✅ 网关已受理 (routedTo ' + JSON.stringify(g.routedTo || []) + ', 未执行目标工作流)' + trace;
+    return textPayload('网关已受理 (routedTo ' + JSON.stringify(g.routedTo || []) + ', 未执行目标工作流)' + trace);
   }
 
   if (intent === 'rag') {
     // Through the gateway, rag's executeWorkflow output is its FULL Build Response record
     // { statusCode, runtime, response: {...}, auditEvent } — the chat-relevant payload lives under
     // .response. Unwrap it (and keep accepting a bare response object for older/direct shapes).
-    const run = first.response && typeof first.response === 'object' ? first.response : first;
-    // Observability: surface which retrieval actually ran (supabase | supabase-fallback-stub | stub)
-    // so a live degrade is visible in the chat reply, mirroring the agent's tool summary.
-    const rs = run.retrievalSource ? '\n(retrieval ' + String(run.retrievalSource) + ')' : '';
-    const abstained = run.abstained === true || (run.answer && run.answer.abstained === true);
-    const answerText = typeof run.answer === 'string' ? run.answer
-      : (run.answer && typeof run.answer.text === 'string' ? run.answer.text : '');
-    const citations = Array.isArray(run.citations) ? run.citations
-      : (run.answer && Array.isArray(run.answer.citations) ? run.answer.citations : []);
-    if (abstained || (!answerText && citations.length === 0)) {
-      return '🤷 知识库没有足够的信息回答这个问题(诚实弃答,不编造)。' + rs + trace;
-    }
-    const cites = citations.slice(0, 3).map((c) => {
-      const id = c && (c.chunkId || c.id) ? String(c.chunkId || c.id) : '';
-      const src = c && c.source ? String(c.source) : '';
-      return '· ' + id + (src ? ' — ' + src.slice(0, 60) : '');
-    }).join('\n');
-    return (answerText ? String(answerText).slice(0, 800) : '(检索命中,见引用)') + (cites ? '\n\n引用:\n' + cites : '') + rs + trace;
+    const run = unwrapRagRun(first) || {};
+    const fallbackText = buildRagFallbackText(run, g.traceId || '');
+    return {
+      msg_type: 'interactive',
+      content: buildRagCard(run, g.traceId || ''),
+      fallbackText
+    };
   }
 
   if (intent === 'drift') {
     const run = first.run && typeof first.run === 'object' ? first.run : first;
     const driftAny = !!(run.drift && run.drift.any);
-    const head = driftAny ? '🚨 检测到漂移' : '✅ 无漂移';
+    const head = driftAny ? '检测到漂移' : '无漂移';
     const fd = first.feishuDelivery && first.feishuDelivery.status ? String(first.feishuDelivery.status) : 'unknown';
-    return head + ' (runId ' + String(run.runId || '?') + ')。完整简报卡片投递: ' + fd + '。' + trace;
+    return textPayload(head + ' (runId ' + String(run.runId || '?') + ')。完整简报卡片投递: ' + fd + '。' + trace);
   }
 
-  return '✅ 已执行 ' + intent + ',结果摘要: ' + JSON.stringify(first).slice(0, 400) + trace;
+  return textPayload('已执行 ' + intent + ',结果摘要: ' + JSON.stringify(first).slice(0, 400) + trace);
+}
+
+// ---------------------------------------------------------------------------------------------
+// buildReplyText — compatibility wrapper used by older tests/callers and by card-send fallback.
+// ---------------------------------------------------------------------------------------------
+export function buildReplyText(intent, gatewayResponse) {
+  return buildReplyPayload(intent, gatewayResponse).fallbackText;
 }
