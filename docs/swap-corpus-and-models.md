@@ -73,9 +73,11 @@ This unification is ALREADY SHIPPED: the 'Generate Answer (Ollama)' node speaks 
 `choices[0].message.content`; the legacy Ollama-native response shapes are still accepted). The
 default `ollamaChatUrl` points at local Ollama's `http://host.docker.internal:11434/v1/chat/completions`;
 override it per request (`body.ollamaChatUrl` + `body.genModel`) or change the default for your
-deploy. The node sends `Authorization: Bearer <LLM_API_KEY>` from the n8n container env (set
-`LLM_API_KEY` in your compose `.env`; local Ollama ignores the header, cloud providers require it).
-The system prompt follows `runtime.queryLang`, so a cloud model answers in the user's language too.
+deploy. **Cloud API keys never enter tracked JSON** (the repo's JSON gate enforces this): attach an
+n8n `httpHeaderAuth` credential (`Authorization: Bearer <your key>`) to the 'Generate Answer'
+node at deploy time — the same pattern the Supabase RPC node uses; the key lives encrypted inside
+n8n only. Local Ollama needs no credential. The system prompt follows `runtime.queryLang`, so a
+cloud model answers in the user's language too.
 
 **Why the swap is safe by construction:** citations are NEVER parsed from the model — they are
 derived from the retrieved chunks before generation. A better (or worse) LLM changes the prose
