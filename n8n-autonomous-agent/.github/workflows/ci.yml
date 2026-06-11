@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  offline-gates:
+    name: Offline gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Static validation
+        shell: pwsh
+        run: ./scripts/Invoke-StaticValidation.ps1
+
+      - name: JSON validation
+        shell: pwsh
+        run: |
+          ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 0
+          ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0
+          ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical/autonomous-agent.canonical.json -MinimumNodes 6
+
+      - name: Agent-core trajectory self-test
+        run: node ./scripts/test-agent-core.mjs
+
+      - name: Compiled-workflow differential self-test
+        run: node ./scripts/test-agent-workflow.mjs
+
+      - name: Gateway-client self-test
+        run: node ./scripts/test-gateway-client.mjs
+
+  secret-scan:
+    name: Repository secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run repository secret scan
+        shell: pwsh
+        run: ./scripts/Test-RepositorySecrets.ps1

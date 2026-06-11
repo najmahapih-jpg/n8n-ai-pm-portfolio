@@ -1,0 +1,6 @@
+{
+  "id": "feedback",
+  "description": "Product feedback: the agent classifies theme/sentiment/urgency via product-feedback, then finishes.",
+  "task": { "text": "I love the new dashboard but it is too slow" },
+  "expect": { "tools": ["product-feedback"], "stopReason": "finished", "refused": false }
+}

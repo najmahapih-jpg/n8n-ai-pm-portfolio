@@ -1,0 +1,199 @@
+{
+  "id": "autonomous-agent",
+  "name": "Portfolio - Autonomous Agent",
+  "nodes": [
+    {
+      "id": "f87240d9-54ed-4ccc-acd1-ba4000c426b1",
+      "name": "autonomous-agent overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        130,
+        270
+      ],
+      "parameters": {
+        "content": "## Autonomous Agent v0.1.0 (Capstone C). A BOUNDED tool-use loop. DEFAULT (stub): the Agent Loop Code node MIRRORS the audited scripts/lib/agent-core.mjs (verify:agent 59/59) — deterministic keyword planner + refusal/allowlist/max-steps/no-fabricated guardrails — over STUB tools (byte-stable, differential-pinned). OPT-IN (POST agentMode=live): this node runs a REAL LLM classifier (Ollama) + signed interaction-gateway tools (real in-process portfolio siblings). scripts/test-agent-workflow.mjs differentially pins the STUB path vs the core, so the deployed copy cannot silently drift. webhook -> normalize -> Agent Loop -> respond. policyVersion autonomous-agent-v0.1.0.",
+        "color": 6,
+        "width": 1500,
+        "height": 480
+      }
+    },
+    {
+      "id": "76aab08f-5139-45eb-9da8-9240eb98493c",
+      "name": "Receive Task (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        180,
+        320
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/autonomous-agent",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true,
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "b54da4b3-76c5-4515-beca-9e80b4408829"
+    },
+    {
+      "id": "a44216c1-2cb3-4eb9-bbe3-f663ae23c406",
+      "name": "Normalize Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Parse the inbound signal into a normalized task. Accepts { task: {subject,text} } or { task: \"string\" } or\n// the raw fields. maxSteps comes from env ONLY (a caller can't widen the bound). The task TEXT is untrusted input.\nconst src = items[0].json || {};\nfunction envGet(name){ try { return (typeof $env !== 'undefined' && $env) ? $env[name] : undefined; } catch (e) { return undefined; } }\nconst isDemo = src.__demo === true;\nconst entrypoint = isDemo ? 'manual' : 'webhook';\nlet body;\nif (typeof src.rawBody === 'string') { try { body = JSON.parse(src.rawBody); } catch (e) { body = {}; } }\nelse if (typeof src.body === 'string') { try { body = JSON.parse(src.body); } catch (e) { body = { task: src.body }; } }\nelse { body = (src.body && typeof src.body === 'object') ? src.body : src; }\nlet task = body.task != null ? body.task : body;\nif (typeof task === 'string') task = { text: task };\nif (!task || typeof task !== 'object') task = {};\nconst num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };\nconst maxSteps = num(envGet('AGENT_MAX_STEPS'), 4);\n// agentMode is an opt-in request flag: 'live' runs the real LLM planner + signed gateway tools; default 'stub' is\n// the deterministic, differential-pinned path. A caller can request live; it cannot widen maxSteps (env only).\nconst agentMode = (body.agentMode === 'live' || src.agentMode === 'live') ? 'live' : 'stub';\n// Optional correlation id: capture-and-echo only (NEVER generated, so the deterministic offline differential stays\n// reproducible). traceId falls back to requestId when traceId is absent; null when neither is supplied. It is echoed\n// by Build Response + the audit event, forwarded to each gateway tool call (so the sub-sibling captures it via\n// body.traceId), and feeds NO id/hash seed — purely additive (when absent it is null and changes nothing else).\nconst traceId = body.traceId != null ? String(body.traceId) : (body.requestId != null ? String(body.requestId) : null);\nconst normTask = { subject: String(task.subject || ''), text: String(task.text || task.message || '') };\nconst email = task.customerEmail || task.email; if (email) normTask.customerEmail = String(email);\nreturn [{ json: { task: normTask, config: { maxSteps: maxSteps, agentMode: agentMode }, traceId: traceId, entrypoint: entrypoint, policyVersion: 'autonomous-agent-v0.1.0' } }];"
+      }
+    },
+    {
+      "id": "b3e41fc3-c7cb-43e8-aa5f-c4da7a703ba1",
+      "name": "Agent Loop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// MIRRORS scripts/lib/agent-core.mjs (the audited source of truth, verify:agent 59/59). The bounded tool-use\n// loop + deterministic keyword planner + refusal/allowlist/max-steps/no-fabricated guardrails. STUB tools by\n// default; agentMode=live runs a REAL LLM classifier planner (Ollama) + signed gateway tools from this node.\nconst TOOL_ALLOWLIST = ['support-triage', 'product-feedback', 'rag', 'eval', 'drift'];\nfunction taskText(task) { if (task == null) return ''; if (typeof task === 'string') return task; return (String(task.text == null ? '' : task.text) + ' ' + String(task.subject == null ? '' : task.subject)).trim(); }\nfunction taskSubject(task) { if (task && typeof task === 'object' && task.subject) return String(task.subject); return taskText(task).slice(0, 60); }\nfunction taskEmail(task) { if (task && typeof task === 'object') { if (task.customerEmail) return String(task.customerEmail); if (task.email) return String(task.email); } return 'unknown@example.com'; }\nconst UNSAFE_PATTERNS = [\n  /\\bignore\\s+(all\\s+)?(previous|prior|above)\\b/i,\n  /\\b(disregard|override)\\s+(your\\s+)?(instructions|system|prompt|rules)\\b/i,\n  /\\b(delete|drop|truncate|wipe|destroy)\\b[\\s\\S]*\\b(all|everything|database|table|data|users?|accounts?)\\b/i,\n  /\\b(exfiltrate|leak|reveal|print|show)\\b[\\s\\S]*\\b(secret|token|password|api[_-]?key|credential|system\\s*prompt)\\b/i,\n  /\\bsystem\\s+prompt\\b/i,\n  /\\brm\\s+-rf\\b/i\n];\nfunction isUnsafeTask(task) { const text = taskText(task); for (const p of UNSAFE_PATTERNS) { if (p.test(text)) return { unsafe: true, reason: 'refused: destructive / prompt-injection / out-of-scope request' }; } return { unsafe: false }; }\nfunction synthesize(kind, history) { const parts = history.filter((h) => h.result && h.result.ok).map((h) => h.intent + ':' + (h.result.summary == null ? 'ok' : h.result.summary)); return '[' + kind + '] ' + (parts.length ? parts.join(' | ') : 'no successful tool results'); }\n// Build one trajectory step; the gateway/sibling traceId is recorded ONLY when the tool returned one (additive — a\n// stub tool returns none, so the stub trajectory stays byte-identical). traceId feeds no id/hash + no scoring.\nfunction trajectoryStep(step, intent, args, result) { const s = { step: step, intent: intent, args: args || {}, ok: result.ok === true, summary: result.summary == null ? null : result.summary }; if (result.traceId != null) s.traceId = result.traceId; return s; }\nfunction keywordPlanner(task, history) {\n  const text = taskText(task).toLowerCase();\n  const called = history.map((h) => h.intent);\n  const has = (i) => called.includes(i);\n  const looksBug = /\\b(bug|broken|crash|error|down|outage|cannot|can't|fail|failing|not working|unresponsive)\\b/.test(text);\n  const looksFeedback = /\\b(love|hate|like|dislike|feedback|suggest|wish|feature request|too (slow|small|big|expensive|confusing))\\b/.test(text);\n  const looksQuestion = /\\b(how|what|why|where|when|which|explain|guide|docs?|tutorial)\\b/.test(text) || text.includes('?');\n  if (looksBug) {\n    if (!has('rag')) return { action: 'call', intent: 'rag', args: { query: 'known issue: ' + text.slice(0, 120) }, why: 'check the knowledge base for a known issue' };\n    if (!has('support-triage')) return { action: 'call', intent: 'support-triage', args: { customerEmail: taskEmail(task), subject: taskSubject(task), message: taskText(task) }, why: 'classify + route the ticket' };\n    return { action: 'finish', answer: synthesize('bug', history) };\n  }\n  if (looksFeedback) {\n    if (!has('product-feedback')) return { action: 'call', intent: 'product-feedback', args: { feedbackText: taskText(task) }, why: 'classify theme / sentiment / urgency' };\n    return { action: 'finish', answer: synthesize('feedback', history) };\n  }\n  if (looksQuestion) {\n    if (!has('rag')) return { action: 'call', intent: 'rag', args: { query: taskText(task) }, why: 'grounded answer from the KB (or a clean abstain)' };\n    return { action: 'finish', answer: synthesize('question', history) };\n  }\n  if (called.length > 0) return { action: 'finish', answer: synthesize('other', history) };\n  return { action: 'finish', answer: 'No actionable signal detected; no tool was appropriate.' };\n}\nfunction stubTools(intent) {\n  const summaries = { 'rag': '2 citations (known-issue check)', 'support-triage': 'routed: platform-support, urgency: high', 'product-feedback': 'theme: praise, sentiment: positive', 'eval': 'passRate 1.0', 'drift': 'drift.any false' };\n  return summaries[intent] ? { ok: true, summary: summaries[intent] } : { ok: false, summary: 'unknown tool' };\n}\nfunction runAgentLoop(task, opts) {\n  opts = opts || {};\n  const planner = opts.planner || keywordPlanner;\n  const callTool = opts.callTool || stubTools;\n  const maxSteps = Number.isFinite(opts.maxSteps) ? opts.maxSteps : 4;\n  const allowlist = Array.isArray(opts.allowlist) ? opts.allowlist : TOOL_ALLOWLIST;\n  const safe = isUnsafeTask(task);\n  if (safe.unsafe) return { refused: true, stopReason: 'refused', reason: safe.reason, trajectory: [], toolCalls: 0, finalAnswer: null, guardrail: 'refusal' };\n  const trajectory = []; const history = [];\n  for (let step = 1; step <= maxSteps; step += 1) {\n    let decision;\n    try { decision = planner(task, history); } catch (e) { return { refused: false, stopReason: 'planner-error', reason: e.message, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null }; }\n    if (!decision || typeof decision !== 'object') return { refused: false, stopReason: 'bad-decision', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null };\n    if (decision.action === 'refuse') return { refused: true, stopReason: 'refused', reason: decision.reason || 'planner refused', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'refusal' };\n    if (decision.action === 'finish') return { refused: false, stopReason: 'finished', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: decision.answer == null ? null : decision.answer };\n    if (decision.action === 'call') {\n      if (!allowlist.includes(decision.intent)) return { refused: false, stopReason: 'guardrail:non-allowlisted-tool', blockedIntent: decision.intent, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'non-allowlisted-tool' };\n      let result;\n      try { result = callTool(decision.intent, decision.args || {}); } catch (e) { result = { ok: false, summary: 'tool error: ' + e.message }; }\n      if (!result || typeof result !== 'object') result = { ok: false, summary: 'tool returned a bad shape' };\n      trajectory.push(trajectoryStep(step, decision.intent, decision.args, result));\n      history.push({ intent: decision.intent, result: result });\n      continue;\n    }\n    return { refused: false, stopReason: 'unknown-action', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null };\n  }\n  return { refused: false, stopReason: 'guardrail:max-steps', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'max-steps' };\n}\n// ---- LIVE machinery (opt-in agentMode:'live'); the STUB path above stays the differential-pinned default ----\nconst OLLAMA_URL = 'http://host.docker.internal:11434/api/chat';\nconst GATEWAY_URL = 'http://n8n:5678/webhook/portfolio/interaction-gateway';\nconst LLM_MODEL = 'llama3.2:3b';\nfunction buildClassifyPrompt(task) {\n  return ['Classify the support task into EXACTLY ONE label:', '  - \"bug\": something is broken / crashing / erroring / down / not working.', '  - \"question\": a how / what / why information request.', '  - \"feedback\": product feedback, a complaint, or a feature wish.', '  - \"none\": a greeting / status / chit-chat with no actionable request.', 'TASK subject: ' + JSON.stringify(taskSubject(task)), 'TASK text: ' + JSON.stringify(taskText(task)), 'Reply with ONE JSON object and nothing else: {\"label\":\"bug|question|feedback|none\"}'].join('\\n');\n}\nfunction parseLabel(text) {\n  const raw = String(text == null ? '' : text); let obj = null; const m = raw.match(/\\{[\\s\\S]*\\}/);\n  if (m) { try { obj = JSON.parse(m[0]); } catch (e) { obj = null; } }\n  const label = obj && obj.label != null ? String(obj.label).toLowerCase().trim() : '';\n  return ['bug', 'question', 'feedback', 'none'].indexOf(label) >= 0 ? label : 'none';\n}\nfunction routeByClass(label, task, history) {\n  const called = history.map(function (h) { return h.intent; });\n  if (label === 'bug') {\n    if (called.indexOf('rag') < 0) return { action: 'call', intent: 'rag', args: { query: 'known issue: ' + taskText(task).slice(0, 120) } };\n    if (called.indexOf('support-triage') < 0) return { action: 'call', intent: 'support-triage', args: { customerEmail: taskEmail(task), subject: taskSubject(task), message: taskText(task) } };\n    return { action: 'finish', answer: synthesize('bug', history) };\n  }\n  if (label === 'feedback') { if (called.indexOf('product-feedback') < 0) return { action: 'call', intent: 'product-feedback', args: { feedbackText: taskText(task) } }; return { action: 'finish', answer: synthesize('feedback', history) }; }\n  if (label === 'question') { if (called.indexOf('rag') < 0) return { action: 'call', intent: 'rag', args: { query: taskText(task) } }; return { action: 'finish', answer: synthesize('question', history) }; }\n  return { action: 'finish', answer: 'No actionable signal detected; no tool was appropriate.' };\n}\nasync function llmClassify(task, helpers) {\n  const res = await helpers.httpRequest({ method: 'POST', url: OLLAMA_URL, body: { model: LLM_MODEL, messages: [{ role: 'user', content: buildClassifyPrompt(task) }], stream: false, format: 'json', options: { temperature: 0 } }, json: true });\n  const content = res && res.message && res.message.content != null ? res.message.content : (typeof res === 'string' ? res : JSON.stringify(res));\n  return parseLabel(content);\n}\nfunction summarizeTarget(target, tr) {\n  const r = (tr && tr.response) ? tr.response : tr; const parts = [];\n  ['retrievalSource', 'theme', 'sentiment', 'urgency', 'priorityScore', 'routingTeam', 'abstained', 'passed', 'passRate'].forEach(function (k) { if (r && r[k] != null) parts.push(k + '=' + r[k]); });\n  if (r && Array.isArray(r.citations)) parts.push('citations=' + r.citations.length);\n  if (!parts.length && tr && tr.statusCode != null) parts.push('statusCode ' + tr.statusCode);\n  return target + ': ' + (parts.length ? parts.join(', ') : 'ok');\n}\nasync function gatewayCallOnce(intent, sendArgs, ctx) {\n  const crypto = require('crypto');\n  const ts = String(Math.floor(Date.now() / 1000)); const requestId = 'agent-node-' + ctx.seq; ctx.seq += 1;\n  // (B) FORWARD: the agent's traceId is added to the envelope BEFORE signing (only when present, so a no-traceId run\n  // signs the exact same bytes as before). The gateway captures it via body.traceId and forwards it to the sub-sibling.\n  const envelope = { intent: intent, payload: sendArgs, requestId: requestId };\n  if (ctx.traceId != null) envelope.traceId = ctx.traceId;\n  const rawBody = JSON.stringify(envelope);\n  const sig = 'sha256=' + crypto.createHmac('sha256', String(ctx.secret)).update(ts + '.' + rawBody).digest('hex');\n  let resp; try { resp = await ctx.helpers.httpRequest({ method: 'POST', url: GATEWAY_URL, body: rawBody, headers: { 'Content-Type': 'text/plain', 'X-Timestamp': ts, 'X-Signature': sig } }); } catch (e) { return { ok: false, summary: 'gateway error: ' + (e && e.message ? e.message : 'failed'), degradedAbstain: false }; }\n  let json = resp; if (typeof resp === 'string') { try { json = JSON.parse(resp); } catch (e) { return { ok: false, summary: 'gateway non-JSON', degradedAbstain: false }; } }\n  const executed = !!(json && json.result && json.result.executed === true);\n  const perTarget = (json && json.result && Array.isArray(json.result.perTarget)) ? json.result.perTarget : [];\n  const siblingsOk = perTarget.length > 0 && perTarget.every(function (t) { const sc = t && t.result ? t.result.statusCode : undefined; return sc == null || Number(sc) < 400; });\n  const r0 = (perTarget.length && perTarget[0].result) ? (perTarget[0].result.response || perTarget[0].result) : null;\n  const degradedAbstain = !!(r0 && typeof r0.retrievalSource === 'string' && /-fallback$/.test(r0.retrievalSource) && r0.abstained === true);\n  const summary = perTarget.length ? perTarget.map(function (t) { return summarizeTarget(t.target, t.result); }).join(' | ') : 'no result';\n  // (C) THREAD: capture the gateway's RESPONSE traceId (previously discarded) so the trajectory step correlates the\n  // agent's run to the gateway/sibling run. null when the gateway echoed none.\n  return { ok: (json && json.ok === true) && executed && siblingsOk, summary: summary, degradedAbstain: degradedAbstain, traceId: (json && json.traceId != null) ? json.traceId : null };\n}\nasync function gatewayCall(intent, args, ctx) {\n  // rag tool policy: try LIVE (supabase, real embeddings) first; on a transient *-fallback abstain, retry ONCE with\n  // the deterministic stub TF-IDF over the same corpus (reliable hit) — real embeddings when available, never a\n  // transient miss. (The deeper fix is rag's own onError falling back to TF-IDF; this keeps the AGENT reliable.)\n  const baseArgs = args || {};\n  if (intent === 'rag') {\n    const live = await gatewayCallOnce('rag', Object.assign({ retrievalSource: 'supabase' }, baseArgs), ctx);\n    if (live.degradedAbstain) { return await gatewayCallOnce('rag', Object.assign({ retrievalSource: 'stub' }, baseArgs), ctx); }\n    return live;\n  }\n  return gatewayCallOnce(intent, baseArgs, ctx);\n}\nasync function runAgentLoopLive(task, opts) {\n  const maxStepsL = Number.isFinite(opts.maxSteps) ? opts.maxSteps : 4;\n  const safe = isUnsafeTask(task);\n  if (safe.unsafe) return { refused: true, stopReason: 'refused', reason: safe.reason, trajectory: [], toolCalls: 0, finalAnswer: null, guardrail: 'refusal' };\n  const trajectory = []; const history = []; const ctx = { helpers: opts.helpers, secret: opts.secret, seq: 1, traceId: opts.traceId != null ? opts.traceId : null };\n  for (let step = 1; step <= maxStepsL; step += 1) {\n    let label; try { label = await llmClassify(task, opts.helpers); } catch (e) { return { refused: false, stopReason: 'planner-error', reason: (e && e.message ? e.message : 'classify failed'), trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null }; }\n    const decision = routeByClass(label, task, history);\n    if (decision.action === 'finish') return { refused: false, stopReason: 'finished', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: decision.answer == null ? null : decision.answer };\n    if (decision.action === 'call') {\n      if (TOOL_ALLOWLIST.indexOf(decision.intent) < 0) return { refused: false, stopReason: 'guardrail:non-allowlisted-tool', blockedIntent: decision.intent, trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'non-allowlisted-tool' };\n      const result = await gatewayCall(decision.intent, decision.args || {}, ctx);\n      trajectory.push(trajectoryStep(step, decision.intent, decision.args, result));\n      history.push({ intent: decision.intent, result: result });\n      continue;\n    }\n    return { refused: false, stopReason: 'unknown-action', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null };\n  }\n  return { refused: false, stopReason: 'guardrail:max-steps', trajectory: trajectory, toolCalls: trajectory.length, finalAnswer: null, guardrail: 'max-steps' };\n}\nconst input = items[0].json;\nconst mode = (input.config && input.config.agentMode) === 'live' ? 'live' : 'stub';\nconst maxSteps = (input.config && input.config.maxSteps) || 4;\nconst traceId = input.traceId != null ? input.traceId : null;\nlet run; let plannerSource; let toolSource;\nif (mode === 'live') {\n  const helpers = (this && this.helpers) ? this.helpers : ((typeof $helpers !== 'undefined') ? $helpers : null);\n  const secret = (typeof $env !== 'undefined' && $env) ? $env.GATEWAY_SIGNING_SECRET : undefined;\n  if (!helpers || typeof helpers.httpRequest !== 'function') { run = { refused: false, stopReason: 'live-unavailable', reason: 'no httpRequest helper in this runtime', trajectory: [], toolCalls: 0, finalAnswer: null }; }\n  else { run = await runAgentLoopLive(input.task, { maxSteps: maxSteps, helpers: helpers, secret: secret, traceId: traceId }); }\n  plannerSource = 'llm:' + LLM_MODEL; toolSource = 'gateway';\n} else {\n  run = runAgentLoop(input.task, { planner: keywordPlanner, callTool: stubTools, maxSteps: maxSteps, allowlist: TOOL_ALLOWLIST });\n  plannerSource = 'stub'; toolSource = 'stub';\n}\nreturn [{ json: { run: run, policyVersion: input.policyVersion, plannerSource: plannerSource, toolSource: toolSource, traceId: traceId } }];"
+      }
+    },
+    {
+      "id": "01529ed8-ab28-4640-887e-215a005a3585",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const g = items[0].json; const run = g.run;\n// traceId is captured-and-echoed (never generated): the caller's correlation id, echoed on the response + audit and\n// (in live mode) forwarded to each gateway tool call. null when the caller supplied neither traceId nor requestId.\nconst traceId = g.traceId != null ? g.traceId : null;\nconst body = { ok: !run.refused, refused: run.refused === true, stopReason: run.stopReason, trajectory: run.trajectory, toolCalls: run.toolCalls, finalAnswer: run.finalAnswer, guardrail: run.guardrail || null, plannerSource: g.plannerSource, toolSource: g.toolSource, traceId: traceId, policyVersion: g.policyVersion };\nconst audit = { auditEventId: 'agent_' + (run.trajectory.length) + '_' + run.stopReason, stopReason: run.stopReason, toolCalls: run.toolCalls, refused: run.refused === true, tools: run.trajectory.map(function (t) { return t.intent; }), traceId: traceId };\nreturn [{ json: { statusCode: 200, body: body, audit: audit } }];"
+      }
+    },
+    {
+      "id": "40b82cbd-28fe-4d48-a4cd-aa48d87aebbb",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1380,
+        320
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "id": "15ad34de-89fe-41dc-b2cf-68fd670f61bc",
+      "name": "Run Demo From n8n UI",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        180,
+        600
+      ]
+    },
+    {
+      "id": "82cdcee3-ea23-49cc-bc45-3f90f511daaf",
+      "name": "Build Demo Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        600
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: { __demo: true, body: { task: { subject: 'Export broken', text: 'the export button is broken and crashes on mobile' } } } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Receive Task (POST)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Task": {
+      "main": [
+        [
+          {
+            "node": "Agent Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent Loop": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Demo From n8n UI": {
+      "main": [
+        [
+          {
+            "node": "Build Demo Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Demo Task": {
+      "main": [
+        [
+          {
+            "node": "Normalize Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}

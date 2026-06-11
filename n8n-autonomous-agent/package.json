@@ -1,0 +1,27 @@
+{
+  "name": "n8n-autonomous-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capstone C — an autonomous agent that, given an inbound signal, AUTONOMOUSLY decides which portfolio tools to invoke (support-triage / product-feedback / rag / eval / drift) via the signed interaction-gateway, observes each result, and produces a consolidated outcome — under guardrails (refusal / tool-allowlist / max-steps / no-fabricated-result). Graded by agent-trajectory evals; the SAME rubric grades the deterministic stub planner AND a live LLM (the non-deterministic-agent eval thesis A+D were built to de-risk). Capstone COMPLETE: agent core + offline trajectory eval (verify:agent 59/59) + SDK workflow (verify:workflow 24/24) + live LLM planner (verify:llm) + live gateway tools (verify:tools), all runnable inside the deployed n8n node via agentMode=live; the stub planner + stub tools are the reproducible default.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "hooks:install": "pwsh -NoProfile -File ./scripts/Install-GitHooks.ps1",
+    "registry:build": "pwsh -NoProfile -File ./scripts/Build-WorkflowIndex.ps1",
+    "compile": "pwsh -NoProfile -File ./scripts/Compile-WorkflowFromSdk.ps1",
+    "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
+    "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 0 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical/autonomous-agent.canonical.json -MinimumNodes 6",
+    "verify:agent": "node ./scripts/test-agent-core.mjs",
+    "verify:workflow": "node ./scripts/test-agent-workflow.mjs",
+    "verify:gateway-client": "node ./scripts/test-gateway-client.mjs",
+    "verify:canonical": "node ./scripts/test-canonical-matches-sdk.mjs",
+    "verify:llm": "node ./scripts/test-agent-llm-live.mjs",
+    "verify:tools": "node ./scripts/test-agent-gateway-live.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@n8n/workflow-sdk": "0.15.1"
+  }
+}
