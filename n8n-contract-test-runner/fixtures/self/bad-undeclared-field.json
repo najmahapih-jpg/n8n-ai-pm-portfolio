@@ -1,0 +1,12 @@
+{
+  "description": "A fixture request uses a field not in request.accepted -> only fixtures-use-declared-request-fields FAILs.",
+  "fakeWorkflowText": "policyVersion demo-v1.0.0 ; webhook node path webhook/demo",
+  "fakeFixtures": [ { "name": "valid-1", "keys": ["a", "undeclaredX"] } ],
+  "expectFailAssertion": "fixtures-use-declared-request-fields",
+  "contract": {
+    "contractVersion": "demo-v1.0.0",
+    "webhookPath": "webhook/demo",
+    "request": { "accepted": ["a", "b"], "limits": { "bodyBytes": 1024 }, "limitsEnforcedBy": "gateway" },
+    "response": { "required": ["ok"] }
+  }
+}

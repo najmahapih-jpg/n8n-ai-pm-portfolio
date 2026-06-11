@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  self-test:
+    name: Contract runner self-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run self-test (offline, no credentials required)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/Test-Contract.ps1 -SelfTest

@@ -1,0 +1,12 @@
+{
+  "description": "webhookPath is not present in the deployed workflow text -> only webhookPath-matches FAILs.",
+  "fakeWorkflowText": "policyVersion demo-v1.0.0 ; webhook node path webhook/demo",
+  "fakeFixtures": [ { "name": "valid-1", "keys": ["a"] } ],
+  "expectFailAssertion": "webhookPath-matches",
+  "contract": {
+    "contractVersion": "demo-v1.0.0",
+    "webhookPath": "webhook/WRONG",
+    "request": { "accepted": ["a"], "limits": { "bodyBytes": 1024 }, "limitsEnforcedBy": "gateway" },
+    "response": { "required": ["ok"] }
+  }
+}
