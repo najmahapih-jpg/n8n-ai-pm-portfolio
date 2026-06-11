@@ -1,0 +1,44 @@
+{
+  "slug": "portfolio-support-triage-api",
+  "title": "Portfolio - Support Triage API",
+  "description": "Local SupportOps triage API that validates support tickets, classifies category and urgency, routes ownership, computes SLA, records a redacted audit event, and optionally sends outbound Feishu escalation alerts.",
+  "owner": "portfolio",
+  "department": "SupportOps",
+  "version": "0.3.0",
+  "status": "draft-tested",
+  "project": "Personal project / local draft",
+  "lastWriter": "official n8n MCP",
+  "n8nWorkflowId": "RPkw9jGJ93lqs7jO",
+  "release": "support-triage-v0.3.0.json",
+  "canonical": "portfolio-support-triage-api.canonical.json",
+  "source": "portfolio-support-triage-api.workflow.js",
+  "request": "support-triage.md",
+  "trigger": "webhook + executeWorkflowTrigger (callable by the interaction-gateway; 2026-06-03 -- ADDITIVE, feeds the same Normalize Payload node; standalone-compiled + REST-deployed since this repo is MCP-toolchain and no MCP was connected; webhook regression-tested unchanged: urgency/routingTeam/feishuDelivery intact; canonical 28 nodes. NOTE: currently INACTIVE -- activated only to prove the gateway route live (executed:true), then restored to inactive; the gateway route works only while it is active/published)",
+  "integrations": [
+    "n8n Webhook",
+    "Feishu custom bot"
+  ],
+  "tags": [
+    "support",
+    "triage",
+    "sla",
+    "audit",
+    "feishu",
+    "workflow-as-code"
+  ],
+  "fixtures": [
+    "support-triage-enterprise-incident.json",
+    "support-triage-urgent-incident.json",
+    "support-triage-billing.json",
+    "support-triage-account-alias.json",
+    "support-triage-bug.json",
+    "support-triage-general.json",
+    "support-triage-invalid-date.json",
+    "support-triage-missing-field.json"
+  ],
+  "smokeCases": [
+    "enterprise-incident"
+  ],
+  "localOnly": true,
+  "notes": "Feishu is outbound-only in local mode; live sends require a locally configured custom bot webhook."
+}

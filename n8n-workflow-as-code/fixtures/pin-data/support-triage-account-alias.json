@@ -1,0 +1,9 @@
+{
+  "email": "owner@example.test",
+  "title": "SSO login permission issue",
+  "description": "The account owner cannot login after an SSO permission change.",
+  "customerTier": "pro",
+  "receivedAt": "2026-05-27T10:15:00-04:00",
+  "source": "portal",
+  "customerId": "acct_account_001"
+}

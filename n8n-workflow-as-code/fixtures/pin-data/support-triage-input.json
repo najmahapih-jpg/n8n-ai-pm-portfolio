@@ -1,0 +1,7 @@
+{
+  "customerEmail": "casey@example.test",
+  "subject": "Production checkout failures",
+  "message": "Customers on our enterprise plan cannot complete checkout. The error started after today's deployment and affects all regions.",
+  "plan": "enterprise",
+  "receivedAt": "2026-05-27T10:00:00-04:00"
+}

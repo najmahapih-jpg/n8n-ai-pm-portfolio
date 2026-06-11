@@ -1,0 +1,11 @@
+{
+  "body": {
+    "customerEmail": "qa@example.test",
+    "subject": "Regression error in report export",
+    "message": "The export flow is broken after the latest release and throws an exception for CSV reports.",
+    "plan": "team",
+    "receivedAt": "2026-05-27T10:20:00-04:00",
+    "source": "web",
+    "accountId": "acct_bug_001"
+  }
+}

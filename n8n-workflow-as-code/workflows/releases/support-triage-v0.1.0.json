@@ -1,0 +1,122 @@
+{
+  "updatedAt": "2026-05-27T11:25:29.64Z",
+  "createdAt": "2026-05-27T11:25:29.64Z",
+  "name": "Portfolio - Support Triage API",
+  "description": "Webhook support triage demo built through official n8n MCP with deterministic classification and no external credentials.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "54db7d3b-d0f6-401d-82ec-51e194edcd0f",
+      "name": "Sticky Note 9c5f1522",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        190,
+        250
+      ],
+      "parameters": {
+        "content": "## Portfolio - Support Triage API\nWebhook triage demo built through official n8n MCP. MVP uses deterministic logic and no external credentials.",
+        "color": 4,
+        "width": 940,
+        "height": 200
+      }
+    },
+    {
+      "id": "ddc9ae7b-ffb0-450e-a1e9-25468a4733c4",
+      "name": "Receive Support Ticket",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/support-triage",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "88b41205-c764-4378-83b2-39262d55da1f"
+    },
+    {
+      "id": "08620150-43ef-4f0d-b36a-cd4ae0788ac7",
+      "name": "Validate and Classify Ticket",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const source = items[0]?.json?.body ?? items[0]?.json ?? {};\nconst requiredFields = ['customerEmail', 'subject', 'message'];\nconst missing = requiredFields.filter((field) => !source[field]);\n\nif (missing.length > 0) {\n  return [{\n    json: {\n      statusCode: 400,\n      response: {\n        ok: false,\n        error: 'Missing required fields',\n        missingFields: missing\n      }\n    }\n  }];\n}\n\nconst text = [source.subject, source.message, source.plan].join(' ').toLowerCase();\nlet urgency = 'normal';\nlet routingTeam = 'general-support';\nlet slaHours = 24;\n\nif (text.includes('enterprise') || text.includes('checkout') || text.includes('payment') || text.includes('outage') || text.includes('production')) {\n  urgency = 'urgent';\n  routingTeam = 'platform-support';\n  slaHours = 2;\n} else if (text.includes('billing') || text.includes('invoice') || text.includes('refund')) {\n  urgency = 'high';\n  routingTeam = 'billing-support';\n  slaHours = 8;\n}\n\nconst ticketId = 'TKT-' + Buffer.from(String(source.customerEmail) + '|' + String(source.receivedAt ?? '')).toString('hex').slice(0, 10).toUpperCase();\nconst summary = String(source.subject).trim() + ' - ' + String(source.message).trim().slice(0, 120);\n\nreturn [{\n  json: {\n    statusCode: 200,\n    response: {\n      ok: true,\n      ticketId,\n      urgency,\n      summary,\n      routingTeam,\n      slaHours,\n      receivedAt: source.receivedAt ?? new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "c949fdb1-f1c5-4802-ade4-660dd6c50c1a",
+      "name": "Return Triage Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Receive Support Ticket": {
+      "main": [
+        [
+          {
+            "node": "Validate and Classify Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and Classify Ticket": {
+      "main": [
+        [
+          {
+            "node": "Return Triage Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "activeVersionId": null,
+  "versionCounter": 1,
+  "triggerCount": 0,
+  "tags": []
+}

@@ -1,0 +1,11 @@
+{
+  "body": {
+    "customerEmail": "datecase@example.test",
+    "subject": "Question about workspace settings",
+    "message": "Please help us confirm the right workspace configuration for our team.",
+    "plan": "free",
+    "receivedAt": "not-a-date",
+    "source": "web",
+    "accountId": "acct_date_001"
+  }
+}
