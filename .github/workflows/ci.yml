@@ -1,0 +1,34 @@
+name: portfolio-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    name: ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: n8n-llm-eval-harness,              cmd: "npm ci && pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1 && pwsh -NoProfile -File ./scripts/Test-RepositorySecrets.ps1" }
+          - { project: n8n-rag-knowledge-assistant,       cmd: "npm ci && pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1 && pwsh -NoProfile -File ./scripts/Test-RepositorySecrets.ps1" }
+          - { project: n8n-scheduled-drift-monitor,       cmd: "npm ci && pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1 && pwsh -NoProfile -File ./scripts/Test-RepositorySecrets.ps1" }
+          - { project: n8n-interaction-gateway,           cmd: "npm ci && pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1 && pwsh -NoProfile -File ./scripts/Test-RepositorySecrets.ps1" }
+          - { project: n8n-autonomous-agent,              cmd: "npm ci && pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1 && node ./scripts/test-agent-core.mjs && node ./scripts/test-agent-workflow.mjs && node ./scripts/test-gateway-client.mjs && pwsh -NoProfile -File ./scripts/Test-RepositorySecrets.ps1" }
+          - { project: n8n-feishu-adapter,                cmd: "npm ci && npm run verify:core" }
+          - { project: n8n-product-feedback-intelligence, cmd: "npm ci && pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1 && pwsh -NoProfile -File ./scripts/Test-RepositorySecrets.ps1" }
+          - { project: n8n-lead-intelligence-workflow,    cmd: "npm ci && pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1 && pwsh -NoProfile -File ./scripts/Test-RepositorySecrets.ps1" }
+          - { project: n8n-contract-test-runner,          cmd: "pwsh -NoProfile -File ./scripts/Test-Contract.ps1 -SelfTest" }
+          - { project: n8n-workflow-as-code,              cmd: "npm ci && pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1 && pwsh -NoProfile -File ./scripts/Test-RepositorySecrets.ps1" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run offline gates
+        working-directory: ${{ matrix.project }}
+        shell: bash
+        run: ${{ matrix.cmd }}
