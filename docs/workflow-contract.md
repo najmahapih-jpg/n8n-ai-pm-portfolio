@@ -8,7 +8,7 @@
 - Editor entry point: manual trigger demo
 - Default mode: deterministic stub retriever and deterministic stub generator
 - Source of truth: `workflows/sdk/rag-knowledge-assistant.workflow.js`
-- Release snapshot: `workflows/releases/rag-knowledge-assistant-v0.3.0.json`
+- Release snapshot: `workflows/releases/rag-knowledge-assistant-v0.4.0.json`
 
 ## Purpose
 
@@ -107,7 +107,7 @@ Successful responses return HTTP 200:
   },
   "auditEventId": "audit_...",
   "processedAt": "2026-06-02T00:00:00.000Z",
-  "policyVersion": "rag-knowledge-assistant-v0.3.0"
+  "policyVersion": "rag-knowledge-assistant-v0.4.0"
 }
 ```
 
@@ -134,7 +134,7 @@ Missing or empty `query` returns a validation response:
 {
   "ok": false,
   "error": "Missing required 'query' (non-empty string)",
-  "policyVersion": "rag-knowledge-assistant-v0.3.0"
+  "policyVersion": "rag-knowledge-assistant-v0.4.0"
 }
 ```
 
@@ -182,7 +182,7 @@ The golden fixtures carry test metadata (`id`, `expect*`) alongside the request,
 
 ```json
 {
-  "contractVersion": "rag-knowledge-assistant-v0.3.0",
+  "contractVersion": "rag-knowledge-assistant-v0.4.0",
   "webhookPath": "webhook/portfolio/rag-knowledge-assistant",
   "request": {
     "accepted": ["query", "requestId", "traceId"],
