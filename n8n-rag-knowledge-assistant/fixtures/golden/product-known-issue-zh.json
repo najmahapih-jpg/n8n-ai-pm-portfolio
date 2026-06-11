@@ -1,0 +1,8 @@
+{
+  "id": "product-known-issue-zh",
+  "exercises": "BILINGUAL (v0.4.0): a Chinese query over an English-origin product-support chunk — the bilingual corpus makes the stub TF-IDF match cross-lingually, and the queryLang-aware grounded extract returns the chunk's appended Chinese sentence (zh question -> zh answer)",
+  "query": "导出按钮在手机 App 上点击就崩溃,这是已知问题吗?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["已知问题"],
+  "expectCiteChunkIds": ["known-export-mobile-crash"]
+}

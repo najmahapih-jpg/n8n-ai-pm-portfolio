@@ -1,0 +1,8 @@
+{
+  "id": "portfolio-gateway-security",
+  "exercises": "the NEW portfolio self-knowledge domain - the assistant can answer questions about the portfolio's own security model, citing internal contract/ADR-derived chunks",
+  "query": "签名网关有哪些安全控制?HMAC 签名和重放窗口是怎么工作的?",
+  "expectAbstain": false,
+  "expectAnswerContains": [],
+  "expectCiteChunkIds": ["pf-gateway-security"]
+}

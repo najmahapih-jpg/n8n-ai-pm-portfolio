@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/Build-WorkflowIndex.ps1",
+  "workflowCount": 1,
+  "workflows": [
+    {
+      "slug": "rag-knowledge-assistant",
+      "title": "Portfolio - RAG Knowledge Assistant API",
+      "description": "Local retrieval-grounded RAG API (v0.4.0 — BILINGUAL zh/en in+out: deterministic runtime.queryLang (>=2 Han chars -> zh), language-aware grounded extract over a bilingual corpus, abstain note in the query's language; stub default + LIVE Supabase pgvector / Ollama, opt-in per request) over a Chinese, authoritative-sourced, provenance-tracked 'AI 时代产品经理' corpus: a webhook receives a query, then a RETRIEVAL-SOURCE gate routes — retrievalSource:'supabase' embeds the query via Ollama nomic-embed-text-v2-moe (768-dim, 'search_query: ' prefix) and calls the Supabase match_documents pgvector RPC (predefined header-auth credential, User-Agent n8n); otherwise the DEFAULT deterministic STUB retriever (TF-IDF cosine over CJK bigrams + ASCII tokens, no model) searches the IN-REPO corpus (fixtures/corpus/* — 13 zh chunks across 西方PM / 中文社区 / 开源社区 sources, each carrying source title + url + retrievedAt). Both emit the same retrieval contract (topK=[{chunkId,source,score}], maxScore, threshold). A THRESHOLD GATE (maxScore >= threshold; per-source default — stub 0.08, live Supabase 0.35; overridable per request via body.threshold) routes to a GROUNDED ANSWER or a CLEAN ABSTAIN (abstained:true, answer:null, citations:[], note:'信息不足,无法回答' — the controlled failure mode, in Chinese). On the grounded branch a GENERATION-SOURCE gate routes — generationSource:'ollama' calls Ollama llama3.2:3b (temperature 0, '只依据提供的上下文用简体中文作答;若信息不足则回答信息不足,无法回答') for the prose; otherwise the DEFAULT stub composes a Chinese grounded extract. CRITICAL: on BOTH generation paths the citations=[{chunkId,source,url,quote}] are corpus-grounded (derived from the retrieved chunks, NEVER from the model), so B cites the REAL authoritative source + link and CITATION-INTEGRITY (every cited chunkId in retrieval.topK; the quote is a real span of its chunk) holds by construction and is enforced deterministically (a cited chunk outside the retrieved set, a missing answer/citation, or a fabricated quote -> passed=false). Live nodes are onError-tolerant and DEGRADE to the deterministic result (retrievalSource:'supabase-fallback' / generationSource:'ollama-fallback'); the response reports what ACTUALLY ran. Emits a redacted audit event (ids + scores + verdicts + a query hash/length only — never the raw query, answer, chunk text, or quotes) then a structured JSON response per the eval-plan scorer contract (abstained, answer, note, citations, retrieval{topK,maxScore,threshold}, retrievalSource, generationSource, passed, policyVersion 'rag-knowledge-assistant-v0.4.0'). Supabase is one-command-refreshable from the cited sources via scripts/Refresh-Corpus.ps1 (the stub stays a pinned snapshot). The stub is the DEFAULT everywhere CI touches, so verify:static/json/live stay OFFLINE + deterministic; the live path is opt-in (verify:rag-live, non-CI). Two trust behaviours are tested invariants, not best-effort: citation-integrity and clean-abstain — on BOTH the stub and the live paths.",
+      "owner": "portfolio",
+      "department": "Product",
+      "version": "0.4.0",
+      "status": "live-tested",
+      "project": "n8n-rag-knowledge-assistant",
+      "lastWriter": "n8n public REST API",
+      "n8nWorkflowId": "jZ5Xfml8jbKexYqf",
+      "source": "workflows\\sdk\\rag-knowledge-assistant.workflow.js",
+      "canonical": "workflows\\canonical\\rag-knowledge-assistant.canonical.json",
+      "release": "workflows\\releases\\rag-knowledge-assistant-v0.4.0.json",
+      "request": "fixtures\\requests\\rag-knowledge-assistant.md",
+      "trigger": "manual + webhook + executeWorkflowTrigger (callable by the interaction-gateway; 2026-06-03 — added SURGICALLY to the live JSON to PRESERVE the deploy-time Supabase RPC URL + credential injection, since a raw PUT of the secret-free canonical would clobber them; the canonical carries the placeholder + the trigger, the live carries the injection + the trigger — rag's normal canonical!=live-by-design)",
+      "integrations": [
+        "n8n Manual Trigger",
+        "n8n Webhook",
+        "Deterministic stub retriever over in-repo corpus (DEFAULT)",
+        "LIVE Supabase pgvector retrieval via match_documents RPC (retrievalSource:supabase, opt-in; header-auth credential)",
+        "LIVE Ollama query embedding nomic-embed-text-v2-moe 768-dim, 'search_query: ' prefix (retrievalSource:supabase)",
+        "Deterministic stub generator grounded only on retrieved chunks (DEFAULT)",
+        "LIVE Ollama grounded generation llama3.2:3b temperature 0 (generationSource:ollama, opt-in; onError -> deterministic fallback)",
+        "Threshold gate -> grounded-answer-with-citations OR clean-abstain",
+        "Deterministic citation-integrity enforcement on BOTH stub + live paths (every cited chunkId in retrieval.topK; corpus-grounded citations)",
+        "Redacted audit (ids + scores + verdicts + query hash only; no raw query/answer/chunk text)"
+      ],
+      "tags": [
+        "rag",
+        "retrieval-augmented-generation",
+        "citation-integrity",
+        "abstention",
+        "stub-default",
+        "supabase-pgvector",
+        "ollama",
+        "pgvector",
+        "live-retrieval",
+        "workflow-as-code"
+      ],
+      "fixtures": [
+        "corpus/ai-pm-role.md",
+        "corpus/ai-pm-skills.md",
+        "corpus/ai-pm-learning.md",
+        "corpus/ai-pm-eval-tools.md",
+        "golden/in-corpus-direct.json",
+        "golden/in-corpus-paraphrased.json",
+        "golden/out-of-corpus.json",
+        "golden/adversarial-injection.json",
+        "golden/partial-corpus.json",
+        "golden/citation-must-be-real.json"
+      ],
+      "smokeCases": [
+        "in-corpus-direct",
+        "out-of-corpus",
+        "citation-must-be-real"
+      ],
+      "localOnly": true,
+      "nodeCount": 28,
+      "nodeTypes": [
+        "n8n-nodes-base.code",
+        "n8n-nodes-base.executeWorkflowTrigger",
+        "n8n-nodes-base.httpRequest",
+        "n8n-nodes-base.if",
+        "n8n-nodes-base.manualTrigger",
+        "n8n-nodes-base.respondToWebhook",
+        "n8n-nodes-base.stickyNote",
+        "n8n-nodes-base.webhook"
+      ],
+      "complexity": "advanced",
+      "notes": "v0.4.0 (BILINGUAL zh/en input+output, 2026-06-10): the corpus is now 34 bilingual chunks — AI-PM career (zh) + product-support (en, each chunk carrying an appended zh sentence) + portfolio-self (zh, each carrying an appended en sentence) + hiring-signals (zh); Normalize Request derives a deterministic runtime.queryLang (>= 2 Han chars -> zh, else en) which the LANGUAGE-AWARE grounded extract uses to pick the first sentence segment matching the query's language (fallback: first segment = the previous behavior), and Clean Abstain emits the note in the query's language ('Not enough information to answer' / '信息不足,无法回答'). The appended translation sentences contain no internal half-width terminators, so the segment split lands on whole sentences; quotes stay verbatim chunk spans, so citation integrity is unchanged. Cross-lingual retrieval: the live path was already multilingual (nomic-embed-text-v2-moe); the stub TF-IDF becomes cross-lingual BY CONSTRUCTION because each chunk now carries both languages' tokens. Earlier: v0.3.0 (zh 'AI 时代产品经理' corpus, provenance-tracked; stub DEFAULT + LIVE opt-in). Corpus: 13 Chinese chunks in fixtures/corpus/ai-pm-{role,skills,learning,eval-tools}.md across three authority lanes (西方PM: Marty Cagan/SVPG, Aman Khan/Lenny's, InstitutePM; 中文社区: 俞军, 黄钊 hanniman, 刘海丰/极客时间; 开源社区: Hugging Face/Ragas/DeepEval), each chunk carrying source title + url + retrievedAt provenance. DEFAULT (everywhere CI touches): the deterministic retriever scores the query against the IN-REPO corpus by TF-IDF cosine over CJK character bigrams + ASCII word tokens (segmentation-free zh retrieval; fixed query -> fixed chunks; out-of-corpus -> near-nothing -> abstain), and the stub generator composes a Chinese answer ONLY from retrieved chunk text (first-sentence grounded extract). Threshold is PER retrieval source (the stub TF-IDF and live v2-moe cosine have different score scales): stub default 0.08, live Supabase default 0.35 — the multilingual embedding gives out-of-corpus ~0.17 vs in-corpus ~0.68, so 0.35 separates them; both overridable via body.threshold. Each branch owns its threshold, so the offline golden set abstains out-of-corpus / answers in-corpus deterministically AND the live path abstains correctly (a single shared threshold could not serve both scales). LIVE (opt-in per request, never CI): retrievalSource:'supabase' embeds the query via Ollama nomic-embed-text-v2-moe (768-dim, asymmetric task prefixes — 'search_query: ' on the query, 'search_document: ' on the ingested corpus) and calls the Supabase match_documents pgvector RPC; generationSource:'ollama' calls llama3.2:3b (temperature 0, '只依据提供的上下文用简体中文作答;若信息不足则回答信息不足,无法回答'). The live nodes mirror the eval-harness IF-gate idiom (IF -> live HTTP -> parse/validate -> degrade on error). CRITICAL SAFETY: citations on BOTH generation paths are corpus-grounded (chunkId/source/url/quote derived from the retrieved chunks, NEVER parsed from the model), so the citation names the REAL authoritative source + link and citation-integrity ('every cited chunkId in retrieval.topK' + 'quote exists in chunk') holds by construction on the live path too. The retrieval-source gate's two branches converge on the threshold gate; the generation-source gate's two converge on 'Enforce Citation Integrity'; the audit -> response -> manual-UI tail is defined once. Live nodes use onError:continueRegularOutput -> deterministic fallback (retrievalSource:'supabase-fallback' / generationSource:'ollama-fallback'), so a live miss is a clean degrade, never a crash; the response *Source reflects what actually ran. Node count 27 (19 stub + 8 live: retrieval-source IF, Embed Query, Match Documents RPC, Map Supabase Retrieval, generation-source IF, Build Grounding Context, Generate Answer, Parse+Ground Answer). The Supabase secret/URL never enters the workflow JSON (deploy-time placeholder + header-auth credential id). LIVE Supabase (documents table, 768-dim) is ingested via scripts/Ingest-Corpus.ps1 (metadata={chunkId,source,url,retrievedAt}) and refreshed from the cited sources via scripts/Refresh-Corpus.ps1 (with a staleness report; the stub stays a pinned snapshot). Live-path verification: scripts/Test-RagLive.ps1 (npm run verify:rag-live), non-CI."
+    }
+  ]
+}

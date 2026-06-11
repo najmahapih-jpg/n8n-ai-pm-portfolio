@@ -1,0 +1,8 @@
+{
+  "id": "portfolio-gateway-security-en",
+  "exercises": "BILINGUAL (v0.4.0): an English query over a Chinese-origin portfolio-self chunk — the appended English sentence makes the stub TF-IDF match cross-lingually, and the queryLang-aware grounded extract returns that English sentence (en question -> en answer)",
+  "query": "How does the signed gateway prevent tampering and replay attacks?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["HMAC"],
+  "expectCiteChunkIds": ["pf-gateway-security"]
+}

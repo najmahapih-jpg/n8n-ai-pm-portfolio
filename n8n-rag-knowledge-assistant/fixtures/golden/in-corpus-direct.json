@@ -1,0 +1,8 @@
+{
+  "id": "in-corpus-direct",
+  "exercises": "answer + citation",
+  "query": "转型 AI 产品经理要补齐哪三大技能簇?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["三大技能簇"],
+  "expectCiteChunkIds": ["three-skill-clusters"]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "citation-must-be-real",
+  "exercises": "attribution integrity",
+  "query": "AI 产品经理的首要职责是确保交付真实增量价值吗?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["genuine"],
+  "expectCiteChunkIds": ["genuine-value"],
+  "_note": "Attribution-integrity anchor: every citations[].chunkId in the response MUST appear in retrieval.topK. The suite asserts membership (Assert-CitationsMapToRetrieval) so a cited chunk that was not retrieved fails passed=false. chunk:genuine-value is the clear top here (score ~0.38)."
+}

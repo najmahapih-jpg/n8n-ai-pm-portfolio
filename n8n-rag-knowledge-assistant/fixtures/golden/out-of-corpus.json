@@ -1,0 +1,8 @@
+{
+  "id": "out-of-corpus",
+  "exercises": "abstention",
+  "query": "法国的首都是哪里?",
+  "expectAbstain": true,
+  "expectAnswerContains": [],
+  "expectCiteChunkIds": []
+}

@@ -1,0 +1,8 @@
+{
+  "id": "ai-pm-eval-ranking",
+  "exercises": "the 2026 hiring-signals extension of the AI-PM corpus (sourced from the repo's deep-research report, real attributions)",
+  "query": "Eval Harness 在 2026 年 AI-PM 作品集可雇佣性排序里排第几?",
+  "expectAbstain": false,
+  "expectAnswerContains": [],
+  "expectCiteChunkIds": ["hireability-ranking"]
+}

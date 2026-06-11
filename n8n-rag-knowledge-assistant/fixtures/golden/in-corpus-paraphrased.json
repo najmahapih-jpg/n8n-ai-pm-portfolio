@@ -1,0 +1,9 @@
+{
+  "id": "in-corpus-paraphrased",
+  "exercises": "retrieval on novel phrasing",
+  "query": "PM 学习 AI 技术应该到什么深度?要不要亲手做一个 RAG 应用和微调分类器?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["正确深度"],
+  "expectCiteChunkIds": ["how-to-learn"],
+  "_note": "Novel phrasing (no 'how-to-learn' surface words): the TF-IDF stub still retrieves chunk:how-to-learn as the clear top (it owns '正确深度' / 'RAG 应用' / '微调分类器'), proving retrieval on paraphrase. Maps to the task's 'how-to-learn' intent."
+}

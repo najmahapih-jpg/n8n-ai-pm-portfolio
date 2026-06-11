@@ -1,0 +1,567 @@
+{
+  "name": "Portfolio - RAG Knowledge Assistant API",
+  "nodes": [
+    {
+      "id": "e2f31be0-ae99-4fb1-a5b8-051987e34c11",
+      "name": "Sticky Note e2f31be0",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        110,
+        -10
+      ],
+      "parameters": {
+        "content": "## RAG Knowledge Assistant v0.1.0 (stub core — offline, deterministic)\\nLocal retrieval-grounded API: a webhook receives a query, a DETERMINISTIC stub embeds it (token-overlap, no model) and retrieves over an IN-REPO corpus (fixtures/corpus/*), then a THRESHOLD GATE routes to either a GROUNDED ANSWER with citations (every cited chunkId in retrieval.topK; the quote is a real span of its chunk) or a CLEAN ABSTAIN (abstained:true, answer:null, citations:[] — the controlled failure mode). CITATION-INTEGRITY is enforced deterministically (a cited chunk outside the retrieved set -> passed=false). A redacted audit event (ids + scores + verdicts only — no raw query/answer/chunk text) is emitted, then a structured JSON response per the eval-plan scorer contract (abstained, answer, citations, retrieval{topK,maxScore,threshold}, retrievalSource, generationSource, passed, policyVersion rag-knowledge-assistant-v0.1.0). retrievalSource/generationSource are NORMALIZED (\"supabase\"/\"ollama\" accepted) but DEGRADE TO STUB this phase, so CI can never hit a live backend. DEFERRED to Phase 2b: live Supabase pgvector retrieval + live Ollama embeddings/generation behind these same gates. Manual trigger runs an editor demo (an in-corpus grounded answer); the webhook serves the API. Mirrors the sibling eval-harness stub-default discipline.",
+        "color": 4,
+        "width": 3180,
+        "height": 580
+      }
+    },
+    {
+      "id": "1a2d9c5b-030d-43a4-8461-f54b7d2e2075",
+      "name": "Run Demo Query From n8n UI",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        160,
+        40
+      ]
+    },
+    {
+      "id": "b2bed9fd-91cd-4350-9715-a281fa5c5c66",
+      "name": "Build Demo Query Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0]?.json ?? {};\nif (Object.keys(input).length > 0) {\n  return [{ json: { ...input, manualExecution: true } }];\n}\n// Default demo run: an in-corpus query that retrieves chunk:hydro-pumped and returns a grounded,\n// cited answer (exercises the answer-with-citation branch). The out-of-corpus abstain branch is\n// exercised by the webhook suite; the editor demo shows the headline grounded path.\nreturn [{\n  json: {\n    manualExecution: true,\n    query: 'How does pumped-storage hydropower work?'\n  }\n}];"
+      }
+    },
+    {
+      "id": "f1028d11-a6d9-4d24-91a0-cc3c047c68c1",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const source = items[0]?.json ?? {};\nconst body = source.body ?? source;\nconst entrypoint = source.manualExecution === true || body.manualExecution === true ? 'manual' : 'webhook';\nconst text = (v) => String(v ?? '').trim();\n\n// REQUIRED: query (a non-empty string). Accept a couple of aliases. A run is valid only with a query.\nconst query = text(body.query) || text(body.question) || text(body.q);\nconst hasQuery = query.length > 0;\n\n// OPTIONAL knobs. topK = how many chunks to retrieve (clamped 1..8, the corpus size). threshold =\n// the similarity floor below which we ABSTAIN (clamped [0,1], default 0.18 — tuned so the offline\n// golden set abstains on out-of-corpus and answers on in-corpus deterministically).\nconst rawTopK = Number(body.topK);\nconst topK = Number.isFinite(rawTopK) && rawTopK >= 1 ? Math.min(Math.floor(rawTopK), 8) : 3;\nconst rawThreshold = Number(body.threshold);\nconst threshold = Number.isFinite(rawThreshold) && rawThreshold >= 0 ? Math.min(rawThreshold, 1) : 0.18;\n\n// retrievalSource / generationSource: live backends are GATED so a misconfigured request can never\n// silently route the offline suite through a live store/model. This phase (2a) NORMALIZES the live\n// labels ('supabase' / 'ollama') but DEGRADES THEM TO STUB — the stub is the only implemented path,\n// so retrievalSource/generationSource always resolve to 'stub'. requestedRetrievalSource /\n// requestedGenerationSource preserve the raw ask for transparency. (Mirrors how the eval-harness\n// normalized sutMode/judgeSource and forced the stub default before the live nodes existed.)\n// Phase 2b will replace the degrade with real Supabase/Ollama branches behind these same gates.\nconst requestedRetrievalSource = text(body.retrievalSource).toLowerCase();\nconst requestedGenerationSource = text(body.generationSource).toLowerCase();\nconst retrievalSource = 'stub'; // degrade-to-stub this phase (supabase deferred to 2b)\nconst generationSource = 'stub'; // degrade-to-stub this phase (ollama deferred to 2b)\n\nreturn [{\n  json: {\n    request: {\n      requestId: text(body.requestId) || ('req_' + Date.now().toString(36)),\n      requestedAt: text(body.requestedAt) || new Date().toISOString()\n    },\n    query,\n    validation: { hasQuery },\n    runtime: {\n      entrypoint,\n      topK,\n      threshold,\n      // Always 'stub' this phase; the requested* fields record what was asked so a 'supabase'/'ollama'\n      // request is visibly degraded rather than silently honoured. CI never reaches a live backend.\n      retrievalSource,\n      generationSource,\n      requestedRetrievalSource: requestedRetrievalSource || 'stub',\n      requestedGenerationSource: requestedGenerationSource || 'stub'\n    },\n    sourcePayloadKeys: Object.keys(body)\n  }\n}];"
+      }
+    },
+    {
+      "id": "dc812072-5276-4705-887f-2ffa28558738",
+      "name": "Query Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "query-present",
+              "leftValue": "={{ $json.validation.hasQuery }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cdb59c42-95f9-4756-8203-684e3b85d874",
+      "name": "Stub Embed + Retrieve",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// DETERMINISTIC stub retriever (the default + only implemented path this phase). No model, no vector\n// store: it scores the query against an IN-REPO corpus by TOKEN OVERLAP (a set-cosine over content\n// words) so a fixed query maps to fixed chunks and an out-of-corpus query maps to (near-)nothing —\n// driving the abstain branch deterministically. Phase 2b replaces this with Supabase pgvector +\n// Ollama 'nomic-embed-text' behind the retrievalSource gate; the row shape below is the contract the\n// live retriever must also produce: retrieval.topK = [{ chunkId, source, score }], maxScore, threshold.\n//\n// CORPUS (source of truth: fixtures/corpus/*.md). Kept verbatim from those chunks; MUST stay in sync.\nconst CORPUS = [\n  { chunkId: 'solar-pv', source: 'solar.md', text: 'Solar photovoltaic (PV) panels convert sunlight directly into electricity using the photovoltaic effect in semiconductor cells, typically made of silicon. Output is direct current, which an inverter converts to alternating current for the grid.' },\n  { chunkId: 'solar-capacity', source: 'solar.md', text: \"A solar panel's rated capacity is measured in watts under standard test conditions. Actual output depends on irradiance, temperature, and the angle of the sun, so panels produce the most energy near solar noon on clear days.\" },\n  { chunkId: 'solar-storage', source: 'solar.md', text: 'Because solar generation stops at night, solar systems are often paired with battery storage so that energy captured during the day can be used after sunset. Battery storage also smooths short dips caused by passing clouds.' },\n  { chunkId: 'wind-turbine', source: 'wind.md', text: 'A wind turbine generates electricity when moving air turns its blades, which spin a rotor connected through a gearbox to a generator. Most utility turbines have three blades mounted on a horizontal axis.' },\n  { chunkId: 'wind-speed', source: 'wind.md', text: 'The power available in wind rises with the cube of wind speed, so doubling the wind speed makes roughly eight times the power available. Turbines are sited where average wind speeds are high and steady, such as ridgelines and offshore.' },\n  { chunkId: 'wind-offshore', source: 'wind.md', text: 'Offshore wind farms are built in shallow coastal waters where winds are stronger and more consistent than on land. They are more expensive to install and maintain than onshore farms but produce more energy per turbine.' },\n  { chunkId: 'hydro-dam', source: 'hydro.md', text: 'A hydroelectric dam generates electricity by releasing stored water from a reservoir through turbines. The falling water spins the turbines, which drive generators; the higher the dam, the more energy each unit of water can produce.' },\n  { chunkId: 'hydro-pumped', source: 'hydro.md', text: 'Pumped-storage hydropower acts like a giant battery: surplus electricity pumps water uphill to an upper reservoir, and the water is later released downhill through turbines to regenerate electricity when demand is high.' }\n];\n\n// Minimal stopword set so high-frequency function words don't inflate overlap (which would let an\n// out-of-corpus query falsely clear the threshold). Tokens shorter than 3 chars are also dropped.\nconst STOP = new Set(['the','a','an','and','or','of','to','in','is','are','was','were','be','as','at','by','for','on','it','its','that','this','these','those','with','from','into','your','you','my','our','their','his','her','do','does','how','what','why','when','where','which','who','whom','can','could','would','should','will','also','any','all','so','such','than','then','out','up','down','over']);\nfunction tokenize(s) {\n  const set = new Set();\n  String(s ?? '').toLowerCase().replace(/[^a-z0-9\\s-]/g, ' ').split(/\\s+/).forEach((w) => {\n    const t = w.replace(/^-+|-+$/g, '');\n    if (t.length >= 3 && !STOP.has(t)) set.add(t);\n  });\n  return set;\n}\n\nconst qTokens = tokenize(input.query);\nconst scored = CORPUS.map((c) => {\n  const cTokens = tokenize(c.text + ' ' + c.chunkId.replace(/-/g, ' '));\n  let inter = 0;\n  for (const t of qTokens) { if (cTokens.has(t)) inter += 1; }\n  // Set-cosine: intersection / sqrt(|q| * |c|). 0 when either side is empty. Rounded for stable JSON.\n  const denom = Math.sqrt(qTokens.size * cTokens.size);\n  const score = denom > 0 ? Number((inter / denom).toFixed(4)) : 0;\n  return { chunkId: c.chunkId, source: c.source, score, text: c.text };\n});\n\n// Rank by score desc (ties broken by chunkId for determinism), take top-K.\nscored.sort((a, b) => (b.score - a.score) || (a.chunkId < b.chunkId ? -1 : a.chunkId > b.chunkId ? 1 : 0));\nconst topKFull = scored.slice(0, input.runtime.topK);\nconst maxScore = topKFull.length > 0 ? topKFull[0].score : 0;\n// The public retrieval surface carries id/source/score only (no chunk text) — the grounded-answer\n// node still has the text via topKFull. This keeps the response payload tight + the audit redacted.\nconst topK = topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score }));\n\nreturn [{\n  json: {\n    ...input,\n    retrieval: {\n      topK,\n      maxScore,\n      threshold: input.runtime.threshold,\n      retrievalSource: input.runtime.retrievalSource\n    },\n    // Internal: the retrieved chunk text, carried for the grounded-answer node only. Stripped before\n    // the response/audit are built so chunk bodies never bloat the public payload.\n    retrievedChunks: topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score, text: c.text }))\n  }\n}];"
+      }
+    },
+    {
+      "id": "c09d454c-9d3f-45ee-b1bc-b8da57896523",
+      "name": "Retrieval Clears Threshold?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "retrieval-clears-threshold",
+              "leftValue": "={{ $json.retrieval.maxScore >= $json.retrieval.threshold }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0bfd5316-e0ee-4a39-86a6-d8aa6b60fe84",
+      "name": "Stub Grounded Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// DETERMINISTIC stub generator (the default + only implemented path this phase). It composes the\n// answer ONLY from retrieved chunk text — it has no other knowledge source, so it structurally cannot\n// hallucinate beyond the corpus or leak an injected system prompt/secret (the adversarial-injection\n// golden case relies on exactly this). Phase 2b swaps this for Ollama 'llama3.2:3b' behind the\n// generationSource gate with the prompt 'answer only from the provided context, else abstain'.\n//\n// Grounding policy: cite the chunks that clear the threshold (the answer stands on them); compose the\n// answer by quoting the top chunk's text verbatim (a 'grounded extract'), prefixed with the source.\n// citations = [{ chunkId, source, quote }] where quote is a span that EXISTS in the cited chunk (the\n// first sentence), so citation-integrity + 'quote exists in chunk' both hold by construction.\nconst chunks = Array.isArray(input.retrievedChunks) ? input.retrievedChunks : [];\nconst threshold = input.retrieval.threshold;\n// Only chunks at/above threshold are grounding-worthy. The top chunk always qualifies on this branch\n// (maxScore >= threshold gated us here); include any other retrieved chunk that also clears it.\nconst grounding = chunks.filter((c) => c.score >= threshold);\nconst used = grounding.length > 0 ? grounding : chunks.slice(0, 1);\n\nfunction firstSentence(t) {\n  const s = String(t ?? '').trim();\n  const m = s.match(/^[^.!?]*[.!?]/);\n  return (m ? m[0] : s).trim();\n}\n\nconst citations = used.map((c) => ({\n  chunkId: c.chunkId,\n  source: c.source,\n  quote: firstSentence(c.text)\n}));\n\n// The answer is a deterministic composition of the grounded quote(s). No external text is introduced.\nconst answer = used.map((c) => firstSentence(c.text)).join(' ');\n\nreturn [{\n  json: {\n    ...input,\n    generation: {\n      abstained: false,\n      answer,\n      citations,\n      generationSource: input.runtime.generationSource\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "45eda0ee-e5e0-436d-9698-86f65d31a4fa",
+      "name": "Enforce Citation Integrity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// CITATION-INTEGRITY enforcement (the headline invariant). 'passed' is true iff the response is a\n// VALID grounded answer OR a VALID clean abstain:\n//   - grounded: every citations[].chunkId MUST appear in retrieval.topK (cite-what-you-were-given),\n//     there is >= 1 citation, an answer is present, AND each citation's quote actually exists in its\n//     cited chunk's retrieved text (no fabricated span). A citation outside the retrieved set is\n//     hallucinated attribution -> passed=false.\n//   - abstain: answer == null AND citations == [] (a clean abstain is a correct, passing outcome).\n// This is computed deterministically here so the suite can assert it and the response can surface it.\nconst gen = input.generation;\nconst retrievedIds = new Set((input.retrieval.topK || []).map((c) => c.chunkId));\nconst retrievedTextById = {};\nfor (const c of (input.retrievedChunks || [])) retrievedTextById[c.chunkId] = String(c.text ?? '');\n\nconst integrity = { checks: [] };\nlet passed;\nif (gen.abstained === true) {\n  const answerNull = gen.answer === null || typeof gen.answer === 'undefined';\n  const noCites = Array.isArray(gen.citations) && gen.citations.length === 0;\n  integrity.checks.push({ type: 'abstain-shape', ok: answerNull && noCites, detail: 'abstained -> answer null + citations []' });\n  passed = answerNull && noCites;\n} else {\n  const cites = Array.isArray(gen.citations) ? gen.citations : [];\n  const hasCite = cites.length > 0;\n  const hasAnswer = typeof gen.answer === 'string' && gen.answer.trim().length > 0;\n  const allMap = cites.every((c) => retrievedIds.has(c.chunkId));\n  const quotesExist = cites.every((c) => {\n    const body = retrievedTextById[c.chunkId];\n    return typeof body === 'string' && body.length > 0 && typeof c.quote === 'string' && c.quote.length > 0 && body.includes(c.quote);\n  });\n  integrity.checks.push({ type: 'has-citation', ok: hasCite, detail: '>= 1 citation' });\n  integrity.checks.push({ type: 'has-answer', ok: hasAnswer, detail: 'non-empty answer' });\n  integrity.checks.push({ type: 'citations-map-to-retrieval', ok: allMap, detail: 'every citation chunkId in retrieval.topK' });\n  integrity.checks.push({ type: 'quote-exists-in-chunk', ok: quotesExist, detail: 'every cited quote is a span of its retrieved chunk' });\n  passed = hasCite && hasAnswer && allMap && quotesExist;\n}\nintegrity.passed = passed;\n\nreturn [{ json: { ...input, integrity, passed } }];"
+      }
+    },
+    {
+      "id": "62ed7046-12f3-4c3e-8a74-18a34f2b1af8",
+      "name": "Create Redacted Audit Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nfunction hash(value) {\n  let h = 2166136261;\n  for (let i = 0; i < value.length; i += 1) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\n// Redacted audit: carries ONLY ids, scores, verdicts and counts — never the raw query text, the\n// answer text, the chunk bodies, or the citation quotes (masking invariant asserted by the Layer-2\n// suite). Any email-shaped token that somehow reached a surfaced field is masked defensively.\nconst emailRe = /[^\\s@]+@[^\\s@]+\\.[^\\s@]+/g;\nconst runSeed = input.request.requestId + '|' + input.request.requestedAt;\nconst gen = input.generation;\n\nreturn [{\n  json: {\n    ...input,\n    auditEvent: {\n      auditEventId: 'audit_' + hash(runSeed),\n      requestId: input.request.requestId,\n      retrievalSource: input.runtime.retrievalSource,\n      generationSource: input.runtime.generationSource,\n      requestedRetrievalSource: input.runtime.requestedRetrievalSource,\n      requestedGenerationSource: input.runtime.requestedGenerationSource,\n      abstained: gen.abstained === true,\n      passed: input.passed === true,\n      // ids + scores only — no chunk text, no quotes.\n      topK: (input.retrieval.topK || []).map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score })),\n      maxScore: input.retrieval.maxScore,\n      threshold: input.retrieval.threshold,\n      citedChunkIds: Array.isArray(gen.citations) ? gen.citations.map((c) => c.chunkId) : [],\n      citationCount: Array.isArray(gen.citations) ? gen.citations.length : 0,\n      // Query is NOT stored raw; only its length + a stable hash, so audit correlation is possible\n      // without retaining user text (and any stray email token is masked before hashing/length).\n      queryLength: String(input.query ?? '').length,\n      queryHash: 'q_' + hash(String(input.query ?? '').replace(emailRe, (e) => { const p = e.split('@'); return (p[0] ? p[0][0] + '***' : '***') + '@' + (p[1] ?? ''); })),\n      policyVersion: 'rag-knowledge-assistant-v0.1.0',\n      createdAt: new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "9b0ab5f0-4333-4084-8fe9-8bc153cc0f4a",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst gen = input.generation;\n// Structured JSON response — the scorer contract shape from docs/eval-plan.md. retrieval.topK is the\n// id/source/score surface; retrievedChunks (internal chunk text) is deliberately NOT included.\nreturn [{\n  json: {\n    statusCode: 200,\n    runtime: input.runtime,\n    response: {\n      ok: true,\n      requestId: input.request.requestId,\n      abstained: gen.abstained === true,\n      answer: gen.abstained === true ? null : gen.answer,\n      citations: Array.isArray(gen.citations) ? gen.citations : [],\n      retrieval: {\n        topK: input.retrieval.topK,\n        maxScore: input.retrieval.maxScore,\n        threshold: input.retrieval.threshold\n      },\n      retrievalSource: input.runtime.retrievalSource,\n      generationSource: input.runtime.generationSource,\n      passed: input.passed === true,\n      integrity: input.integrity,\n      auditEventId: input.auditEvent.auditEventId,\n      processedAt: new Date().toISOString(),\n      policyVersion: 'rag-knowledge-assistant-v0.1.0'\n    },\n    auditEvent: input.auditEvent\n  }\n}];"
+      }
+    },
+    {
+      "id": "5b37295c-bde2-4166-9644-192dacd89bd1",
+      "name": "Manual UI Execution?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3040,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-execution",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "5393d97b-2e89-4e2f-b822-3892c4fda5d0",
+      "name": "Show UI Execution Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ok: true,\n    executionMode: 'manual-ui',\n    statusCode: input.statusCode,\n    response: input.response,\n    auditEvent: input.auditEvent ?? null,\n    note: 'Terminal result for n8n editor Execute Workflow. Webhook executions use Return Response instead.'\n  }\n}];"
+      }
+    },
+    {
+      "id": "d154dbb5-0018-4423-97b2-2dbf832b1b00",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3360,
+        420
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "id": "ae24e288-a22b-4844-8eb4-ad1ee1ddff66",
+      "name": "Clean Abstain",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// CLEAN ABSTAIN branch: retrieval did not clear the threshold (out-of-corpus, or the corpus genuinely\n// lacks the answer). Per the eval-plan abstain rule, we emit NO answer and NO fabricated citation:\n//   abstained:true, answer:null, citations:[]. This is the 'I don't have enough information' contract\n// — the system's controlled failure mode, asserted as an invariant (Assert-CleanAbstain).\nreturn [{\n  json: {\n    ...input,\n    generation: {\n      abstained: true,\n      answer: null,\n      citations: [],\n      generationSource: input.runtime.generationSource\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "bc2b0a01-5751-4706-bc0d-ecdcd298a800",
+      "name": "Build Missing Query Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        640
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 400,\n    runtime: input.runtime,\n    response: {\n      ok: false,\n      error: 'Missing required \\'query\\' (non-empty string)',\n      policyVersion: 'rag-knowledge-assistant-v0.1.0'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "6972a227-b4f3-4db1-8275-f9b6ebb1c573",
+      "name": "Manual UI Missing Query Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        640
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-missing-query",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "48a8309b-eec4-4b93-992c-3042f130796a",
+      "name": "Return Missing Query Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1760,
+        760
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "id": "63b24467-0cbf-4cec-b8a9-ac76bfba28df",
+      "name": "Receive Query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        420
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/rag-knowledge-assistant",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "5e4ce1e0-4970-4b3d-9c47-dc78a647e155"
+    }
+  ],
+  "connections": {
+    "Run Demo Query From n8n UI": {
+      "main": [
+        [
+          {
+            "node": "Build Demo Query Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Demo Query Payload": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Query Present?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Present?": {
+      "main": [
+        [
+          {
+            "node": "Stub Embed + Retrieve",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Missing Query Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stub Embed + Retrieve": {
+      "main": [
+        [
+          {
+            "node": "Retrieval Clears Threshold?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieval Clears Threshold?": {
+      "main": [
+        [
+          {
+            "node": "Stub Grounded Answer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clean Abstain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stub Grounded Answer": {
+      "main": [
+        [
+          {
+            "node": "Enforce Citation Integrity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enforce Citation Integrity": {
+      "main": [
+        [
+          {
+            "node": "Create Redacted Audit Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Redacted Audit Event": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Execution?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Abstain": {
+      "main": [
+        [
+          {
+            "node": "Enforce Citation Integrity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Missing Query Error": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Missing Query Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Missing Query Error?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Missing Query Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Query": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}

@@ -1,0 +1,9 @@
+{
+  "id": "partial-corpus",
+  "exercises": "answer present but thin",
+  "query": "写好 eval 对 AI 产品经理有多重要?",
+  "expectAbstain": false,
+  "expectAnswerContains": ["决定性技能"],
+  "expectCiteChunkIds": ["evals-defining-skill"],
+  "_note": "The fact ('写好 eval 是 AI PM 的决定性技能') is present in chunk:evals-defining-skill. The stub answers with a citation from the retrieved chunk OR abstains; it must never fabricate detail beyond the chunk text. Maps to the task's 'evals-defining-skill' intent."
+}
