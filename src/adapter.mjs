@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import * as lark from '@larksuiteoapi/node-sdk';
-import { parseFeishuEvent, mapMessageToIntent, buildGatewayRequest, buildReplyText } from '../scripts/lib/adapter-core.mjs';
+import { parseFeishuEvent, mapMessageToIntent, buildGatewayRequest, buildReplyPayload } from '../scripts/lib/adapter-core.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -72,6 +72,22 @@ async function replyText(messageId, text) {
   });
 }
 
+async function replyMessage(messageId, payload) {
+  const p = payload && typeof payload === 'object' ? payload : { msg_type: 'text', content: { text: String(payload ?? '') } };
+  const msgType = p.msg_type === 'interactive' ? 'interactive' : 'text';
+  const content = msgType === 'interactive' ? p.content : (p.content || { text: p.fallbackText || '' });
+  try {
+    await restClient.im.message.reply({
+      path: { message_id: messageId },
+      data: { content: JSON.stringify(content), msg_type: msgType }
+    });
+  } catch (e) {
+    if (msgType !== 'interactive') { throw e; }
+    console.error('[adapter] interactive reply failed, falling back to text: ' + (e && e.message ? e.message : e));
+    await replyText(messageId, p.fallbackText || '知识库已返回结果,但卡片渲染失败。');
+  }
+}
+
 async function callGateway(intent, payload) {
   const requestId = 'feishu-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   const ts = String(Math.floor(Date.now() / 1000));
@@ -95,8 +111,8 @@ async function onMessage(data) {
     }
     console.log('[adapter] -> intent ' + mapped.intent + ' (' + mapped.reason + ')');
     const gw = await callGateway(mapped.intent, mapped.payload);
-    const reply = buildReplyText(mapped.intent, gw);
-    await replyText(parsed.messageId, reply);
+    const reply = buildReplyPayload(mapped.intent, gw);
+    await replyMessage(parsed.messageId, reply);
     console.log('[adapter] <- replied (gateway ok=' + gw.ok + ', traceId=' + (gw.traceId || 'n/a') + ')');
   } catch (e) {
     console.error('[adapter] handler error: ' + (e && e.message ? e.message : e));
