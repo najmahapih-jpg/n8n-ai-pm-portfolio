@@ -27,14 +27,16 @@
 // chunks all terminate on a full-width 。 so both forms cut at the same place in practice, but the core is faithful
 // to the exact stub literal so the differential is byte-identical, not coincidentally-equal.
 //
-// The POLICY_VERSION below MUST match the literal 'rag-knowledge-assistant-v0.3.0' baked into the compiled nodes;
+// The POLICY_VERSION below MUST match the literal 'rag-knowledge-assistant-v0.4.0' baked into the compiled nodes;
 // if a future recompile bumps it, the differential will fail loudly until the core is re-synced (the intended guard).
-export const POLICY_VERSION = 'rag-knowledge-assistant-v0.3.0';
+export const POLICY_VERSION = 'rag-knowledge-assistant-v0.4.0';
 
 // =========================================================================================================
 // CORPUS — the IN-REPO knowledge base the stub retriever scores against. A VERBATIM (byte-for-byte) mirror of
-// the 'Stub Embed + Retrieve' node's CORPUS constant (source of truth: fixtures/corpus/*.md — 19 chunks: 13
-// Chinese "AI 时代产品经理" + 6 English product-support known-issues/docs). MUST stay in sync with the node; the
+// the 'Stub Embed + Retrieve' node's CORPUS constant (source of truth: fixtures/corpus/*.md — 34 chunks across
+// AI-PM career (zh), product-support (en + appended zh sentence), portfolio-self (zh + appended en sentence)
+// and hiring-signals (zh); the bilingual sentences make BOTH the TF-IDF stub and the language-aware grounded
+// extract work cross-lingually). MUST stay in sync with the node; the
 // differential proves it (a drift in either copy fails the byte-identical retrieval compare).
 // =========================================================================================================
 export const CORPUS = [
@@ -51,23 +53,23 @@ export const CORPUS = [
   { chunkId: "three-skill-clusters", source: "InstitutePM《How to Become an AI Product Manager in 2026》(2026)", url: "https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026", text: "转型 AI 产品经理要同时补齐三大技能簇:技术素养(足以做 eval/模型/成本决策——看得懂模型卡、算得清延迟预算、能用代码跑 eval)、适配 AI 不确定性的产品功力(写 eval 驱动的 spec 而非功能 spec,指标树看质量分布而非只看均值)、以及 AI 专属判断(模型选型、失败态 UX、成本-质量-延迟三角)。其中\"判断\"这一簇被认为\"最难伪装,也是多数候选人最被低估的一项\"。" },
   { chunkId: "hanniman-humanity", source: "黄钊 hanniman —《AI产品经理能力模型的重点素质:人文素养和灵魂境界》,人人都是产品经理 (2022);摘自《AI产品经理的实操手册》", url: "https://www.woshipm.com/pmd/5396083.html", text: "在 AI 产品经理的能力模型里,黄钊(hanniman,前腾讯 PM、\"AI产品经理大本营\"创始人)提出一个中文社区独有的关键差异点:\"人文素养和灵魂境界\"。他认为,常规产品能力、AI 知识、行业认知决定你产出价值的下限,而\"人文素养和灵魂境界\"决定上限——\"如果你想成为 TOP 5%、甚至 TOP 1% 的 AI 产品经理,就一定不能忽视这个方面\"。" },
   { chunkId: "geektime-abilities", source: "刘海丰 — 极客时间专栏《成为AI产品经理》,极客时间(time.geekbang.org)", url: "https://time.geekbang.org", text: "极客时间专栏《成为 AI 产品经理》(刘海丰)把 AI 产品经理的核心能力概括为三大能力:项目管控、算法技能、模型评估,并强调要能\"主导 AI 项目、带领算法同学达成业务目标\"。其中\"模型评估\"能力,与\"eval 是 AI PM 决定性技能\"的判断相互印证。" },
-  { chunkId: "known-export-mobile-crash", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "The data export button crashes the mobile app on both iOS and Android when a report is exported to CSV or PDF. This is a known issue affecting mobile app versions 2.2 and 2.3; a fix is scheduled for version 2.4. Workaround: run the export from the desktop web app instead, where export works normally. Owning team: product-engineering. Severity: high." },
-  { chunkId: "known-dashboard-slow", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "The analytics dashboard loads slowly, often taking ten seconds or more, for workspaces with large datasets. The known cause is unbounded client-side aggregation of the trend charts. A server-side aggregation fix is in progress. Workaround: narrow the dashboard date range, or open a saved view with fewer segments. Owning team: product-engineering. Severity: medium." },
-  { chunkId: "known-sso-login-loop", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "Single sign-on users are sometimes stuck in a login redirect loop after their session expires. The known cause is the browser blocking third-party cookies. Workaround: allow cookies for the app domain, or sign in with the email-and-password fallback. Owning team: platform-security. Severity: high." },
-  { chunkId: "doc-export-howto", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "To export data, open any report or dashboard, click the Export button, and choose a format: CSV, XLSX, or PDF. Exports run in the background, and you receive an email with a download link when the file is ready. Large exports over one million rows are queued and may take a few minutes." },
-  { chunkId: "doc-dashboard-overview", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The analytics dashboard has three areas. KPI cards at the top show headline metrics, trend charts in the middle show changes over time, and a data table at the bottom lists the underlying records. You can filter the whole dashboard by date range, by segment, and by saved views that you create and share with your team." },
-  { chunkId: "faq-mobile-support", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The mobile app supports viewing dashboards, reports, and notifications. Some administrative features, including data export, user management, and billing, are available on the desktop web app only and not on mobile." },
-  { chunkId: "known-import-csv-encoding", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "Importing a CSV file that is not UTF-8 encoded (for example GBK or GB2312 exports from older spreadsheet tools) shows garbled Chinese characters in the imported records. This is a known issue; an encoding auto-detection fix is planned for version 2.5. Workaround: re-save the file as UTF-8 (in Excel use Save As - CSV UTF-8) before importing. Owning team: product-engineering. Severity: medium." },
-  { chunkId: "known-notification-delay", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "Email notifications can be delayed by up to thirty minutes during peak hours. The known cause is queue worker saturation in the notification service; an autoscaling fix is in progress. Workaround: rely on in-app notifications, which are delivered in real time and are not affected. Owning team: platform-infra. Severity: low." },
-  { chunkId: "doc-api-rate-limits", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The public API allows 100 requests per minute per token on the standard plan and 1000 on the enterprise plan. Requests over the limit receive HTTP 429 with a Retry-After header. Integrations should use exponential backoff and batch endpoints where possible; sustained higher throughput requires an enterprise token." },
-  { chunkId: "doc-permissions-roles", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The product has three workspace roles. Admins manage billing, users, and security settings. Editors create and edit dashboards and reports and can run exports. Viewers can view shared dashboards and export the data they can see, but cannot edit. Only an admin can change a member role, and the change takes effect the next time that member signs in." },
-  { chunkId: "doc-data-retention", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "Analytics event data is retained for thirteen months on the standard plan and thirty-six months on the enterprise plan; data older than the retention window is dropped from dashboards and exports. When a workspace is deleted, all of its data is permanently purged after a thirty-day grace period and cannot be recovered." },
-  { chunkId: "pf-gateway-security", source: "Internal Portfolio Docs — interaction-gateway workflow-contract 与 ADR-0001", url: "", text: "作品集的统一入口是 interaction-gateway(签名网关):每个请求必须带 HMAC-SHA256 签名(对时间戳加请求体的精确字节签名,带重放窗口),超大请求体直接 413 拒绝,载荷中的疑似秘密(API key、Bearer token 等)在路由前被剥离并计数,intent 必须命中白名单否则 422 不路由。这些控制全部 fail-closed:空密钥、过期时间戳一律拒绝。安全核心是纯函数,由 20 项核心断言加 171 项编译后差分断言离线验证。" },
-  { chunkId: "pf-rag-abstention", source: "Internal Portfolio Docs — rag-knowledge-assistant ADR-0001 与 workflow-contract", url: "", text: "RAG 知识助手的诚实性由三层机制保证:每个回答必须引用真实检索到的语料片段(引用完整性门:引用了未检索到的片段即失败);检索得分低于阈值时返回「我没有足够的信息」而不是编造;live 向量检索(Supabase pgvector)出错或为空时降级为对同一语料的确定性 TF-IDF 检索,并如实标注 retrievalSource,绝不产生假弃答。" },
-  { chunkId: "pf-drift-integrity", source: "Internal Portfolio Docs — scheduled-drift-monitor ADR-0001 与 eval-plan", url: "", text: "定时漂移监控的简报完整性由两个以运行记录为准的检查保证:简报末尾机器追加的 METRICS 行逐项与记录重新核对;摘要散文中出现的任何通过率形状的数字(百分比或 0 到 1 的小数)必须等于记录里真实存在的比率——LLM 或注入的摘要若声称数据不支持的通过率,这次运行直接判失败。简报卡片(飞书)也从同一记录确定性生成,红绿色由 drift.any 决定。" },
-  { chunkId: "pf-agent-guardrails", source: "Internal Portfolio Docs — autonomous-agent eval-plan 与 workflow-contract", url: "", text: "自治代理(autonomous agent)在四条护栏内工作:工具白名单与网关 intent 一字不差,代理无法调用任何未注册目标;步数上限防止无限循环;不安全请求直接拒绝且零工具调用;工具失败(下游 4xx)如实返回 ok:false,绝不编造结果。代理轨迹由统一的 rubric 评分,同一套 rubric 同时评判确定性 stub 规划器和真实 LLM 规划器。" },
-  { chunkId: "pf-eval-honest", source: "Internal Portfolio Docs — llm-eval-harness eval-plan 与 honest-eval 框架说明", url: "", text: "评测台(eval harness)给任意被测系统打分:可核对的事实用确定性断言,主观质量用 LLM-as-judge,且裁判本身永不被当作真值——裁判与人工标注的一致率被持续校准,并设有裁判漂移护栏。全套评测默认走可复现的 stub 路径,CI 离线即可全绿;live 模型评测是显式 opt-in。" },
-  { chunkId: "pf-connected-loop", source: "Internal Portfolio Docs — 跨仓库 registry 与 adopt-on-your-n8n 部署文档", url: "", text: "九个仓库构成一个互联系统:评测台(A)把 RAG 助手(B)当黑盒被测系统打分;漂移监控(D)定期保鲜 B 的语料并跟踪 A 的评分是否漂移;签名网关把所有工作流变成进程内可调用的目标;自治代理把它们当工具编排;飞书适配器提供进出双向的聊天入口。每个仓库都有离线验证门、canonical 一致性门和逐文件提交纪律。" },
+  { chunkId: "known-export-mobile-crash", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "The data export button crashes the mobile app on both iOS and Android when a report is exported to CSV or PDF. This is a known issue affecting mobile app versions 2.2 and 2.3; a fix is scheduled for version 2.4. Workaround: run the export from the desktop web app instead, where export works normally. Owning team: product-engineering. Severity: high. 移动端 App 在将报表导出为 CSV 或 PDF 时会崩溃,这是影响近期移动端版本的已知问题,临时方案是改用桌面网页版导出,修复已排入下一个版本,负责团队为产品工程组,严重级别为高。" },
+  { chunkId: "known-dashboard-slow", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "The analytics dashboard loads slowly, often taking ten seconds or more, for workspaces with large datasets. The known cause is unbounded client-side aggregation of the trend charts. A server-side aggregation fix is in progress. Workaround: narrow the dashboard date range, or open a saved view with fewer segments. Owning team: product-engineering. Severity: medium. 大数据量工作区的分析看板加载缓慢是已知问题,原因是趋势图在客户端做了无上限聚合,临时方案是缩小看板日期范围或改用分段更少的已保存视图,严重级别为中。" },
+  { chunkId: "known-sso-login-loop", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "Single sign-on users are sometimes stuck in a login redirect loop after their session expires. The known cause is the browser blocking third-party cookies. Workaround: allow cookies for the app domain, or sign in with the email-and-password fallback. Owning team: platform-security. Severity: high. 单点登录用户在会话过期后可能陷入登录跳转循环,这是已知问题,原因是浏览器拦截了第三方 Cookie,临时方案是允许应用域名的 Cookie 或改用邮箱密码方式登录,严重级别为高。" },
+  { chunkId: "doc-export-howto", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "To export data, open any report or dashboard, click the Export button, and choose a format: CSV, XLSX, or PDF. Exports run in the background, and you receive an email with a download link when the file is ready. Large exports over one million rows are queued and may take a few minutes. 导出数据时,打开任意报表或看板,点击导出按钮并选择 CSV、XLSX 或 PDF 格式,导出在后台运行,文件就绪后会通过邮件发送下载链接,超过一百万行的大型导出会进入队列。" },
+  { chunkId: "doc-dashboard-overview", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The analytics dashboard has three areas. KPI cards at the top show headline metrics, trend charts in the middle show changes over time, and a data table at the bottom lists the underlying records. You can filter the whole dashboard by date range, by segment, and by saved views that you create and share with your team. 分析看板分为三个区域,顶部 KPI 卡片展示关键指标,中部趋势图展示随时间的变化,底部数据表列出底层记录,整个看板可按日期范围、分段和已保存视图筛选。" },
+  { chunkId: "faq-mobile-support", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The mobile app supports viewing dashboards, reports, and notifications. Some administrative features, including data export, user management, and billing, are available on the desktop web app only and not on mobile. 移动端 App 支持查看看板、报表和通知,而数据导出、用户管理、账单等管理功能仅在桌面网页版提供,移动端不可用。" },
+  { chunkId: "known-import-csv-encoding", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "Importing a CSV file that is not UTF-8 encoded (for example GBK or GB2312 exports from older spreadsheet tools) shows garbled Chinese characters in the imported records. This is a known issue; an encoding auto-detection fix is planned for version 2.5. Workaround: re-save the file as UTF-8 (in Excel use Save As - CSV UTF-8) before importing. Owning team: product-engineering. Severity: medium. 导入非 UTF-8 编码(例如 GBK 或 GB2312)的 CSV 文件会出现中文乱码,这是已知问题,临时方案是先把文件另存为 UTF-8 编码的 CSV 再导入,编码自动检测的修复已在计划中。" },
+  { chunkId: "known-notification-delay", source: "Internal Product Knowledge Base — Known Issues", url: "", text: "Email notifications can be delayed by up to thirty minutes during peak hours. The known cause is queue worker saturation in the notification service; an autoscaling fix is in progress. Workaround: rely on in-app notifications, which are delivered in real time and are not affected. Owning team: platform-infra. Severity: low. 高峰时段邮件通知最多可能延迟三十分钟,这是已知问题,原因是通知服务的队列工作进程饱和,临时方案是依赖实时送达、不受影响的应用内通知,严重级别为低。" },
+  { chunkId: "doc-api-rate-limits", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The public API allows 100 requests per minute per token on the standard plan and 1000 on the enterprise plan. Requests over the limit receive HTTP 429 with a Retry-After header. Integrations should use exponential backoff and batch endpoints where possible; sustained higher throughput requires an enterprise token. 公开 API 的限流为标准版每令牌每分钟 100 次请求、企业版 1000 次,超限请求会收到 HTTP 429 与 Retry-After 响应头,集成方应使用指数退避并尽量使用批量端点。" },
+  { chunkId: "doc-permissions-roles", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "The product has three workspace roles. Admins manage billing, users, and security settings. Editors create and edit dashboards and reports and can run exports. Viewers can view shared dashboards and export the data they can see, but cannot edit. Only an admin can change a member role, and the change takes effect the next time that member signs in. 产品有三种工作区角色,管理员负责账单、用户与安全设置,编辑者可创建和编辑看板报表并运行导出,查看者只能查看共享看板并导出可见数据,只有管理员能变更成员角色。" },
+  { chunkId: "doc-data-retention", source: "Internal Product Knowledge Base — Product Docs", url: "", text: "Analytics event data is retained for thirteen months on the standard plan and thirty-six months on the enterprise plan; data older than the retention window is dropped from dashboards and exports. When a workspace is deleted, all of its data is permanently purged after a thirty-day grace period and cannot be recovered. 分析事件数据在标准版保留十三个月、企业版保留三十六个月,超出保留窗口的数据会从看板和导出中移除,工作区删除后经过三十天宽限期所有数据将被永久清除且无法恢复。" },
+  { chunkId: "pf-gateway-security", source: "Internal Portfolio Docs — interaction-gateway workflow-contract 与 ADR-0001", url: "", text: "作品集的统一入口是 interaction-gateway(签名网关):每个请求必须带 HMAC-SHA256 签名(对时间戳加请求体的精确字节签名,带重放窗口),超大请求体直接 413 拒绝,载荷中的疑似秘密(API key、Bearer token 等)在路由前被剥离并计数,intent 必须命中白名单否则 422 不路由。这些控制全部 fail-closed:空密钥、过期时间戳一律拒绝。安全核心是纯函数,由 20 项核心断言加 171 项编译后差分断言离线验证。 The interaction gateway is the portfolio's single signed entrance: every request must carry an HMAC-SHA256 signature over the exact timestamp-plus-body bytes inside a replay window, oversized bodies are rejected with 413, suspected secrets are stripped and counted before routing, non-allowlisted intents get 422, and every control fails closed. 对请求字节的 HMAC 签名加上重放窗口,就是网关防篡改、防重放的核心安全机制。" },
+  { chunkId: "pf-rag-abstention", source: "Internal Portfolio Docs — rag-knowledge-assistant ADR-0001 与 workflow-contract", url: "", text: "RAG 知识助手的诚实性由三层机制保证:每个回答必须引用真实检索到的语料片段(引用完整性门:引用了未检索到的片段即失败);检索得分低于阈值时返回「我没有足够的信息」而不是编造;live 向量检索(Supabase pgvector)出错或为空时降级为对同一语料的确定性 TF-IDF 检索,并如实标注 retrievalSource,绝不产生假弃答。 The RAG assistant stays honest through citation integrity (every answer must cite chunks that were really retrieved), threshold-gated abstention (below the similarity floor it answers that it does not have enough information instead of fabricating), and a truthful retrievalSource label whenever live vector retrieval degrades." },
+  { chunkId: "pf-drift-integrity", source: "Internal Portfolio Docs — scheduled-drift-monitor ADR-0001 与 eval-plan", url: "", text: "定时漂移监控的简报完整性由两个以运行记录为准的检查保证:简报末尾机器追加的 METRICS 行逐项与记录重新核对;摘要散文中出现的任何通过率形状的数字(百分比或 0 到 1 的小数)必须等于记录里真实存在的比率——LLM 或注入的摘要若声称数据不支持的通过率,这次运行直接判失败。简报卡片(飞书)也从同一记录确定性生成,红绿色由 drift.any 决定。 The scheduled drift monitor re-checks every machine-appended METRICS line and every pass-rate-shaped number in the digest prose against the actual run record, and the run fails outright if an LLM summary claims a rate the data does not support." },
+  { chunkId: "pf-agent-guardrails", source: "Internal Portfolio Docs — autonomous-agent eval-plan 与 workflow-contract", url: "", text: "自治代理(autonomous agent)在四条护栏内工作:工具白名单与网关 intent 一字不差,代理无法调用任何未注册目标;步数上限防止无限循环;不安全请求直接拒绝且零工具调用;工具失败(下游 4xx)如实返回 ok:false,绝不编造结果。代理轨迹由统一的 rubric 评分,同一套 rubric 同时评判确定性 stub 规划器和真实 LLM 规划器。 The autonomous agent operates inside four guardrails: a tool allowlist identical to the gateway intents, a hard step cap, outright refusal of unsafe tasks with zero tool calls, and honest ok:false results on downstream tool failures, with one shared rubric scoring both the stub planner and the live LLM planner." },
+  { chunkId: "pf-eval-honest", source: "Internal Portfolio Docs — llm-eval-harness eval-plan 与 honest-eval 框架说明", url: "", text: "评测台(eval harness)给任意被测系统打分:可核对的事实用确定性断言,主观质量用 LLM-as-judge,且裁判本身永不被当作真值——裁判与人工标注的一致率被持续校准,并设有裁判漂移护栏。全套评测默认走可复现的 stub 路径,CI 离线即可全绿;live 模型评测是显式 opt-in。 The eval harness scores any system under test with deterministic assertions for checkable facts and an LLM judge for subjective quality, never treats the judge as ground truth, keeps judge-human agreement calibrated, and stays fully green offline on the reproducible stub path while live model evaluation is opt-in." },
+  { chunkId: "pf-connected-loop", source: "Internal Portfolio Docs — 跨仓库 registry 与 adopt-on-your-n8n 部署文档", url: "", text: "九个仓库构成一个互联系统:评测台(A)把 RAG 助手(B)当黑盒被测系统打分;漂移监控(D)定期保鲜 B 的语料并跟踪 A 的评分是否漂移;签名网关把所有工作流变成进程内可调用的目标;自治代理把它们当工具编排;飞书适配器提供进出双向的聊天入口。每个仓库都有离线验证门、canonical 一致性门和逐文件提交纪律。 The nine repositories form one connected system: the eval harness grades the RAG assistant as a black box, the drift monitor refreshes its corpus and tracks score drift, the signed gateway turns every workflow into an in-process callable target, the autonomous agent orchestrates them as tools, and the Feishu adapter provides the two-way chat entrance." },
   { chunkId: "own-system-behavior", source: "Akhil Tiwari — The Product Space《What an AI PM Portfolio Must Show in 2026》(2026-01-14)", url: "https://theproductspace.substack.com/p/what-an-ai-pm-portfolio-must-show", text: "2026 年的 AI-PM 招聘共识之一:AI 产品经理不是被雇来设计功能,而是被雇来掌控系统行为(own system behavior)。只展示输出、不展示控制机制(评测、护栏、失败处理)的作品集会被静默筛掉;能解释「系统为什么这样表现、怎么约束它」的候选人才有差异化。" },
   { chunkId: "hireability-ranking", source: "InstitutePM《12 AI PM Portfolio Projects Ranked by Hireability (2026)》(2026-05-10)", url: "https://www.institutepm.com/knowledge-hub/ai-pm-learning-by-building-projects", text: "InstitutePM 对 12 个 AI-PM 作品集项目按可雇佣性排序:评测框架(Eval Harness)排第一——被称为 2026 年单一最高信号项目,几乎没有 PM 候选人真正建过,能谈 LLM-as-judge 偏差、golden dataset、pass@k 就进前 5%;RAG 是最抢手技能,要点是来源引用与检索失败时说「我不知道」;工具调用 agent 是前沿;漂移监控则是大多数作品集失败的地方。" },
   { chunkId: "failure-analysis-decisions", source: "Klement Gunndu — dev.to《5 AI Portfolio Projects That Actually Get You Hired in 2026》(2026-03-07)", url: "https://dev.to/klement_gunndu/5-ai-portfolio-projects-that-actually-get-you-hired-in-2026-5bpl", text: "2026 年 AI 作品集的通行要求是四件配套工件:行为规格(behavior spec,取代传统 PRD)、评测准则(eval rubric)、失败分析(failure analysis——主动展示失败案例与处置)、以及 DECISIONS.md(记录为什么选这个模型、这种分块、这个向量库)。光有能跑的 demo 而没有这些控制工件,会被视为没有系统思维。" },
@@ -90,6 +92,11 @@ export function normalizeRequest(source, opts = {}) {
 
   const query = text(body.query) || text(body.question) || text(body.q);
   const hasQuery = query.length > 0;
+
+  // Deterministic bilingual routing: queryLang is 'zh' when the query carries at least two CJK Han
+  // characters, else 'en'. It drives ONLY the answer-extract language preference (Stub Grounded Answer)
+  // and the abstain-note language (Clean Abstain) — it feeds no id/hash seed and never touches retrieval.
+  const queryLang = ((query.match(/[一-鿿]/g) || []).length) >= 2 ? 'zh' : 'en';
 
   const rawTopK = Number(body.topK);
   const topK = Number.isFinite(rawTopK) && rawTopK >= 1 ? Math.min(Math.floor(rawTopK), 8) : 3;
@@ -131,6 +138,9 @@ export function normalizeRequest(source, opts = {}) {
       // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when
       // absent. Echoed by buildAuditEvent + buildResponse; feeds no id/hash seed (purely additive).
       traceId,
+      // 'zh' | 'en' — the deterministic query-language label (>= 2 Han chars -> zh). Read by the stub
+      // grounded answer (same-language extract preference) and the clean abstain (note language).
+      queryLang,
       topK,
       thresholdOverride,
       retrievalSource,
@@ -245,14 +255,19 @@ export function stubRetrieve(input) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
-// groundedExtract — mirror of the STUB 'Stub Grounded Answer' node's helper: the verbatim chunk text up to the
-// first sentence terminator. Terminator class is the STUB node's HALF-WIDTH form [.!?。!?] (see finding #21
-// note at the top of this file). Returns the whole sentence (a guaranteed-present span of the cited chunk).
+// groundedExtract — mirror of the STUB 'Stub Grounded Answer' node's helper, now LANGUAGE-AWARE: split the
+// chunk into sentence segments (terminator class stays the STUB node's HALF-WIDTH form [.!?。!?], finding #21),
+// prefer the FIRST segment whose language matches the query (zh = >= 2 Han chars in the segment), and fall
+// back to the first segment (the previous behavior) when no segment matches. Every pick is still a verbatim
+// span of the cited chunk, so citation integrity holds by construction. Bilingual chunks keep their appended
+// translation sentence free of internal half-width terminators so the segment split lands on whole sentences.
 // ---------------------------------------------------------------------------------------------------------
-function groundedExtract(t) {
+function groundedExtract(t, lang) {
   const s = String(t ?? '').trim();
-  const m = s.match(/^[\s\S]*?[.!?。!?]/);
-  return (m ? m[0] : s).trim();
+  const segs = s.match(/[\s\S]*?[.!?。!?]/g) || [];
+  const isZh = (seg) => ((seg.match(/[一-鿿]/g) || []).length) >= 2;
+  const pick = segs.find((seg) => (lang === 'zh') === isZh(seg));
+  return ((pick ?? segs[0]) ?? s).trim();
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -266,15 +281,16 @@ export function stubGroundedAnswer(input) {
   const threshold = input.retrieval.threshold;
   const grounding = chunks.filter((c) => c.score >= threshold);
   const used = grounding.length > 0 ? grounding : chunks.slice(0, 1);
+  const lang = input.runtime.queryLang;
 
   const citations = used.map((c) => ({
     chunkId: c.chunkId,
     source: c.source,
     url: c.url,
-    quote: groundedExtract(c.text)
+    quote: groundedExtract(c.text, lang)
   }));
 
-  const answer = used.map((c) => groundedExtract(c.text)).join(' ');
+  const answer = used.map((c) => groundedExtract(c.text, lang)).join(' ');
 
   return {
     ...input,
@@ -289,7 +305,8 @@ export function stubGroundedAnswer(input) {
 
 // ---------------------------------------------------------------------------------------------------------
 // (4) cleanAbstain — mirror of 'Clean Abstain'. The controlled failure mode: abstained:true, answer:null,
-// citations:[], with the CHINESE 'insufficient information' message as a separate 'note' field.
+// citations:[], with the 'insufficient information' message as a separate 'note' field in the QUERY's
+// language (runtime.queryLang 'en' -> English note, else the original Chinese note).
 // ---------------------------------------------------------------------------------------------------------
 export function cleanAbstain(input) {
   return {
@@ -298,7 +315,7 @@ export function cleanAbstain(input) {
       abstained: true,
       answer: null,
       citations: [],
-      note: '信息不足,无法回答',
+      note: input.runtime.queryLang === 'en' ? 'Not enough information to answer' : '信息不足,无法回答',
       generationSource: input.runtime.generationSource
     }
   };
