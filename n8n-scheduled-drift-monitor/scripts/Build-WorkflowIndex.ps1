@@ -36,6 +36,12 @@ function Normalize-NewLine {
   return ($Value -replace "`r`n", "`n") -replace "`r", "`n"
 }
 
+function Join-RegistryPath {
+  param([string[]]$Parts)
+
+  return ($Parts -join "\").Replace("/", "\")
+}
+
 function Get-WorkflowComplexity {
   param([int]$NodeCount)
 
@@ -84,7 +90,7 @@ $entries = foreach ($canonicalFile in $canonicalFiles) {
   $nodeTypes = @($nodes | ForEach-Object { [string]$_.type } | Sort-Object -Unique)
   $triggerTypes = @($nodeTypes | Where-Object { $_ -match '(?i)(webhook|trigger)' })
   $release = if ($meta -and $meta.PSObject.Properties["release"]) { [string]$meta.release } else { "" }
-  $releasePath = if (-not [string]::IsNullOrWhiteSpace($release)) { Join-Path "workflows\releases" $release } else { "" }
+  $releasePath = if (-not [string]::IsNullOrWhiteSpace($release)) { Join-RegistryPath @("workflows", "releases", $release) } else { "" }
 
   [pscustomobject][ordered]@{
     slug = if ($meta -and $meta.PSObject.Properties["slug"]) { [string]$meta.slug } else { $slug }
@@ -97,10 +103,10 @@ $entries = foreach ($canonicalFile in $canonicalFiles) {
     project = if ($meta -and $meta.PSObject.Properties["project"]) { [string]$meta.project } else { "" }
     lastWriter = if ($meta -and $meta.PSObject.Properties["lastWriter"]) { [string]$meta.lastWriter } else { "" }
     n8nWorkflowId = if ($meta -and $meta.PSObject.Properties["n8nWorkflowId"]) { [string]$meta.n8nWorkflowId } else { "" }
-    source = if ($meta -and $meta.PSObject.Properties["source"]) { Join-Path "workflows\sdk" ([string]$meta.source) } else { "" }
+    source = if ($meta -and $meta.PSObject.Properties["source"]) { Join-RegistryPath @("workflows", "sdk", ([string]$meta.source)) } else { "" }
     canonical = ConvertTo-RelativePath -BasePath $repoRoot -Path $canonicalFile.FullName
     release = $releasePath
-    request = if ($meta -and $meta.PSObject.Properties["request"]) { Join-Path "fixtures\requests" ([string]$meta.request) } else { "" }
+    request = if ($meta -and $meta.PSObject.Properties["request"]) { Join-RegistryPath @("fixtures", "requests", ([string]$meta.request)) } else { "" }
     trigger = if ($meta -and $meta.PSObject.Properties["trigger"]) { [string]$meta.trigger } elseif ($triggerTypes.Count -gt 0) { $triggerTypes -join ", " } else { "" }
     integrations = [string[]]@(Get-ArrayValue -Object $meta -Name "integrations")
     tags = [string[]]@(Get-ArrayValue -Object $meta -Name "tags")
