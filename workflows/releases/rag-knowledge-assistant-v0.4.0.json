@@ -3,7 +3,7 @@
   "name": "Portfolio - RAG Knowledge Assistant API",
   "nodes": [
     {
-      "id": "3ea32562-970d-4172-bb47-5b51633dd769",
+      "id": "88856c4d-6f73-49a4-9b13-0fedb2cb300b",
       "name": "rag-knowledge-assistant overview",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -12,14 +12,14 @@
         -10
       ],
       "parameters": {
-        "content": "## RAG Knowledge Assistant v0.3.0 (zh \"AI 时代产品经理\" corpus, provenance-tracked; stub default + LIVE Supabase/Ollama, opt-in)\nLocal retrieval-grounded API over a Chinese, authoritative-sourced, provenance-tracked corpus (fixtures/corpus/* — 13 chunks across 西方PM/中文社区/开源社区 sources, each carrying source title + url + retrievedAt). A webhook receives a query, then a RETRIEVAL-SOURCE gate routes: retrievalSource:\"supabase\" EMBEDS the query via Ollama nomic-embed-text-v2-moe (768-dim, \"search_query: \" prefix) and calls the Supabase match_documents pgvector RPC (header auth, User-Agent n8n); otherwise the DEFAULT deterministic STUB retriever (TF-IDF cosine over CJK bigrams + ASCII tokens, no model) searches the IN-REPO corpus. Both produce the same retrieval contract (topK=[{chunkId,source,score}], maxScore, threshold) but on DIFFERENT score scales, so the abstention floor is a PER-SOURCE default (stub TF-IDF 0.08; supabase nomic-embed cosine 0.35), overridable per request via body.threshold. A THRESHOLD GATE then routes to a GROUNDED ANSWER or a CLEAN ABSTAIN (abstained:true, answer:null, citations:[], note:\"信息不足,无法回答\" — the controlled failure mode, in Chinese). On the grounded branch a GENERATION-SOURCE gate routes: generationSource:\"ollama\" calls Ollama llama3.2:3b (temperature 0, \"只依据提供的上下文用简体中文作答;若信息不足则回答『信息不足,无法回答』\") for the prose; otherwise the DEFAULT stub composes a Chinese grounded extract. CRITICAL: on BOTH generation paths the CITATIONS are corpus-grounded (chunkId/source/url/quote derived from the retrieved chunks, never from the model), so B cites the REAL authoritative source + link and CITATION-INTEGRITY (every cited chunkId in retrieval.topK; the quote is a real span of its chunk) holds by construction and is ENFORCED deterministically (a cited chunk outside the retrieved set -> passed=false). Live nodes are onError-tolerant and DEGRADE to the deterministic result (retrievalSource:\"supabase-fallback\" / generationSource:\"ollama-fallback\"); the response reports what ACTUALLY ran. A redacted audit event (ids + scores + verdicts only — no raw query/answer/chunk text) precedes a structured JSON response per the eval-plan scorer contract (abstained, answer, note, citations, retrieval{topK,maxScore,threshold}, retrievalSource, generationSource, passed, policyVersion rag-knowledge-assistant-v0.4.0). The stub is the DEFAULT everywhere CI touches, so verify:static/json/live stay OFFLINE + deterministic; the live path is opt-in per request (verify:rag-live). Supabase is one-command-refreshable from the cited sources via scripts/Refresh-Corpus.ps1 (stub stays a pinned snapshot). Manual trigger runs an editor demo; the webhook serves the API. Mirrors the sibling eval-harness judgeSource:\"ollama\" live-gate idiom.",
+        "content": "## RAG Knowledge Assistant v0.3.0 (zh \"AI 时代产品经理\" corpus, provenance-tracked; stub default + LIVE Supabase/Ollama, opt-in)\\nLocal retrieval-grounded API over a Chinese, authoritative-sourced, provenance-tracked corpus (fixtures/corpus/* — 13 chunks across 西方PM/中文社区/开源社区 sources, each carrying source title + url + retrievedAt). A webhook receives a query, then a RETRIEVAL-SOURCE gate routes: retrievalSource:\"supabase\" EMBEDS the query via Ollama nomic-embed-text-v2-moe (768-dim, \"search_query: \" prefix) and calls the Supabase match_documents pgvector RPC (header auth, User-Agent n8n); otherwise the DEFAULT deterministic STUB retriever (TF-IDF cosine over CJK bigrams + ASCII tokens, no model) searches the IN-REPO corpus. Both produce the same retrieval contract (topK=[{chunkId,source,score}], maxScore, threshold) but on DIFFERENT score scales, so the abstention floor is a PER-SOURCE default (stub TF-IDF 0.08; supabase nomic-embed cosine 0.35), overridable per request via body.threshold. A THRESHOLD GATE then routes to a GROUNDED ANSWER or a CLEAN ABSTAIN (abstained:true, answer:null, citations:[], note:\"信息不足,无法回答\" — the controlled failure mode, in Chinese). On the grounded branch a GENERATION-SOURCE gate routes: generationSource:\"ollama\" calls Ollama llama3.2:3b (temperature 0, \"只依据提供的上下文用简体中文作答;若信息不足则回答『信息不足,无法回答』\") for the prose; otherwise the DEFAULT stub composes a Chinese grounded extract. CRITICAL: on BOTH generation paths the CITATIONS are corpus-grounded (chunkId/source/url/quote derived from the retrieved chunks, never from the model), so B cites the REAL authoritative source + link and CITATION-INTEGRITY (every cited chunkId in retrieval.topK; the quote is a real span of its chunk) holds by construction and is ENFORCED deterministically (a cited chunk outside the retrieved set -> passed=false). Live nodes are onError-tolerant and DEGRADE to the deterministic result (retrievalSource:\"supabase-fallback\" / generationSource:\"ollama-fallback\"); the response reports what ACTUALLY ran. A redacted audit event (ids + scores + verdicts only — no raw query/answer/chunk text) precedes a structured JSON response per the eval-plan scorer contract (abstained, answer, note, citations, retrieval{topK,maxScore,threshold}, retrievalSource, generationSource, passed, policyVersion rag-knowledge-assistant-v0.4.0). The stub is the DEFAULT everywhere CI touches, so verify:static/json/live stay OFFLINE + deterministic; the live path is opt-in per request (verify:rag-live). Supabase is one-command-refreshable from the cited sources via scripts/Refresh-Corpus.ps1 (stub stays a pinned snapshot). Manual trigger runs an editor demo; the webhook serves the API. Mirrors the sibling eval-harness judgeSource:\"ollama\" live-gate idiom.",
         "color": 4,
         "width": 3180,
         "height": 580
       }
     },
     {
-      "id": "cc6a4564-1b15-4b4c-b6f1-743a44993bd1",
+      "id": "13f61021-8fd2-4572-9b6b-b00a351e69cd",
       "name": "Run Demo Query From n8n UI",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
@@ -29,7 +29,7 @@
       ]
     },
     {
-      "id": "2171fb74-15c8-4c90-866e-035110ed270f",
+      "id": "e6bedcc0-3132-4f04-9abf-465f7b5910c5",
       "name": "Build Demo Query Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -44,7 +44,7 @@
       }
     },
     {
-      "id": "7b091b48-7884-4855-b4dc-44e5209b6bd5",
+      "id": "c3e951f7-7257-4146-ad5c-848bf37f2be0",
       "name": "Normalize Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -59,7 +59,7 @@
       }
     },
     {
-      "id": "ce9888d5-0193-4f43-845a-6d287e346cff",
+      "id": "6d552760-5821-4324-b8cd-d8051ee34b06",
       "name": "Query Present?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -93,7 +93,7 @@
       }
     },
     {
-      "id": "83d7ee58-409b-47cd-bb49-b2a06ed3cc75",
+      "id": "580e931d-fb62-45a5-9162-ab9621bd52d4",
       "name": "Retrieval Source = Supabase?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -127,7 +127,7 @@
       }
     },
     {
-      "id": "006ce4ac-beef-4233-ac25-972f080cf9db",
+      "id": "eafdcebf-01c2-4ccf-9984-0a7fab797714",
       "name": "Embed Query (Ollama)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -149,7 +149,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "9fe099be-8d18-4f8b-801e-acdb07fbacc8",
+      "id": "6165baff-bb0d-451c-8d27-0978aa39bfd9",
       "name": "Match Documents (Supabase RPC)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -186,7 +186,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "6848c23c-6a13-432b-b9e5-d59ac724c12f",
+      "id": "ed3dd27c-29f2-49e0-bdcb-d5668385f7f9",
       "name": "Map Supabase Retrieval",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -201,7 +201,7 @@
       }
     },
     {
-      "id": "63420a1e-73ec-44f2-88e8-3dbfa134ffd6",
+      "id": "9de21d85-b686-4ca7-957f-7934de57f71c",
       "name": "Retrieval Clears Threshold?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -235,7 +235,7 @@
       }
     },
     {
-      "id": "6550c450-fcec-4403-9ff7-e4ed1dae235e",
+      "id": "a0c4fd9b-7217-4984-a0e8-3bb51ca7e693",
       "name": "Generation Source = Ollama?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -269,7 +269,7 @@
       }
     },
     {
-      "id": "b70b9200-d07d-4fb0-b380-46bb86a72149",
+      "id": "bd4c1f15-303d-4eac-a9a7-d2edd1cd9efa",
       "name": "Build Grounding Context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -284,7 +284,7 @@
       }
     },
     {
-      "id": "192e544a-159b-4b49-8d29-0a3767444c05",
+      "id": "8be3055a-29ec-4919-95ac-54820cb69796",
       "name": "Generate Answer (Ollama)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -299,15 +299,6 @@
         "contentType": "json",
         "specifyBody": "json",
         "jsonBody": "={{ ({ model: ($json.runtime.genModel || \"llama3.2:3b\"), temperature: 0, stream: false, messages: [ { role: \"system\", content: ($json.runtime.queryLang === \"en\" ? \"You are a retrieval-grounded assistant. Answer ONLY from the provided context, in English; use no knowledge outside the context. If the context cannot answer the question, reply with exactly this sentence: Not enough information to answer. Be concise (1-3 sentences).\" : \"你是一个基于检索的助手。只依据提供的上下文用简体中文作答;不要使用上下文以外的任何知识。若上下文不足以回答,则只回答这一句:信息不足,无法回答。请简洁(1-3 句)。\") }, { role: \"user\", content: ($json.runtime.queryLang === \"en\" ? \"Context:\\n\" : \"上下文:\\n\") + $json.gen.contextText + ($json.runtime.queryLang === \"en\" ? \"\\n\\nQuestion:\\n\" : \"\\n\\n问题:\\n\") + $json.query } ] }) }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ \"Bearer \" + ($env.LLM_API_KEY || \"ollama\") }}"
-            }
-          ]
-        },
         "options": {
           "timeout": 120000
         }
@@ -315,7 +306,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "d51ebf70-2fc2-457e-abbb-a15a8f53f1f7",
+      "id": "624ec334-0453-4032-9414-1587951fc6d9",
       "name": "Parse + Ground Answer (Ollama)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -330,7 +321,7 @@
       }
     },
     {
-      "id": "c0ab7555-957c-44c7-acde-1833b60d1d85",
+      "id": "191e07a4-d0b8-40f5-a341-2bcba636bf75",
       "name": "Enforce Citation Integrity",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -345,7 +336,7 @@
       }
     },
     {
-      "id": "27bf18b7-1876-4aa7-932d-6d3c4bbd257b",
+      "id": "117c7ef5-1236-4535-90cf-4cf3fda16a6c",
       "name": "Create Redacted Audit Event",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -360,7 +351,7 @@
       }
     },
     {
-      "id": "f638f20e-03c9-49f4-8660-3523d3e8b477",
+      "id": "a93e9daa-bf28-4fcf-9dda-02eecf496809",
       "name": "Build Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -375,7 +366,7 @@
       }
     },
     {
-      "id": "e3a7acd7-ff77-4261-abfd-47dcf8824a34",
+      "id": "c129b25c-4d53-45ab-afa3-1355bb5ae975",
       "name": "Manual UI Execution?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -409,7 +400,7 @@
       }
     },
     {
-      "id": "aaf9a75a-f1ad-43fd-b2d2-9006cf40b37e",
+      "id": "1bc54b3a-98c6-4a18-9ddb-dc2d4f7cf851",
       "name": "Show UI Execution Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -424,7 +415,7 @@
       }
     },
     {
-      "id": "c065fca5-f85a-4a22-964d-5c6bf0272daf",
+      "id": "5a9e79b8-b872-4959-a528-42aa78986b42",
       "name": "Return Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -441,7 +432,7 @@
       }
     },
     {
-      "id": "1eac77e3-ef81-459d-bdf3-f224cf095a60",
+      "id": "682d6fe9-c9ec-4407-833e-3c323b49f7b0",
       "name": "Stub Grounded Answer",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -456,7 +447,7 @@
       }
     },
     {
-      "id": "a0d99802-6908-475c-a82e-6e929bf9ca08",
+      "id": "5b3da64f-9f55-45d1-a020-454c0f8996e7",
       "name": "Clean Abstain",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -471,7 +462,7 @@
       }
     },
     {
-      "id": "7f04159f-1218-41bc-b606-4db343bf04ba",
+      "id": "041cf3d0-7576-4dd3-90ad-ce0314e6e8ba",
       "name": "Stub Embed + Retrieve",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -486,7 +477,7 @@
       }
     },
     {
-      "id": "cc3823ea-e8dc-483e-b817-a9e8b86af00b",
+      "id": "c4ff53e8-61cc-476e-9865-7a0257bb36e5",
       "name": "Build Missing Query Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -501,7 +492,7 @@
       }
     },
     {
-      "id": "4df1766f-8250-48ee-8e86-be081b565269",
+      "id": "9050e613-edf5-4c62-bfaf-b7bed6778548",
       "name": "Manual UI Missing Query Error?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -535,7 +526,7 @@
       }
     },
     {
-      "id": "ac1eb51a-a879-467c-8fcb-8cd3632f4444",
+      "id": "c5b08dc7-3863-4915-888f-8e4bb3f864b4",
       "name": "Return Missing Query Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
@@ -552,7 +543,7 @@
       }
     },
     {
-      "id": "0161bcd9-7d7b-4864-a838-a48d1049c3c5",
+      "id": "8b3ee01e-3fa5-44ee-8ffe-04bbe6371225",
       "name": "Receive Query",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -569,10 +560,10 @@
           "allowedOrigins": "*"
         }
       },
-      "webhookId": "7e16fd6d-17da-4448-a10a-e2f5aaec3492"
+      "webhookId": "73b80bd6-01f8-4e38-8997-be0a8ab4409f"
     },
     {
-      "id": "a2984116-6e5d-4873-8126-9aca7569bd20",
+      "id": "2ef912c0-d8d8-494c-a809-39eb508e6b88",
       "name": "Called By Gateway (Execute Workflow)",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
