@@ -1,0 +1,14 @@
+{
+  "email": "eval@competitor.example",
+  "fullName": "Taylor Smith",
+  "title": "Product Manager",
+  "companyName": "Competitor Analytics",
+  "companyDomain": "competitor.example",
+  "source": "web",
+  "industry": "saas",
+  "country": "us",
+  "employeeCount": 1800,
+  "requestedProduct": "Enterprise AI Workflow",
+  "message": "We need a demo and pricing to evaluate market capabilities.",
+  "receivedAt": "2026-05-29T14:35:00.000Z"
+}

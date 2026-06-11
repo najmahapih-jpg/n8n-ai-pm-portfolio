@@ -1,0 +1,23 @@
+{
+  "name": "n8n-lead-intelligence-workflow",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Local n8n Workflow-as-Code project for deterministic B2B lead intelligence, scoring, routing, and audit-safe release snapshots.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "hooks:install": "pwsh -NoProfile -File ./scripts/Install-GitHooks.ps1",
+    "registry:build": "pwsh -NoProfile -File ./scripts/Build-WorkflowIndex.ps1",
+    "smoke": "pwsh -NoProfile -File ./scripts/Invoke-SmokeTest.ps1",
+    "verify:workflow": "node ./scripts/test-lead-workflow.mjs",
+    "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
+    "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 38 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0",
+    "verify:live": "pwsh -NoProfile -File ./scripts/Test-N8nConnection.ps1 && pwsh -NoProfile -File ./scripts/Sync-N8nWorkflowFromSdk.ps1 && pwsh -NoProfile -File ./scripts/Reactivate-Workflow.ps1 && pwsh -NoProfile -File ./scripts/Test-LeadUiExecution.ps1 && pwsh -NoProfile -File ./scripts/Test-LeadIntelligenceWorkflow.ps1"
+  },
+  "dependencies": {
+    "@n8n/workflow-sdk": "0.15.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "traceId": "trace-abc-123",
+  "email": "buyer@finops.example",
+  "fullName": "Avery Chen",
+  "title": "VP Platform Operations",
+  "companyName": "FinOps Cloud",
+  "companyDomain": "finops.example",
+  "source": "referral",
+  "industry": "fintech",
+  "country": "us",
+  "employeeCount": 2500,
+  "annualRevenue": 420000000,
+  "requestedProduct": "Enterprise AI Workflow",
+  "message": "We need a demo, pricing, implementation plan, and security review for a migration project. The buying committee wants an urgent shortlist this week.",
+  "intentSignals": [
+    "security review",
+    "migration"
+  ],
+  "plan": "enterprise",
+  "receivedAt": "2026-05-29T14:00:00.000Z"
+}

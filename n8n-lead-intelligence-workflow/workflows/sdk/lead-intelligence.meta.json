@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "slug": "lead-intelligence",
+  "title": "Portfolio - Lead Intelligence API",
+  "description": "Local B2B lead intelligence workflow that validates lead intake, deduplicates, enriches with deterministic local rules, scores ICP and intent, routes sales ownership, builds a CRM-ready payload, and emits a redacted audit event.",
+  "owner": "portfolio",
+  "department": "RevOps",
+  "version": "0.1.2",
+  "status": "draft-tested",
+  "project": "n8n-lead-intelligence-workflow",
+  "lastWriter": "official n8n MCP",
+  "n8nWorkflowId": "xhZ0XMNvi4LeVWzk",
+  "source": "lead-intelligence.workflow.js",
+  "canonical": "lead-intelligence.canonical.json",
+  "release": "lead-intelligence-v0.1.2.json",
+  "request": "lead-intelligence.md",
+  "trigger": "manual + webhook + executeWorkflow (agent/MCP tool)",
+  "integrations": [
+    "n8n Manual Trigger",
+    "n8n Webhook",
+    "Local scoring rules",
+    "CRM-ready payload",
+    "Execute Workflow Trigger (agent/MCP tool entry)"
+  ],
+  "tags": [
+    "lead-intelligence",
+    "revops",
+    "scoring",
+    "routing",
+    "workflow-as-code"
+  ],
+  "fixtures": [
+    "lead-hot-enterprise.json",
+    "lead-midmarket-qualified.json",
+    "lead-high-intent-low-fit.json",
+    "lead-student-low-fit.json",
+    "lead-low-intent-newsletter.json",
+    "lead-duplicate-existing-id.json",
+    "lead-duplicate-domain.json",
+    "lead-competitor-domain.json",
+    "lead-manual-override.json",
+    "lead-bad-email.json",
+    "lead-missing-company.json"
+  ],
+  "smokeCases": [
+    "hot-enterprise-lead"
+  ],
+  "localOnly": true,
+  "notes": "v0.1.2 adds an Execute Workflow Trigger so the workflow can be called as an agent/MCP tool (see docs/lead-scoring-mcp-tool.md and the lead-scoring-mcp-tool workflow); the manual + webhook paths and the 11-fixture eval are unchanged. External CRM and Feishu adapters remain deferred.",
+  "updatedAt": "2026-06-07T14:38:29.884Z"
+}

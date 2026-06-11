@@ -1,0 +1,1119 @@
+{
+  "name": "Portfolio - Lead Intelligence API",
+  "description": "Local B2B lead intelligence: validate intake, dedupe, enrich with deterministic rules, score ICP and intent, route sales ownership, build CRM-ready payload, redact audit, respond.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "Sticky Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        110,
+        -10
+      ],
+      "parameters": {
+        "content": "## Lead Intelligence v0.1.1\\nLocal B2B lead scoring workflow: supports n8n editor Execute Workflow through a manual demo trigger, plus webhook intake for API calls. It normalizes, validates, dedupes, enriches with deterministic local rules, scores ICP and intent, routes owner, builds CRM-ready payload, creates a redacted audit event, and responds. External CRM and Feishu adapters are intentionally deferred.",
+        "color": 4,
+        "width": 7660,
+        "height": 800
+      }
+    },
+    {
+      "name": "Run Demo Lead From n8n UI",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        160,
+        40
+      ]
+    },
+    {
+      "name": "Build Demo Lead Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0]?.json ?? {};\nif (Object.keys(input).length > 0) {\n  return [{ json: { ...input, manualExecution: true } }];\n}\nreturn [{\n  json: {\n    manualExecution: true,\n    email: 'buyer@finops.example',\n    fullName: 'Avery Chen',\n    title: 'VP Platform Operations',\n    companyName: 'FinOps Cloud',\n    companyDomain: 'finops.example',\n    source: 'referral',\n    industry: 'fintech',\n    country: 'us',\n    employeeCount: 2500,\n    annualRevenue: 420000000,\n    requestedProduct: 'Enterprise AI Workflow',\n    message: 'We need a demo, pricing, implementation plan, and security review for a migration project. The buying committee wants an urgent shortlist this week.',\n    intentSignals: ['security review', 'migration'],\n    plan: 'enterprise',\n    receivedAt: '2026-05-29T14:00:00.000Z'\n  }\n}];"
+      }
+    },
+    {
+      "name": "Normalize Lead Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const source = items[0]?.json ?? {};\nconst body = source.body ?? source;\nconst entrypoint = source.manualExecution === true || body.manualExecution === true ? 'manual' : 'webhook';\nconst text = (value) => String(value ?? '').trim();\nconst lower = (value) => text(value).toLowerCase();\nconst number = (value) => {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n};\nconst splitSignals = (value) => {\n  if (Array.isArray(value)) return value.map(text).filter(Boolean);\n  return text(value).split(',').map((part) => part.trim()).filter(Boolean);\n};\n\nconst email = lower(body.email ?? body.workEmail ?? body.customerEmail);\nconst domainFromEmail = email.includes('@') ? email.split('@').pop() : '';\nconst companyDomain = lower(body.companyDomain ?? body.domain ?? domainFromEmail);\nconst companyName = text(body.companyName ?? body.company ?? body.accountName);\nconst requestedProduct = text(body.requestedProduct ?? body.product ?? body.interest);\nconst message = text(body.message ?? body.notes ?? body.description ?? body.request);\nconst sourceName = lower(body.source ?? body.channel ?? 'web');\nconst intentSignals = splitSignals(body.intentSignals ?? body.signals ?? body.intent);\nconst missingFields = [];\nif (!email) missingFields.push('email');\nif (!companyName) missingFields.push('companyName');\nif (!message && intentSignals.length === 0 && !requestedProduct) missingFields.push('message');\n\nreturn [{\n  json: {\n    lead: {\n      email,\n      fullName: text(body.fullName ?? body.name),\n      title: text(body.title ?? body.jobTitle),\n      companyName,\n      companyDomain,\n      source: sourceName,\n      industry: lower(body.industry),\n      country: lower(body.country ?? body.region),\n      employeeCount: number(body.employeeCount ?? body.employees ?? body.companySize),\n      annualRevenue: number(body.annualRevenue ?? body.revenue),\n      requestedProduct,\n      message,\n      intentSignals,\n      plan: lower(body.plan),\n      manualGrade: text(body.manualGrade ?? body.overrideGrade).toUpperCase(),\n      existingLeadId: text(body.existingLeadId),\n      receivedAt: text(body.receivedAt) || new Date().toISOString()\n    },\n    validation: {\n      requiredFieldsPresent: missingFields.length === 0,\n      missingFields\n    },\n    runtime: {\n      entrypoint\n    },\n    sourcePayloadKeys: Object.keys(body)\n  }\n}];"
+      }
+    },
+    {
+      "name": "Required Fields Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "required-fields-present",
+              "leftValue": "={{ $json.validation.requiredFieldsPresent }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Email Syntax Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "email-syntax-valid",
+              "leftValue": "={{ /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test($json.lead.email) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Generate Lead Identity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nfunction hash(value) {\n  let h = 2166136261;\n  for (let i = 0; i < value.length; i += 1) {\n    h ^= value.charCodeAt(i);\n    h = Math.imul(h, 16777619);\n  }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\nconst identitySeed = [input.lead.email, input.lead.companyDomain].join('|');\nreturn [{\n  json: {\n    ...input,\n    identity: {\n      leadId: 'lead_' + hash(identitySeed),\n      emailHash: hash(input.lead.email),\n      companyKey: hash(input.lead.companyDomain || input.lead.companyName.toLowerCase()),\n      idempotencyKey: hash(identitySeed + '|' + input.lead.receivedAt.slice(0, 10))\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Redact Lead PII",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst email = input.lead.email;\nconst [localPart, domain] = email.split('@');\nconst redactedLocal = localPart ? localPart[0] + '***' : '***';\nreturn [{\n  json: {\n    ...input,\n    pii: {\n      redactedEmail: redactedLocal + '@' + domain,\n      redactedName: input.lead.fullName ? input.lead.fullName[0] + '***' : ''\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Check Duplicate Candidate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst domain = input.lead.companyDomain;\nconst duplicateDomains = new Set(['acme.test', 'duplicate.example']);\nconst duplicateByPayload = Boolean(input.lead.existingLeadId);\nconst duplicateByDomain = duplicateDomains.has(domain);\nreturn [{\n  json: {\n    ...input,\n    dedupe: {\n      duplicate: duplicateByPayload || duplicateByDomain,\n      reason: duplicateByPayload ? 'existingLeadId supplied' : duplicateByDomain ? 'domain recently processed' : 'no duplicate signals',\n      matchedLeadId: input.lead.existingLeadId || (duplicateByDomain ? 'lead_existing_' + input.identity.companyKey : '')\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Duplicate Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2400,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "duplicate-lead",
+              "leftValue": "={{ $json.dedupe.duplicate }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Build Duplicate Lead Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        360
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 200,\n    runtime: input.runtime,\n    response: {\n      ok: true,\n      duplicate: true,\n      leadId: input.identity.leadId,\n      matchedLeadId: input.dedupe.matchedLeadId,\n      reason: input.dedupe.reason,\n      action: 'attach_to_existing_record',\n      policyVersion: 'lead-intel-v0.1.0'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Manual UI Duplicate Response?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3040,
+        360
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-duplicate-response",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Show UI Execution Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7840,
+        -120
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ok: true,\n    executionMode: 'manual-ui',\n    statusCode: input.statusCode,\n    response: input.response,\n    auditEvent: input.auditEvent,\n    note: 'This node is the terminal result for n8n editor Execute Workflow. Webhook executions use Return Lead Intelligence Response instead.'\n  }\n}];"
+      }
+    },
+    {
+      "name": "Return Duplicate Lead Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3360,
+        480
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Mock Company Enrichment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst lead = input.lead;\nconst employeeCount = lead.employeeCount ?? 0;\nconst domain = lead.companyDomain;\nconst freeDomains = new Set(['gmail.com', 'qq.com', 'outlook.com', '163.com', 'example.test']);\nconst competitorDomains = new Set(['competitor.example', 'rival.test']);\nconst studentDomains = ['.edu', 'student.'];\nconst isFreeEmail = freeDomains.has(domain);\nconst isCompetitor = competitorDomains.has(domain) || lead.companyName.toLowerCase().includes('competitor');\nconst isStudent = studentDomains.some((probe) => domain.includes(probe)) || lead.title.toLowerCase().includes('student');\nlet employeeBand = 'unknown';\nif (employeeCount >= 1000) employeeBand = 'enterprise';\nelse if (employeeCount >= 200) employeeBand = 'mid_market';\nelse if (employeeCount > 0) employeeBand = 'smb';\nconst highFitIndustries = new Set(['saas', 'fintech', 'ecommerce', 'healthcare', 'logistics']);\nreturn [{\n  json: {\n    ...input,\n    enrichment: {\n      company: {\n        employeeBand,\n        normalizedEmployeeCount: employeeCount,\n        freeEmailDomain: isFreeEmail,\n        competitor: isCompetitor,\n        studentOrAcademic: isStudent,\n        industryFit: highFitIndustries.has(lead.industry) ? 'high' : lead.industry ? 'medium' : 'unknown',\n        geoFit: ['us', 'usa', 'united states', 'canada', 'uk', 'singapore', 'china'].includes(lead.country) ? 'supported' : 'unknown'\n      }\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Mock Intent Enrichment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst lead = input.lead;\nconst text = [lead.message, lead.requestedProduct, ...lead.intentSignals].join(' ').toLowerCase();\nconst keywordWeights = [\n  ['demo', 28],\n  ['pricing', 20],\n  ['quote', 20],\n  ['pilot', 18],\n  ['implementation', 16],\n  ['security review', 14],\n  ['migration', 14],\n  ['urgent', 12],\n  ['newsletter', -18],\n  ['student', -30],\n  ['research', -12],\n  ['free', -10]\n];\nconst matchedSignals = [];\nlet keywordScore = 0;\nfor (const [keyword, weight] of keywordWeights) {\n  if (text.includes(keyword)) {\n    matchedSignals.push(keyword);\n    keywordScore += weight;\n  }\n}\nconst sourceWeights = {\n  partner: 16,\n  webinar: 10,\n  paid_search: 8,\n  outbound: 6,\n  referral: 14,\n  newsletter: -8,\n  student: -20\n};\nreturn [{\n  json: {\n    ...input,\n    enrichment: {\n      ...input.enrichment,\n      intent: {\n        matchedSignals,\n        keywordScore,\n        sourceScore: sourceWeights[lead.source] ?? 0,\n        requestedProduct: lead.requestedProduct || 'unknown'\n      }\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Aggregate Scoring Evidence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst evidence = [];\nconst company = input.enrichment.company;\nconst intent = input.enrichment.intent;\nevidence.push('employee_band:' + company.employeeBand);\nevidence.push('industry_fit:' + company.industryFit);\nevidence.push('geo_fit:' + company.geoFit);\nif (company.freeEmailDomain) evidence.push('free_email_domain');\nif (company.competitor) evidence.push('competitor_domain');\nif (company.studentOrAcademic) evidence.push('student_or_academic');\nfor (const signal of intent.matchedSignals) evidence.push('intent:' + signal);\nreturn [{\n  json: {\n    ...input,\n    evidence\n  }\n}];"
+      }
+    },
+    {
+      "name": "Calculate ICP Fit Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3680,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst company = input.enrichment.company;\nlet score = 20;\nif (company.employeeBand === 'enterprise') score += 35;\nelse if (company.employeeBand === 'mid_market') score += 25;\nelse if (company.employeeBand === 'smb') score += 10;\nif (company.industryFit === 'high') score += 22;\nelse if (company.industryFit === 'medium') score += 10;\nif (company.geoFit === 'supported') score += 10;\nif (input.lead.plan === 'enterprise') score += 8;\nif (company.freeEmailDomain) score -= 28;\nif (company.studentOrAcademic) score -= 35;\nif (company.competitor) score -= 45;\nscore = Math.max(0, Math.min(100, score));\nreturn [{ json: { ...input, scoring: { icpFitScore: score } } }];"
+      }
+    },
+    {
+      "name": "Calculate Intent Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4000,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst intent = input.enrichment.intent;\nlet score = 30 + intent.keywordScore + intent.sourceScore;\nif (input.lead.requestedProduct) score += 8;\nif (input.lead.message.length > 80) score += 6;\nscore = Math.max(0, Math.min(100, score));\nreturn [{ json: { ...input, scoring: { ...input.scoring, intentScore: score } } }];"
+      }
+    },
+    {
+      "name": "Calculate Priority Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst icp = input.scoring.icpFitScore;\nconst intent = input.scoring.intentScore;\nlet score = Math.round((icp * 0.58) + (intent * 0.42));\nif (input.enrichment.company.competitor) score = Math.min(score, 25);\nif (input.lead.manualGrade) score = Math.max(score, 85);\nscore = Math.max(0, Math.min(100, score));\nreturn [{ json: { ...input, scoring: { ...input.scoring, priorityScore: score } } }];"
+      }
+    },
+    {
+      "name": "Assign Lead Grade",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4640,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nlet grade = 'D';\nconst score = input.scoring.priorityScore;\nif (score >= 80) grade = 'A';\nelse if (score >= 62) grade = 'B';\nelse if (score >= 40) grade = 'C';\nif (['A', 'B', 'C', 'D'].includes(input.lead.manualGrade)) {\n  grade = input.lead.manualGrade;\n}\nreturn [{\n  json: {\n    ...input,\n    scoring: {\n      ...input.scoring,\n      grade,\n      manuallyOverridden: ['A', 'B', 'C', 'D'].includes(input.lead.manualGrade)\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Route Sales Owner",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4960,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst grade = input.scoring.grade;\nlet route = {\n  ownerQueue: 'nurture',\n  ownerTeam: 'growth-marketing',\n  reason: 'low priority or insufficient fit'\n};\nif (input.enrichment.company.competitor) {\n  route = { ownerQueue: 'disqualified-competitor', ownerTeam: 'revops', reason: 'competitor domain' };\n} else if (grade === 'A') {\n  route = { ownerQueue: 'enterprise-ae', ownerTeam: 'enterprise-sales', reason: 'high fit and high intent' };\n} else if (grade === 'B') {\n  route = { ownerQueue: 'midmarket-ae', ownerTeam: 'commercial-sales', reason: 'qualified commercial lead' };\n} else if (grade === 'C') {\n  route = { ownerQueue: 'sdr-qualification', ownerTeam: 'sales-development', reason: 'needs qualification' };\n}\nreturn [{ json: { ...input, route } }];"
+      }
+    },
+    {
+      "name": "Build Follow-up Policy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5280,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst hoursByGrade = { A: 2, B: 8, C: 48, D: 168 };\nconst followUpSlaHours = hoursByGrade[input.scoring.grade] ?? 168;\nconst dueAt = new Date(Date.now() + followUpSlaHours * 60 * 60 * 1000).toISOString();\nreturn [{\n  json: {\n    ...input,\n    followUp: {\n      slaHours: followUpSlaHours,\n      dueAt,\n      hotLead: input.scoring.grade === 'A',\n      playbook: input.scoring.grade === 'A' ? 'same-day executive AE follow-up' : input.scoring.grade === 'B' ? 'commercial AE follow-up' : input.scoring.grade === 'C' ? 'SDR qualification' : 'nurture sequence'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        5600,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hot-lead",
+              "leftValue": "={{ $json.followUp.hotLead }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Build Hot Lead Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5920,
+        -120
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ...input,\n    notification: {\n      channel: 'sales-hot-leads',\n      status: 'ready',\n      title: 'Hot lead: ' + input.lead.companyName,\n      summary: input.lead.companyName + ' scored ' + input.scoring.priorityScore + ' (' + input.scoring.grade + ') and routes to ' + input.route.ownerQueue,\n      evidence: input.evidence.slice(0, 8)\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Record Notification Skipped",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6240,
+        -120
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ...input,\n    notification: {\n      ...(input.notification ?? {}),\n      status: 'skipped',\n      reason: 'No external notification adapter configured in v0.1'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Build CRM-ready Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6560,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ...input,\n    crmPayload: {\n      externalId: input.identity.leadId,\n      idempotencyKey: input.identity.idempotencyKey,\n      email: input.lead.email,\n      companyName: input.lead.companyName,\n      companyDomain: input.lead.companyDomain,\n      source: input.lead.source,\n      requestedProduct: input.lead.requestedProduct,\n      grade: input.scoring.grade,\n      priorityScore: input.scoring.priorityScore,\n      icpFitScore: input.scoring.icpFitScore,\n      intentScore: input.scoring.intentScore,\n      ownerQueue: input.route.ownerQueue,\n      ownerTeam: input.route.ownerTeam,\n      followUpDueAt: input.followUp.dueAt,\n      evidence: input.evidence\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Create Redacted Audit Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6880,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ...input,\n    auditEvent: {\n      auditEventId: 'audit_' + input.identity.idempotencyKey,\n      leadId: input.identity.leadId,\n      emailHash: input.identity.emailHash,\n      redactedEmail: input.pii.redactedEmail,\n      companyName: input.lead.companyName,\n      grade: input.scoring.grade,\n      priorityScore: input.scoring.priorityScore,\n      ownerQueue: input.route.ownerQueue,\n      evidence: input.evidence,\n      createdAt: new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Build Lead Intelligence Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7200,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 200,\n    runtime: input.runtime,\n    response: {\n      ok: true,\n      duplicate: false,\n      leadId: input.identity.leadId,\n      companyName: input.lead.companyName,\n      companyDomain: input.lead.companyDomain,\n      redactedEmail: input.pii.redactedEmail,\n      grade: input.scoring.grade,\n      icpFitScore: input.scoring.icpFitScore,\n      intentScore: input.scoring.intentScore,\n      priorityScore: input.scoring.priorityScore,\n      manuallyOverridden: input.scoring.manuallyOverridden,\n      route: input.route,\n      followUp: input.followUp,\n      crmPayload: {\n        externalId: input.crmPayload.externalId,\n        idempotencyKey: input.crmPayload.idempotencyKey,\n        ownerQueue: input.crmPayload.ownerQueue,\n        grade: input.crmPayload.grade\n      },\n      auditEventId: input.auditEvent.auditEventId,\n      notification: input.notification ?? { status: 'not_required' },\n      policyVersion: 'lead-intel-v0.1.0'\n    },\n    auditEvent: input.auditEvent\n  }\n}];"
+      }
+    },
+    {
+      "name": "Manual UI Execution?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        7520,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-execution",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Return Lead Intelligence Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        7840,
+        160
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Build Email Syntax Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        460
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 422,\n    runtime: input.runtime,\n    response: {\n      ok: false,\n      error: 'Invalid email syntax',\n      email: input.lead.email,\n      policyVersion: 'lead-intel-v0.1.0'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Manual UI Email Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1760,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-email-error",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Return Email Syntax Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2080,
+        580
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Build Required Field Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        640
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 400,\n    runtime: input.runtime,\n    response: {\n      ok: false,\n      error: 'Missing required lead fields',\n      missingFields: input.validation.missingFields,\n      policyVersion: 'lead-intel-v0.1.0'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Manual UI Required Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        640
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-required-error",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Return Required Field Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1760,
+        760
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Receive Lead Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        420
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/lead-intelligence",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Run Demo Lead From n8n UI": {
+      "main": [
+        [
+          {
+            "node": "Build Demo Lead Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Demo Lead Payload": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead Payload": {
+      "main": [
+        [
+          {
+            "node": "Required Fields Present?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Required Fields Present?": {
+      "main": [
+        [
+          {
+            "node": "Email Syntax Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Required Field Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Syntax Valid?": {
+      "main": [
+        [
+          {
+            "node": "Generate Lead Identity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Email Syntax Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Lead Identity": {
+      "main": [
+        [
+          {
+            "node": "Redact Lead PII",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redact Lead PII": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate Candidate": {
+      "main": [
+        [
+          {
+            "node": "Duplicate Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Lead?": {
+      "main": [
+        [
+          {
+            "node": "Build Duplicate Lead Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mock Company Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Duplicate Lead Response": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Duplicate Response?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Duplicate Response?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Duplicate Lead Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Company Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Mock Intent Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Intent Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Scoring Evidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Scoring Evidence": {
+      "main": [
+        [
+          {
+            "node": "Calculate ICP Fit Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate ICP Fit Score": {
+      "main": [
+        [
+          {
+            "node": "Calculate Intent Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Intent Score": {
+      "main": [
+        [
+          {
+            "node": "Calculate Priority Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Priority Score": {
+      "main": [
+        [
+          {
+            "node": "Assign Lead Grade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Lead Grade": {
+      "main": [
+        [
+          {
+            "node": "Route Sales Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Sales Owner": {
+      "main": [
+        [
+          {
+            "node": "Build Follow-up Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Follow-up Policy": {
+      "main": [
+        [
+          {
+            "node": "Hot Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hot Lead?": {
+      "main": [
+        [
+          {
+            "node": "Build Hot Lead Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build CRM-ready Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Hot Lead Notification": {
+      "main": [
+        [
+          {
+            "node": "Record Notification Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Notification Skipped": {
+      "main": [
+        [
+          {
+            "node": "Build CRM-ready Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build CRM-ready Payload": {
+      "main": [
+        [
+          {
+            "node": "Create Redacted Audit Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Redacted Audit Event": {
+      "main": [
+        [
+          {
+            "node": "Build Lead Intelligence Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Lead Intelligence Response": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Execution?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Lead Intelligence Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Syntax Error": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Email Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Email Error?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Email Syntax Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Required Field Error": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Required Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Required Error?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Required Field Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Lead Intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": []
+}

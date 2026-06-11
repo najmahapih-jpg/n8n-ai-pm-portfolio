@@ -1,0 +1,12 @@
+{
+  "email": "reader@community.example",
+  "fullName": "Jamie Park",
+  "title": "Operations Associate",
+  "companyName": "Community Ops",
+  "companyDomain": "community.example",
+  "source": "newsletter",
+  "country": "mexico",
+  "employeeCount": 75,
+  "message": "Please add me to the newsletter. I am mostly browsing free resources and do not need a sales conversation yet.",
+  "receivedAt": "2026-05-29T14:20:00.000Z"
+}
