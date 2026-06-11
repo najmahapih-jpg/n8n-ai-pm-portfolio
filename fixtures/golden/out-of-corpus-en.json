@@ -1,0 +1,8 @@
+{
+  "id": "out-of-corpus-en",
+  "exercises": "BILINGUAL (v0.4.0): the abstention contract for an English out-of-corpus query — clean abstain shape is language-independent; the note (not asserted here) is emitted in English per runtime.queryLang",
+  "query": "What is the capital of France?",
+  "expectAbstain": true,
+  "expectAnswerContains": [],
+  "expectCiteChunkIds": []
+}
