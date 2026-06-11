@@ -1,0 +1,166 @@
+# Workflow Contract
+
+## Workflow
+
+- Name: `Portfolio - Product Feedback Intelligence API`
+- Version: `0.2.0` release snapshot, workflow policy `feedback-intel-v0.1.0`
+- Primary entry point: `POST /webhook/portfolio/product-feedback-intelligence`
+- Editor entry point: manual trigger demo
+- Default mode: deterministic stub classifier
+- Source of truth: `workflows/sdk/product-feedback-intelligence.workflow.js`
+- Release snapshot: `workflows/releases/product-feedback-intelligence-v0.2.0.json`
+
+## Purpose
+
+Classify free-text product feedback into a fixed taxonomy, derive sentiment and urgency, score priority, gate churn-risk or critical feedback for human review, create a redacted audit event, and return a safe structured product signal.
+
+## Input Contract
+
+Accepted content type: JSON.
+
+Required logical field:
+
+- `feedbackText` or `text` or `message` or `comment`
+
+Optional fields:
+
+- `reportedCount` or `count`
+- `source` or `channel`
+- `submittedAt` or `createdAt`
+- `classifierMode`: `stub` (default) or `ollama`
+- `traceId` or `requestId` (optional correlation id; captured and echoed, never generated — see Correlation below)
+
+Example:
+
+```json
+{
+  "feedbackText": "The export button crashes on Safari and we may cancel.",
+  "reportedCount": 3,
+  "source": "support",
+  "submittedAt": "2026-05-29T12:00:00Z",
+  "classifierMode": "stub"
+}
+```
+
+## Operational Limits
+
+- NOTE: the size/string/item limits in this section are **not enforced in-workflow** (the workflow only coerces and trims inputs); they are the caps a deployment gateway should enforce in front of the public webhook.
+- Supported public JSON body size: 64 KB maximum. Deployments should reject larger payloads before invoking the workflow.
+- String limits: feedback text 8,000 characters, source/channel 64 characters, and timestamp strings 64 characters.
+- Item count: one feedback item per request. Batch classification is outside the current public contract.
+- `reportedCount` should be a non-negative integer and is only a scoring hint.
+- Idempotency: `feedbackId` is generated per accepted request and the workflow performs no external write. Upstream systems that replay the same feedback must deduplicate before calling the webhook.
+- Ollama classifier timeout: 60,000 ms. The current workflow does not retry live classifier calls; invalid or unreachable classifier output falls back to deterministic classification.
+- Public deployment must add authentication, rate limiting, request size enforcement, and replay controls outside the workflow.
+
+## Output Contract
+
+Successful responses return a safe response object:
+
+```json
+{
+  "ok": true,
+  "status": "classified|awaiting_approval",
+  "needsHumanReview": false,
+  "feedbackId": "feedback_...",
+  "traceId": "trace-pf-123 | null",
+  "theme": "bug|feature_request|usability|performance|pricing|praise|churn_risk|other",
+  "sentiment": "positive|neutral|negative",
+  "urgency": "critical|high|normal|low",
+  "priorityScore": 12,
+  "classifierSource": "stub|ollama|fallback",
+  "safeExcerpt": "The export button crashes...",
+  "auditEventId": "audit_...",
+  "policyVersion": "feedback-intel-v0.1.0"
+}
+```
+
+Human-review routing:
+
+- `theme:"churn_risk"` or `urgency:"critical"` returns `needsHumanReview:true` and `status:"awaiting_approval"`.
+- Other valid cases return `needsHumanReview:false`.
+
+### Correlation (optional `traceId`)
+
+- A caller (or upstream gateway) may supply an optional correlation id as `traceId`, falling back to `requestId` when `traceId` is absent.
+- The workflow **captures and echoes** this value: it is **never generated** in-workflow (no random/UUID), so the deterministic offline differential stays reproducible.
+- On both successful response paths — `status:"classified"` and `status:"awaiting_approval"` — it surfaces as `response.traceId` and on the redacted `auditEvent.traceId`, letting a caller correlate the response and the audit record to the originating request.
+- When neither `traceId` nor `requestId` is supplied, both fields are `null` — purely additive, with no other change to the response or audit event (the deterministic `feedbackId`/`idempotencyKey`/`auditEventId` hashes are unaffected by `traceId`).
+- The error (400/422) responses do not carry `traceId`; correlation is scoped to the classified/approval-gated feedback response and its audit event.
+
+## Error Contract
+
+Expected status behavior:
+
+- Missing feedback field: HTTP 400 with `ok:false` and `error:"Missing required feedback field"`.
+- Empty or whitespace feedback text: HTTP 422 with `ok:false` and `error:"Empty feedback text"`.
+
+## External Integrations
+
+- `classifierMode:"stub"`: deterministic keyword classifier; default and CI-safe.
+- `classifierMode:"ollama"`: local live LLM classifier via Ollama; opt-in per request.
+- Feishu/CRM delivery is deferred and not part of the current acceptance path.
+
+## Security and Privacy Boundary
+
+- Feedback text may contain PII and must be minimized in outputs.
+- Audit event must not contain raw feedback text beyond safe excerpts.
+- Email-like tokens embedded in feedback must be masked before audit.
+- LLM classifier output must pass schema and confidence checks; low-confidence or invalid output must fall back to deterministic classification.
+- The model never directly sets urgency; urgency is derived deterministically.
+
+## Contract Tests
+
+Primary fixtures:
+
+- `fixtures/pin-data/feedback-bug-negative.json`
+- `fixtures/pin-data/feedback-churn-risk.json`
+- `fixtures/pin-data/feedback-feature-request.json`
+- `fixtures/pin-data/feedback-low-confidence-fallback.json`
+- `fixtures/pin-data/feedback-missing-text.json`
+- `fixtures/pin-data/feedback-performance.json`
+- `fixtures/pin-data/feedback-praise.json`
+- `fixtures/pin-data/feedback-pricing.json`
+- `fixtures/pin-data/feedback-prompt-injection.json`
+- `fixtures/pin-data/feedback-traceid-correlation.json`
+- `fixtures/pin-data/feedback-usability.json`
+
+Required gates:
+
+```powershell
+npm run verify:static
+npm run verify:json
+npm run smoke
+```
+
+Live verification requires local n8n and MCP credentials.
+
+## Machine-readable contract
+
+Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are **gateway-delegated**.
+
+```json
+{
+  "contractVersion": "feedback-intel-v0.1.0",
+  "webhookPath": "webhook/portfolio/product-feedback-intelligence",
+  "request": {
+    "accepted": ["feedbackText", "text", "message", "comment", "reportedCount", "count", "source", "channel", "submittedAt", "createdAt", "classifierMode", "traceId", "requestId"],
+    "oneOfRequired": [["feedbackText", "text", "message", "comment"]],
+    "limits": { "bodyBytes": 65536, "feedbackChars": 8000 },
+    "limitsEnforcedBy": "gateway"
+  },
+  "response": {
+    "required": ["ok", "status", "needsHumanReview", "feedbackId", "theme", "sentiment", "urgency", "priorityScore", "classifierSource", "safeExcerpt", "auditEventId", "policyVersion"],
+    "types": { "ok": "boolean", "needsHumanReview": "boolean", "priorityScore": "number", "policyVersion": "string" }
+  },
+  "errors": [
+    { "when": "missing feedback field", "status": 400, "responseRequired": ["ok"], "okValue": false },
+    { "when": "empty feedback text", "status": 422, "responseRequired": ["ok"], "okValue": false }
+  ],
+  "fixtures": {
+    "dir": "fixtures/pin-data",
+    "valid": ["feedback-bug-negative.json", "feedback-churn-risk.json", "feedback-feature-request.json", "feedback-low-confidence-fallback.json", "feedback-performance.json", "feedback-praise.json", "feedback-pricing.json", "feedback-prompt-injection.json", "feedback-traceid-correlation.json", "feedback-usability.json"],
+    "errorCases": ["feedback-missing-text.json"]
+  }
+}
+```

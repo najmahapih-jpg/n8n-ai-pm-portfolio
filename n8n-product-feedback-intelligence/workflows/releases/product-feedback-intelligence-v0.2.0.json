@@ -1,0 +1,882 @@
+{
+  "name": "Portfolio - Product Feedback Intelligence API",
+  "description": "Local product feedback intelligence: validate intake, classify theme/sentiment/urgency with an LLM-in-the-loop stub + deterministic fallback, derive urgency, score priority, gate churn-risk/critical for human review, redact audit, respond.",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "name": "Sticky Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        110,
+        -10
+      ],
+      "parameters": {
+        "content": "## Product Feedback Intelligence v0.1.0\\nLocal product-feedback API: classifies theme/sentiment/urgency with an LLM-in-the-loop classifier (deterministic stub for CI/eval, env-switchable Ollama for live), applies a confidence gate + deterministic fallback, scores priority, gates churn-risk/critical items for human review, and emits a redacted audit event. Manual trigger runs an editor demo; webhook serves the API. External Feishu alerting is deferred.",
+        "color": 4,
+        "width": 4140,
+        "height": 580
+      }
+    },
+    {
+      "name": "Run Demo Feedback From n8n UI",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        160,
+        40
+      ]
+    },
+    {
+      "name": "Build Demo Feedback Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0]?.json ?? {};\nif (Object.keys(input).length > 0) {\n  return [{ json: { ...input, manualExecution: true } }];\n}\nreturn [{\n  json: {\n    manualExecution: true,\n    feedbackText: 'We are seriously considering cancelling next month - the export keeps failing on Safari and support has been slow to respond.',\n    reportedCount: 3,\n    source: 'support-reply',\n    submittedAt: '2026-05-29T14:00:00.000Z'\n  }\n}];"
+      }
+    },
+    {
+      "name": "Normalize Feedback Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const source = items[0]?.json ?? {};\nconst body = source.body ?? source;\nconst entrypoint = source.manualExecution === true || body.manualExecution === true ? 'manual' : 'webhook';\nconst text = (v) => String(v ?? '').trim();\nconst number = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };\nconst aliasKeys = ['feedbackText', 'text', 'message', 'comment'];\nconst hasFeedbackKey = aliasKeys.some((k) => Object.prototype.hasOwnProperty.call(body, k));\nconst feedbackText = text(body.feedbackText ?? body.text ?? body.message ?? body.comment);\nconst reportedCountRaw = number(body.reportedCount ?? body.count);\nconst reportedCount = reportedCountRaw && reportedCountRaw > 0 ? Math.floor(reportedCountRaw) : 1;\nconst traceId = body.traceId ?? body.requestId ?? null;\nconst missingFields = [];\nif (!hasFeedbackKey) missingFields.push('feedbackText');\nreturn [{\n  json: {\n    feedback: {\n      feedbackText,\n      reportedCount,\n      source: String(body.source ?? body.channel ?? 'unknown').toLowerCase().trim(),\n      submittedAt: text(body.submittedAt ?? body.createdAt) || new Date().toISOString()\n    },\n    validation: {\n      requiredFieldsPresent: hasFeedbackKey,\n      nonEmpty: feedbackText.length > 0,\n      missingFields\n    },\n    runtime: { entrypoint, classifierMode: (String(body.classifierMode ?? '').toLowerCase().trim() === 'ollama' ? 'ollama' : 'stub'), traceId },\n    sourcePayloadKeys: Object.keys(body)\n  }\n}];"
+      }
+    },
+    {
+      "name": "Feedback Field Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "feedback-field-present",
+              "leftValue": "={{ $json.validation.requiredFieldsPresent }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Feedback Non-empty?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "feedback-non-empty",
+              "leftValue": "={{ $json.validation.nonEmpty }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Classifier Mode = Ollama?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        360
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "classifier-mode-ollama",
+              "leftValue": "={{ $json.runtime.classifierMode === \"ollama\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Classify Feedback (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/chat",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ model: \"llama3.2:3b\", stream: false, format: \"json\", options: { temperature: 0 }, messages: [ { role: \"system\", content: \"You are a product feedback classifier. Reply with JSON only, with keys theme, sentiment, confidence. theme is one of bug, feature_request, usability, performance, pricing, praise, churn_risk, other. sentiment is one of positive, neutral, negative. confidence is a number from 0 to 1.\" }, { role: \"user\", content: $json.feedback.feedbackText } ] }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "name": "Parse Ollama Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const http = items[0].json;\n// The HTTP node replaced the item with Ollama's response; recover the feedback payload\n// from the Normalize node and attach only the classification.\nconst base = $('Normalize Feedback Payload').item.json;\nconst themes = ['bug', 'feature_request', 'usability', 'performance', 'pricing', 'praise', 'churn_risk', 'other'];\nconst sentiments = ['positive', 'neutral', 'negative'];\nlet theme = 'other';\nlet sentiment = 'neutral';\nlet confidence = 0;\ntry {\n  const content = http?.message?.content ?? http?.response ?? '';\n  const parsed = typeof content === 'string' ? JSON.parse(content) : content;\n  const validTheme = themes.includes(parsed.theme);\n  theme = validTheme ? parsed.theme : 'other';\n  sentiment = sentiments.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';\n  const c = Number(parsed.confidence);\n  confidence = Number.isFinite(c) ? Math.max(0, Math.min(1, c)) : 0.5;\n  // Schema-invalid theme -> force low confidence so the confidence gate uses the deterministic fallback.\n  if (!validTheme) confidence = 0;\n} catch (e) {\n  confidence = 0;\n}\nreturn [{\n  json: {\n    ...base,\n    classification: { theme, sentiment, confidence, classifierSource: 'ollama' }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Resolve Classification (confidence gate + fallback)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst c = input.classification;\nconst threshold = 0.6;\nif (c.confidence >= threshold) {\n  return [{ json: { ...input, classification: { ...c, fallbackEngaged: false } } }];\n}\n// Low confidence (or schema-invalid in live mode) -> deterministic keyword fallback.\nconst text = input.feedback.feedbackText.toLowerCase();\nconst negativeWords = ['broken', 'error', 'bug', 'not working', 'slow', 'confusing', 'expensive', 'cancel', 'refund', 'hate', 'worst', 'unusable', 'frustrat', 'problem', 'issue'];\nconst neg = negativeWords.some((w) => text.includes(w));\nreturn [{\n  json: {\n    ...input,\n    classification: {\n      ...c,\n      theme: c.theme && c.theme !== 'other' ? c.theme : 'other',\n      sentiment: neg ? 'negative' : 'neutral',\n      classifierSource: 'fallback',\n      fallbackEngaged: true\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Derive Urgency",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst theme = input.classification.theme;\nconst sentiment = input.classification.sentiment;\nlet urgency = 'normal';\nif (theme === 'churn_risk' && sentiment === 'negative') urgency = 'critical';\nelse if (theme === 'churn_risk') urgency = 'high';\nelse if (sentiment === 'negative' && (theme === 'bug' || theme === 'performance')) urgency = 'high';\nelse if (theme === 'praise' || sentiment === 'positive') urgency = 'low';\nreturn [{ json: { ...input, derived: { urgency } } }];"
+      }
+    },
+    {
+      "name": "Score Priority",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst weights = { critical: 10, high: 6, normal: 3, low: 1 };\nconst w = weights[input.derived.urgency] ?? 3;\nconst volume = Math.min(input.feedback.reportedCount, 50);\nreturn [{ json: { ...input, derived: { ...input.derived, priorityScore: w * volume } } }];"
+      }
+    },
+    {
+      "name": "Redact Feedback PII",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst raw = input.feedback.feedbackText;\nconst emailRe = /[^\\s@]+@[^\\s@]+\\.[^\\s@]+/g;\nconst emails = raw.match(emailRe) ?? [];\nconst maskEmail = (e) => { const parts = e.split('@'); const local = parts[0]; const domain = parts[1] ?? ''; return (local ? local[0] + '***' : '***') + '@' + domain; };\nlet masked = raw;\nfor (const e of emails) masked = masked.split(e).join(maskEmail(e));\nreturn [{\n  json: {\n    ...input,\n    pii: {\n      redactedEmail: emails.length ? maskEmail(emails[0]) : '',\n      containedEmail: emails.length > 0,\n      safeExcerpt: masked.slice(0, 60)\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Create Redacted Audit Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nfunction hash(value) {\n  let h = 2166136261;\n  for (let i = 0; i < value.length; i += 1) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\nconst seed = input.feedback.feedbackText + '|' + input.feedback.submittedAt;\nconst feedbackId = 'feedback_' + hash(seed);\nreturn [{\n  json: {\n    ...input,\n    identity: {\n      feedbackId,\n      idempotencyKey: hash(seed + '|' + input.feedback.submittedAt.slice(0, 10))\n    },\n    auditEvent: {\n      auditEventId: 'audit_' + hash(seed),\n      traceId: input.runtime.traceId ?? null,\n      feedbackId,\n      source: input.feedback.source,\n      theme: input.classification.theme,\n      sentiment: input.classification.sentiment,\n      urgency: input.derived.urgency,\n      priorityScore: input.derived.priorityScore,\n      classifierSource: input.classification.classifierSource,\n      confidence: input.classification.confidence,\n      reportedCount: input.feedback.reportedCount,\n      redactedEmail: input.pii.redactedEmail,\n      safeExcerpt: input.pii.safeExcerpt,\n      createdAt: new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Needs Human Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3360,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "needs-human-review",
+              "leftValue": "={{ $json.classification.theme === \"churn_risk\" || $json.derived.urgency === \"critical\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Build Approval-Gated Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3680,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 200,\n    runtime: input.runtime,\n    response: {\n      ok: true,\n      status: 'awaiting_approval',\n      needsHumanReview: true,\n      feedbackId: input.identity.feedbackId,\n      traceId: input.runtime.traceId ?? null,\n      theme: input.classification.theme,\n      sentiment: input.classification.sentiment,\n      urgency: input.derived.urgency,\n      priorityScore: input.derived.priorityScore,\n      confidence: input.classification.confidence,\n      classifierSource: input.classification.classifierSource,\n      redactedEmail: input.pii.redactedEmail,\n      auditEventId: input.auditEvent.auditEventId,\n      notification: { status: 'pending_review', reason: 'Churn-risk or critical item gated for human approval' },\n      policyVersion: 'feedback-intel-v0.1.0'\n    },\n    auditEvent: input.auditEvent\n  }\n}];"
+      }
+    },
+    {
+      "name": "Manual UI Execution?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4000,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-execution",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Show UI Execution Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ok: true,\n    executionMode: 'manual-ui',\n    statusCode: input.statusCode,\n    response: input.response,\n    auditEvent: input.auditEvent ?? null,\n    note: 'Terminal result for n8n editor Execute Workflow. Webhook executions use Return Feedback Response instead.'\n  }\n}];"
+      }
+    },
+    {
+      "name": "Return Feedback Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4320,
+        280
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Build Classified Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3680,
+        280
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 200,\n    runtime: input.runtime,\n    response: {\n      ok: true,\n      status: 'classified',\n      needsHumanReview: false,\n      feedbackId: input.identity.feedbackId,\n      traceId: input.runtime.traceId ?? null,\n      theme: input.classification.theme,\n      sentiment: input.classification.sentiment,\n      urgency: input.derived.urgency,\n      priorityScore: input.derived.priorityScore,\n      confidence: input.classification.confidence,\n      classifierSource: input.classification.classifierSource,\n      redactedEmail: input.pii.redactedEmail,\n      auditEventId: input.auditEvent.auditEventId,\n      notification: { status: 'skipped', reason: 'No external notification adapter configured in v0.1' },\n      policyVersion: 'feedback-intel-v0.1.0'\n    },\n    auditEvent: input.auditEvent\n  }\n}];"
+      }
+    },
+    {
+      "name": "Classify Feedback (stub)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// Deterministic stub standing in for the LLM classifier. In live mode an Ollama HTTP\n// node would replace this and return the same { theme, sentiment, confidence } schema.\nconst text = input.feedback.feedbackText.toLowerCase();\nconst themeKeywords = {\n  bug: ['broken', 'crash', 'error', 'bug', 'does nothing', 'not working', 'fails', 'failing', 'spinning', 'blank screen', 'glitch'],\n  performance: ['slow', 'lag', 'laggy', 'takes forever', '30 seconds', 'timeout', 'timing out', 'unusable', 'freezes', 'slow to load'],\n  pricing: ['expensive', 'too expensive', 'pricing', 'overpriced', 'costs too much', 'cost too much'],\n  usability: ['confusing', 'cannot find', 'hard to use', 'not intuitive', 'unclear', 'where is', 'difficult to'],\n  feature_request: ['please add', 'add support', 'would be great', 'feature request', 'wish there was', 'can you add', 'add csv', 'export to csv'],\n  churn_risk: ['cancel', 'cancelling', 'canceling', 'switching to', 'switch to', 'refund', 'downgrade', 'leaving', 'competitor'],\n  praise: ['love', 'great', 'awesome', 'amazing', 'fantastic', 'excellent', 'works great', 'so fast', 'thank you', 'well done']\n};\nconst positiveWords = ['love', 'great', 'awesome', 'amazing', 'fantastic', 'excellent', 'thank', 'wonderful', 'works great', 'so fast'];\nconst negativeWords = ['broken', 'crash', 'error', 'bug', 'not working', 'fails', 'slow', 'confusing', 'expensive', 'cancel', 'refund', 'hate', 'worst', 'terrible', 'unusable', 'frustrat'];\nconst matched = [];\nconst scores = {};\nfor (const [theme, words] of Object.entries(themeKeywords)) {\n  let s = 0;\n  for (const w of words) { if (text.includes(w)) { s += 1; matched.push(theme + ':' + w); } }\n  scores[theme] = s;\n}\nlet bestTheme = 'other';\nlet bestScore = 0;\nfor (const [theme, s] of Object.entries(scores)) { if (s > bestScore) { bestScore = s; bestTheme = theme; } }\nconst posHits = positiveWords.filter((w) => text.includes(w)).length;\nconst negHits = negativeWords.filter((w) => text.includes(w)).length;\nlet sentiment = 'neutral';\nif (negHits > posHits) sentiment = 'negative';\nelse if (posHits > negHits) sentiment = 'positive';\nif (bestScore > 0 && bestTheme === 'praise') sentiment = 'positive';\nconst confidence = bestScore >= 2 ? 0.9 : bestScore === 1 ? 0.65 : 0.3;\nreturn [{\n  json: {\n    ...input,\n    classification: {\n      theme: bestScore > 0 ? bestTheme : 'other',\n      sentiment,\n      confidence,\n      classifierSource: 'stub',\n      matchedKeywords: matched.slice(0, 8)\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Build Empty Feedback Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        460
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 422,\n    runtime: input.runtime,\n    response: {\n      ok: false,\n      error: 'Empty feedback text',\n      policyVersion: 'feedback-intel-v0.1.0'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Manual UI Empty Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1760,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-empty-error",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Return Empty Feedback Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2080,
+        580
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Build Required Field Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        640
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 400,\n    runtime: input.runtime,\n    response: {\n      ok: false,\n      error: 'Missing required feedback field',\n      missingFields: input.validation.missingFields,\n      policyVersion: 'feedback-intel-v0.1.0'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "name": "Manual UI Required Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        640
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-required-error",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Return Required Field Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1760,
+        760
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "name": "Receive Feedback Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        420
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/product-feedback-intelligence",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      }
+    },
+    {
+      "name": "Called By Gateway (Execute Workflow)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        760
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    }
+  ],
+  "connections": {
+    "Run Demo Feedback From n8n UI": {
+      "main": [
+        [
+          {
+            "node": "Build Demo Feedback Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Demo Feedback Payload": {
+      "main": [
+        [
+          {
+            "node": "Normalize Feedback Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Feedback Payload": {
+      "main": [
+        [
+          {
+            "node": "Feedback Field Present?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feedback Field Present?": {
+      "main": [
+        [
+          {
+            "node": "Feedback Non-empty?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Required Field Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feedback Non-empty?": {
+      "main": [
+        [
+          {
+            "node": "Classifier Mode = Ollama?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Empty Feedback Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classifier Mode = Ollama?": {
+      "main": [
+        [
+          {
+            "node": "Classify Feedback (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Feedback (stub)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Feedback (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Parse Ollama Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Ollama Response": {
+      "main": [
+        [
+          {
+            "node": "Resolve Classification (confidence gate + fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Classification (confidence gate + fallback)": {
+      "main": [
+        [
+          {
+            "node": "Derive Urgency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Derive Urgency": {
+      "main": [
+        [
+          {
+            "node": "Score Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Priority": {
+      "main": [
+        [
+          {
+            "node": "Redact Feedback PII",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redact Feedback PII": {
+      "main": [
+        [
+          {
+            "node": "Create Redacted Audit Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Redacted Audit Event": {
+      "main": [
+        [
+          {
+            "node": "Needs Human Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Human Review?": {
+      "main": [
+        [
+          {
+            "node": "Build Approval-Gated Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Classified Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Approval-Gated Response": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Execution?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Feedback Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Classified Response": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Feedback (stub)": {
+      "main": [
+        [
+          {
+            "node": "Resolve Classification (confidence gate + fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Empty Feedback Error": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Empty Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Empty Error?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Empty Feedback Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Required Field Error": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Required Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Required Error?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Required Field Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Feedback Intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize Feedback Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called By Gateway (Execute Workflow)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Feedback Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": []
+}

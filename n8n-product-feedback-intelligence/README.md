@@ -1,0 +1,116 @@
+# n8n Product Feedback Intelligence Workflow
+
+Workflow-as-Code portfolio project: a local n8n API that turns free-text product feedback into
+**structured product signal**. It classifies theme + sentiment + urgency with an
+**LLM-in-the-loop classifier that has a deterministic rule fallback**, clusters to a fixed
+taxonomy, scores urgency × volume, gates churn-risk and critical items through a
+**human-in-the-loop approval branch**, and emits a **redacted audit event**.
+
+This is the third workflow on the shared "Workflow-as-Code" harness and the **first to put a
+real model in the decision loop**. It is the build that the deterministic-vs-LLM ADRs in the
+sibling repos (`n8n-workflow-as-code` / support-triage, `n8n-lead-intelligence-workflow`)
+explicitly pointed to.
+
+> **Status: v0.1.0 — built and behaviorally verified.** The 25-node graph is live in n8n,
+> exported to a scrubbed canonical + release snapshot, and all **10 pin-data eval cases pass**
+> (themes, sentiment, urgency, scoring, the human-in-the-loop gate, the confidence→fallback path,
+> prompt-injection resistance, PII redaction, and validation). The offline static gate (parse +
+> secret scan + node-floor + registry freshness) is green. Built **eval-first**: the requirement
+> spec, eval plan, and ADR were authored before any node.
+
+## Quickstart (offline, zero config)
+
+Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (`pwsh`, cross-platform — macOS: `brew install powershell`).
+
+```bash
+npm ci
+npm run verify:static     # offline gate: secret scan, JSON shape, registry freshness
+npm run verify:workflow   # pin-data behavioral regression (deterministic fallback path, no n8n)
+npm run verify:release    # release snapshot integrity
+npm run smoke             # fixture smoke pass
+```
+
+Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. To run it
+live (optional), import `workflows/canonical/product-feedback-intelligence.canonical.json` into your
+n8n, copy `.env.example` → `.env`, then `npm run verify:live`.
+
+## Why this project (AI-PM framing)
+
+Turning unstructured user feedback into actionable roadmap signal is the canonical AI-PM job.
+Unlike the two sibling workflows (both deterministic rule engines), this one demonstrates the
+competencies AI-PM roles actually test for:
+
+- A **real LLM in the decision loop**, wrapped in a documented eval — the #1 hiring-manager differentiator.
+- **Failure-mode thinking**: a confidence threshold + deterministic fallback so low-confidence or
+  schema-invalid model output degrades gracefully instead of producing garbage.
+- **Human-in-the-loop governance**: churn-risk / critical items are gated for human approval, not auto-actioned.
+- **Responsible-AI**: a redacted audit trail and PII minimization as tested invariants.
+
+## Honest eval framing (read this first)
+
+The reproducible eval validates the **deterministic stub classifier and the fallback path** —
+i.e. schema-conformance, value ranges, branch shape, and graceful degradation. The **live LLM
+(local Ollama) is demonstrated manually**, not graded by the suite. We do **not** claim the eval
+"grades the model." See [docs/eval-plan.md](docs/eval-plan.md) for exactly what is and isn't proven.
+
+## Two-tier validation (same as the harness)
+
+- **Tier 1 — Static gate (CI, offline):** PS parse, fixture JSON parse, workflow JSON structure, secret scan.
+- **Tier 2 — Behavioral eval (local, live n8n):** `Test-ProductFeedbackWorkflow.ps1` via the official n8n MCP — runs the stub classifier so the suite is offline-reproducible.
+
+## Classifier modes
+
+The classifier is selected **per request** via the `classifierMode` field (default `stub`), so the
+eval is always reproducible regardless of what's installed:
+
+- **`stub` (default for CI + eval):** deterministic keyword classifier; reproducible, no network, no model weights.
+- **`ollama` (live, verified):** real local LLM via an HTTP node to `host.docker.internal:11434`. Send `classifierMode: "ollama"` to use it. **Verified end-to-end** with `llama3.2:3b` — e.g. *"export button crashes on Safari"* → the model returns `{theme: bug, sentiment: negative, confidence: 0.9}`, then the deterministic urgency/scoring/human-in-the-loop/audit steps apply, and the confidence gate falls back to the keyword classifier on low-confidence or invalid JSON.
+
+Local Ollama setup (one-time): install Ollama, `ollama pull llama3.2:3b`, and run it with
+`OLLAMA_HOST=0.0.0.0:11434` so the n8n container can reach it via `host.docker.internal`.
+
+## Node graph (28 nodes, live)
+
+```
+webhook
+  -> normalize payload
+  -> validate (feedbackText required)
+  -> classify (stub | ollama)  -> { theme, sentiment, confidence }
+  -> confidence gate + deterministic fallback (low conf / invalid -> keyword rules)
+  -> map to fixed taxonomy + derive urgency
+  -> score priority (urgency x reportedCount)
+  -> human-in-the-loop branch (churn_risk OR critical -> awaiting_approval)
+  -> redacted audit event
+  -> optional Feishu alert
+  -> structured response
+```
+
+## Docs & artifacts
+
+- [fixtures/requests/product-feedback-intelligence.md](fixtures/requests/product-feedback-intelligence.md) — requirement spec (Problem → Solution → Impact + Control).
+- [docs/eval-plan.md](docs/eval-plan.md) — theme taxonomy, golden fixture table, assertion map, regression semantics.
+- [docs/adr/0001-llm-classification-with-deterministic-fallback.md](docs/adr/0001-llm-classification-with-deterministic-fallback.md) — the LLM-with-fallback decision.
+- SDK source: `workflows/sdk/product-feedback-intelligence.workflow.js` (+ `.meta.json`); scrubbed canonical + release snapshots in `workflows/canonical` / `workflows/releases`; generated registry in `docs/registry/`.
+
+## Verify
+
+```powershell
+npm run verify:static   # offline gate: parse + secret scan + node floor + registry freshness
+npm run verify:live     # connection check -> SDK sync -> 10-case behavioral eval (needs local n8n)
+```
+
+Behavioral eval (`scripts/Test-ProductFeedbackWorkflow.ps1`): **10/10 cases pass** against local n8n workflow `6Gc3wmri0tJre07B` — every theme, the churn-risk human-review gate, the low-confidence→fallback path, and prompt-injection resistance (input asking for `theme=praise` resolves to `other`).
+
+## Open Source Health
+
+This repository includes the baseline files needed for public collaboration:
+
+- License: Apache-2.0 (`LICENSE`).
+- Contributions: `CONTRIBUTING.md`.
+- Security policy: `SECURITY.md`.
+- Security and privacy boundaries: `docs/security-boundaries.md`.
+- Workflow contract: `docs/workflow-contract.md`.
+- Conduct: `CODE_OF_CONDUCT.md`.
+- GitHub templates: `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md`.
+
+Before publishing or accepting contributions, run `npm run verify:static`, `npm run verify:json`, and `npm run smoke`; run `npm run verify:live` only when local n8n and required credentials are configured.
