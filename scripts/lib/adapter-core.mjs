@@ -39,7 +39,12 @@ export function parseFeishuEvent(event) {
 // mapMessageToIntent — keyword routing to an ALLOWLISTED gateway intent. Deliberately small:
 //   drift keywords  -> 'drift'           (on-demand health digest; also lands a Feishu card)
 //   selftest        -> 'gateway-selftest' (pipeline ping)
-//   anything else   -> 'rag' with the text as the query (the portfolio's known-issue brain)
+//   anything else   -> 'rag' with the text as the query (the portfolio's known-issue brain).
+//                      The rag payload requests retrievalSource:'supabase' (real multilingual
+//                      embeddings — short colloquial zh/en questions hit semantically where the
+//                      stub TF-IDF cannot); rag's OWN live-degrade fallback ('supabase-fallback-
+//                      stub', X4) drops to deterministic TF-IDF over the same corpus on any live
+//                      miss, so this can never produce a transient false abstain.
 // Empty text (non-text message, bare mention) -> null intent; the caller replies with usage.
 // ---------------------------------------------------------------------------------------------
 export const INTENT_ALLOWLIST = ['drift', 'gateway-selftest', 'rag'];
@@ -56,7 +61,7 @@ export function mapMessageToIntent(text, opts = {}) {
   if (/(selftest|自检)/.test(lower)) {
     return { intent: 'gateway-selftest', payload: { ping: t }, reason: 'selftest keyword' };
   }
-  return { intent: 'rag', payload: { query: t }, reason: 'default question -> rag' };
+  return { intent: 'rag', payload: { query: t, retrievalSource: 'supabase' }, reason: 'default question -> rag' };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -94,21 +99,27 @@ export function buildReplyText(intent, gatewayResponse) {
   }
 
   if (intent === 'rag') {
-    const run = first; // rag returns its response record directly
+    // Through the gateway, rag's executeWorkflow output is its FULL Build Response record
+    // { statusCode, runtime, response: {...}, auditEvent } — the chat-relevant payload lives under
+    // .response. Unwrap it (and keep accepting a bare response object for older/direct shapes).
+    const run = first.response && typeof first.response === 'object' ? first.response : first;
+    // Observability: surface which retrieval actually ran (supabase | supabase-fallback-stub | stub)
+    // so a live degrade is visible in the chat reply, mirroring the agent's tool summary.
+    const rs = run.retrievalSource ? '\n(retrieval ' + String(run.retrievalSource) + ')' : '';
     const abstained = run.abstained === true || (run.answer && run.answer.abstained === true);
     const answerText = typeof run.answer === 'string' ? run.answer
       : (run.answer && typeof run.answer.text === 'string' ? run.answer.text : '');
     const citations = Array.isArray(run.citations) ? run.citations
       : (run.answer && Array.isArray(run.answer.citations) ? run.answer.citations : []);
     if (abstained || (!answerText && citations.length === 0)) {
-      return '🤷 知识库没有足够的信息回答这个问题(诚实弃答,不编造)。' + trace;
+      return '🤷 知识库没有足够的信息回答这个问题(诚实弃答,不编造)。' + rs + trace;
     }
     const cites = citations.slice(0, 3).map((c) => {
       const id = c && (c.chunkId || c.id) ? String(c.chunkId || c.id) : '';
       const src = c && c.source ? String(c.source) : '';
       return '· ' + id + (src ? ' — ' + src.slice(0, 60) : '');
     }).join('\n');
-    return (answerText ? String(answerText).slice(0, 800) : '(检索命中,见引用)') + (cites ? '\n\n引用:\n' + cites : '') + trace;
+    return (answerText ? String(answerText).slice(0, 800) : '(检索命中,见引用)') + (cites ? '\n\n引用:\n' + cites : '') + rs + trace;
   }
 
   if (intent === 'drift') {
