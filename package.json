@@ -1,6 +1,6 @@
 {
   "name": "n8n-rag-knowledge-assistant",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Local n8n Workflow-as-Code project: a retrieval-grounded RAG knowledge assistant over a Chinese, authoritative-sourced, provenance-tracked 'AI 时代产品经理' corpus that cites its retrieved source (title + url) for every answer and abstains instead of hallucinating on a retrieval miss, with a deterministic stub retriever + stub generator default for reproducible offline evals and an opt-in live Supabase pgvector / Ollama path, deployed to n8n via the public REST API.",
   "license": "Apache-2.0",
