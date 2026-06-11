@@ -1,0 +1,6 @@
+{
+  "id": "source-unreachable",
+  "description": "One source returns an unreachable sentinel (no fingerprint). The monitor must flag it non-fatally as unreachable (a fetch failure is drift, not a crash).",
+  "request": { "mode": "stub", "runId": "run_source-unreachable", "asOf": "2026-05-31", "stubSources": { "hf-llm-course": { "statusHint": "unreachable" } } },
+  "expect": { "driftAny": true, "regressed": false, "changed": 0, "stale": 0, "unreachable": 1, "reembedded": 0, "passed": true }
+}

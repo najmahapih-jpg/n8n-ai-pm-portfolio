@@ -1,0 +1,6 @@
+{
+  "id": "source-stale",
+  "description": "asOf is 93 days past the manifest retrievedAt (beyond the 90-day window), so every pinned source is stale. The monitor must flag staleness as drift. (All 6 manifest sources share retrievedAt 2026-05-31, so stale == 6.)",
+  "request": { "mode": "stub", "runId": "run_source-stale", "asOf": "2026-09-01" },
+  "expect": { "driftAny": true, "regressed": false, "changed": 0, "stale": 6, "unreachable": 0, "reembedded": 0, "passed": true }
+}

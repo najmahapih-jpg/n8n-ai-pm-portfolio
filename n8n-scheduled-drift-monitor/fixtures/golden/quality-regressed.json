@@ -1,0 +1,6 @@
+{
+  "id": "quality-regressed",
+  "description": "Current passRate 0.80 vs the prior baseline 1.0 (delta -0.20, beyond the 0.05 band). The monitor must flag a quality regression — the missed-drift (false-negative) failure-mode guard.",
+  "request": { "mode": "stub", "runId": "run_quality-regressed", "asOf": "2026-05-31", "stubQuality": { "passRate": 0.80 } },
+  "expect": { "driftAny": true, "regressed": true, "changed": 0, "stale": 0, "unreachable": 0, "reembedded": 0, "passed": true }
+}

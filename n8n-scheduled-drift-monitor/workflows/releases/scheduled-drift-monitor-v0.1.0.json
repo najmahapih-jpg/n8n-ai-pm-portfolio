@@ -1,0 +1,576 @@
+{
+  "id": "scheduled-drift-monitor",
+  "name": "Portfolio - Scheduled Drift Monitor",
+  "nodes": [
+    {
+      "id": "742b925f-7519-41b2-9187-02228936d370",
+      "name": "Sticky Note 742b925f",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        110,
+        150
+      ],
+      "parameters": {
+        "content": "## Scheduled Drift Monitor v0.1.0 (stub default; cron + monitoring — the first non-webhook workflow in the portfolio). On a SCHEDULE (default weekly) or a manual editor run, two pluggable monitors run and an integrity-checked digest is emitted. Monitor 1 (Corpus Freshness): fingerprints the allowlisted corpus sources of Project B against a pinned SOURCE_MANIFEST -> unchanged|changed|stale|unreachable (serves the RAG periodic refresh for B = B ADR-0004 option C). DETECT-ONLY: no Supabase-write node exists here, so refresh-gating (zero live writes) holds BY CONSTRUCTION; the gated re-embed is a reviewed harness action landing with the live increment. Monitor 2 (Answer-Quality Drift): compares a quality reading to the prior run baseline -> regressed? (a time-series drift, distinct from the single-baseline regressionDelta in A). The two are aggregated (drift.any = quality regressed OR any source changed/stale/unreachable), a digest is summarized FROM the run record, and DIGEST-INTEGRITY is enforced: every number in the digest is recomputed from the record (sibling B citation-integrity transposed to a summary — the summarizer cannot claim a drift the data does not show). STUB-DEFAULT everywhere CI touches (mode normalized but v0.1.0 degrades live -> stub; no live HTTP nodes yet), so verify:static/json/live stay OFFLINE + deterministic; Layer-2 scenarios are driven by per-request injections (stubSources / stubQuality / priorBaseline) so a fixed request + asOf is byte-stable. Live source-fetch / A-eval / Ollama-digest + the gated re-embed land behind gates once the stub contract is pinned (ADR-0001). policyVersion scheduled-drift-monitor-v0.1.0.",
+        "color": 4,
+        "width": 3960,
+        "height": 700
+      }
+    },
+    {
+      "id": "b72581bf-2203-4726-ad6d-a0a161eeeb5e",
+      "name": "Run Weekly (Schedule)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 6,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "d56eb170-8a97-4f8d-bc43-ee9e763b7a39",
+      "name": "Normalize Run Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const source = items[0]?.json ?? {};\nconst body = source.body ?? source;\nconst entrypoint = (source.manualExecution === true || body.manualExecution === true)\n  ? 'manual'\n  : (Object.prototype.hasOwnProperty.call(source, 'body') ? 'webhook' : 'schedule');\nconst text = (v) => String(v ?? '').trim();\nconst num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };\n\n// mode: live is NORMALIZED but v0.1.0 DEGRADES it to stub (no live HTTP nodes yet) — a misconfigured\n// request can never hit a live backend in the offline suite. requestedMode preserves the raw ask.\nconst requestedMode = text(body.mode).toLowerCase() === 'live' ? 'live' : 'stub';\nconst mode = 'stub';\n// reportOnly defaults TRUE (detect + recommend, never auto-write B's KB).\nconst reportOnly = body.reportOnly === false ? false : true;\nconst driftThreshold = num(body.driftThreshold, 0.05);\nconst staleAfterDays = num(body.staleAfterDays, 90);\nconst asOf = text(body.asOf) || new Date().toISOString().slice(0, 10);\nconst monitors = Array.isArray(body.monitors) && body.monitors.length ? body.monitors : ['freshness', 'quality'];\n\n// Deterministic Layer-2 scenario injections (the request DRIVES the stub collectors):\n//   stubSources: { <sourceId>: { fingerprintNow?: string, statusHint?: 'unreachable' } }\n//   stubQuality: { passRate?: number, perRubric?: object }   (the current eval reading)\n//   priorBaseline: partial override of the embedded PRIOR_BASELINE\nconst isObj = (v) => v && typeof v === 'object';\nconst stubSources = isObj(body.stubSources) ? body.stubSources : {};\nconst stubQuality = isObj(body.stubQuality) ? body.stubQuality : null;\nconst priorBaseline = isObj(body.priorBaseline) ? body.priorBaseline : null;\n\nreturn [{\n  json: {\n    request: {\n      runId: text(body.runId) || ('run_' + Date.now().toString(36)),\n      requestedAt: text(body.requestedAt) || new Date().toISOString()\n    },\n    runtime: { entrypoint, mode, requestedMode, reportOnly, driftThreshold, staleAfterDays, asOf, monitors },\n    inject: { stubSources, stubQuality, priorBaseline },\n    sourcePayloadKeys: Object.keys(body)\n  }\n}];"
+      }
+    },
+    {
+      "id": "b3b00f9c-fd9f-40b9-9fa6-162b3e67c3ba",
+      "name": "Load Prior Baseline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// The rolling baseline (the prior run the current run is compared against). n8n cannot read repo files\n// at runtime, so the pinned baseline is an EMBEDDED constant (mirrors B's CORPUS-as-constant); the live\n// path will read/update it from a store. A scenario can override it via inject.priorBaseline.\nconst PRIOR_BASELINE = {\n  runId: 'run_baseline',\n  asOf: '2026-05-24',\n  passRate: 1,\n  perRubric: { 'connected-product-feedback': 1, 'connected-rag-abstain': 1 }\n};\nconst baseline = input.inject.priorBaseline ? { ...PRIOR_BASELINE, ...input.inject.priorBaseline } : PRIOR_BASELINE;\nreturn [{ json: { ...input, baseline } }];"
+      }
+    },
+    {
+      "id": "1944e24a-8bfe-46c8-9626-6d97e4002008",
+      "name": "M1 Collect Sources (stub)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// SOURCE_MANIFEST — D's pinned snapshot of B's allowlisted corpus sources (sourceId, url, the chunkIds\n// it backs, a content fingerprint = the last-known-good hash, and retrievedAt). Source of truth for the\n// live fetch contract; in stub mode the \"fetched\" fingerprint == the manifest fingerprint (unchanged)\n// unless a scenario injects an override. (Subset of B's 13-chunk corpus, grouped by source url.)\nconst SOURCE_MANIFEST = [\n  { sourceId: 'svpg-ai-pm', url: 'https://www.svpg.com/ai-product-management/', chunkIds: ['pm-more-essential', 'genuine-value'], fingerprint: 'a1b2c3d4', retrievedAt: '2026-05-31' },\n  { sourceId: 'lennys-evals', url: 'https://www.lennysnewsletter.com/p/beyond-vibe-checks-a-pms-complete', chunkIds: ['evals-defining-skill'], fingerprint: 'e5f6a7b8', retrievedAt: '2026-05-31' },\n  { sourceId: 'institutepm-2026', url: 'https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026', chunkIds: ['how-to-learn', 'portfolio-proof', 'three-skill-clusters'], fingerprint: '0c1d2e3f', retrievedAt: '2026-05-31' },\n  { sourceId: 'feishu-yujun', url: 'https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g', chunkIds: ['yujun-growth', 'yujun-user-value'], fingerprint: '4a5b6c7d', retrievedAt: '2026-05-31' },\n  { sourceId: 'woshipm-hanniman', url: 'https://www.woshipm.com/pmd/5396083.html', chunkIds: ['hanniman-humanity'], fingerprint: '8e9f0a1b', retrievedAt: '2026-05-31' },\n  { sourceId: 'hf-llm-course', url: 'https://github.com/mlabonne/llm-course', chunkIds: ['rag-eval-faithfulness'], fingerprint: '2c3d4e5f', retrievedAt: '2026-05-31' }\n];\nconst overrides = input.inject.stubSources || {};\nconst collected = SOURCE_MANIFEST.map((s) => {\n  const o = overrides[s.sourceId] || {};\n  const unreachable = o.statusHint === 'unreachable';\n  return {\n    sourceId: s.sourceId,\n    url: s.url,\n    chunkIds: s.chunkIds,\n    retrievedAt: s.retrievedAt,\n    fingerprintPrev: s.fingerprint,\n    fingerprintNow: unreachable ? null : (typeof o.fingerprintNow === 'string' ? o.fingerprintNow : s.fingerprint),\n    statusHint: o.statusHint || null\n  };\n});\nreturn [{ json: { ...input, freshness: { fetchSource: 'stub', collected } } }];"
+      }
+    },
+    {
+      "id": "6896bb2f-fb96-40e6-9e1b-3e2604b53d41",
+      "name": "M1 Detect Source Drift",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst asOf = input.runtime.asOf;\nconst staleAfterDays = input.runtime.staleAfterDays;\nfunction ageDays(d) {\n  const a = Date.parse(asOf + 'T00:00:00Z');\n  const b = Date.parse(String(d) + 'T00:00:00Z');\n  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;\n  return Math.floor((a - b) / 86400000);\n}\n// Per source: unreachable (no fingerprint) -> changed (fingerprint differs) -> stale (age > window) ->\n// unchanged. The two failure modes the eval-plan guards: a MISSED change (false negative) and a FALSE\n// alarm (false positive) — both deterministic given the injected scenario.\nconst sources = input.freshness.collected.map((s) => {\n  const age = ageDays(s.retrievedAt);\n  let status;\n  if (s.statusHint === 'unreachable' || s.fingerprintNow === null) status = 'unreachable';\n  else if (s.fingerprintNow !== s.fingerprintPrev) status = 'changed';\n  else if (age !== null && age > staleAfterDays) status = 'stale';\n  else status = 'unchanged';\n  return { sourceId: s.sourceId, url: s.url, chunkIds: s.chunkIds, status, ageDays: age, fingerprintPrev: s.fingerprintPrev, fingerprintNow: s.fingerprintNow };\n});\nconst changed = sources.filter((s) => s.status === 'changed').length;\nconst stale = sources.filter((s) => s.status === 'stale').length;\nconst unreachable = sources.filter((s) => s.status === 'unreachable').length;\n// DETECT-ONLY: the workflow recommends which chunks to re-curate but performs ZERO live writes\n// (reembedded is always 0 here) — refresh-gating holds by construction. The gated re-embed is a reviewed\n// harness action (delegating to B's Ingest-Corpus.ps1), landing with the live increment.\nconst reembedRecommended = sources.filter((s) => s.status === 'changed').reduce((acc, s) => acc.concat(s.chunkIds), []);\nreturn [{ json: { ...input, freshness: { fetchSource: input.freshness.fetchSource, sources, changed, stale, unreachable, reembedRecommended, reembedded: 0 } } }];"
+      }
+    },
+    {
+      "id": "873fdcc0-f62c-4209-99a9-2d0de6fb7908",
+      "name": "M2 Collect Eval Reading (stub)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1720,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst baseline = input.baseline;\nconst inj = input.inject.stubQuality;\n// Stub eval reading: the current quality reading. DEFAULT == the baseline (no drift) so a bare scheduled\n// stub run is correctly \"all-clear\"; a scenario injects stubQuality to simulate the current A-eval result.\n// The live path replaces this with a real POST to Project A's eval webhook (evalSource:'workflow').\nconst current = inj\n  ? {\n      passRate: Number.isFinite(Number(inj.passRate)) ? Number(inj.passRate) : baseline.passRate,\n      perRubric: (inj.perRubric && typeof inj.perRubric === 'object') ? inj.perRubric : baseline.perRubric\n    }\n  : { passRate: baseline.passRate, perRubric: baseline.perRubric };\nreturn [{ json: { ...input, quality: { current, evalSource: 'stub' } } }];"
+      }
+    },
+    {
+      "id": "95612812-0289-4272-b346-76448289d875",
+      "name": "M2 Detect Quality Drift",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst cur = input.quality.current;\nconst base = input.baseline;\nconst round = (n) => Number(Number(n).toFixed(4));\nconst passRate = round(cur.passRate);\nconst passRatePrev = round(base.passRate);\nconst passRateDelta = round(passRate - passRatePrev);\n// Time-series drift vs the PRIOR run (distinct from A's single-baseline regressionDelta): a regression is\n// a drop beyond the threshold band. A rise (or a within-band wiggle) is NOT a regression (no false alarm).\nconst regressed = passRateDelta < -input.runtime.driftThreshold;\nconst perRubricDelta = {};\nconst keys = new Set([...Object.keys(cur.perRubric || {}), ...Object.keys(base.perRubric || {})]);\nkeys.forEach((k) => { perRubricDelta[k] = round(Number(cur.perRubric && cur.perRubric[k] != null ? cur.perRubric[k] : 0) - Number(base.perRubric && base.perRubric[k] != null ? base.perRubric[k] : 0)); });\nreturn [{ json: { ...input, quality: { evalSource: input.quality.evalSource, passRate, passRatePrev, passRateDelta, regressed, perRubric: cur.perRubric, perRubricDelta } } }];"
+      }
+    },
+    {
+      "id": "ba2236b5-72a0-4169-b670-8392c126bb56",
+      "name": "Aggregate Run Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst f = input.freshness;\nconst q = input.quality;\n// drift.any is the UNION of a quality regression with any non-clean source status; reasons is the single\n// source of truth the digest must echo (digest-integrity then verifies the digest did not invent any).\nconst reasons = [];\nif (q.regressed) reasons.push('quality regressed: passRate ' + q.passRatePrev + ' -> ' + q.passRate + ' (delta ' + q.passRateDelta + ')');\nif (f.changed > 0) reasons.push(f.changed + ' source(s) changed');\nif (f.stale > 0) reasons.push(f.stale + ' source(s) stale');\nif (f.unreachable > 0) reasons.push(f.unreachable + ' source(s) unreachable');\nreturn [{ json: { ...input, drift: { any: reasons.length > 0, reasons } } }];"
+      }
+    },
+    {
+      "id": "9805c715-d6ba-44dc-be3a-4e5b1d01419d",
+      "name": "Summarize Digest (stub)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2500,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst q = input.quality;\nconst f = input.freshness;\nconst d = input.drift;\n// DEFAULT stub summarizer: composes the digest DETERMINISTICALLY from the run record (the live path swaps\n// in Ollama llama3.2:3b for the prose). A machine-checkable METRICS line is embedded so the integrity node\n// can parse the digest's numbers back out and prove they match the record (no fabricated drift).\nconst metrics = 'METRICS passRate=' + q.passRate + ' passRateDelta=' + q.passRateDelta + ' regressed=' + q.regressed + ' changed=' + f.changed + ' stale=' + f.stale + ' unreachable=' + f.unreachable + ' driftAny=' + d.any;\nconst headline = d.any ? '检测到漂移' : '无漂移';\nconst lines = [];\nlines.push('# 漂移监控简报 (' + input.runtime.asOf + ')');\nlines.push('');\nlines.push('状态: ' + headline);\nlines.push('');\nlines.push('## 回答质量');\nlines.push('通过率 ' + q.passRate + ' (上期 ' + q.passRatePrev + ', delta ' + q.passRateDelta + ')' + (q.regressed ? ' — 疑似回归' : ''));\nlines.push('');\nlines.push('## 语料新鲜度');\nlines.push('变更 ' + f.changed + ' · 过期 ' + f.stale + ' · 不可达 ' + f.unreachable);\nif (f.reembedRecommended.length) lines.push('建议复审并重嵌入: ' + f.reembedRecommended.join(', '));\nlines.push('');\nlines.push('## 结论');\nlines.push(d.any ? ('发现 ' + d.reasons.length + ' 项漂移信号: ' + d.reasons.join('; ')) : '本期无漂移信号,知识库与质量稳定。');\nlines.push('');\nlines.push(metrics);\nreturn [{ json: { ...input, digest: { title: headline + ' · ' + input.runtime.asOf, markdown: lines.join('\\n'), summarySource: 'stub' } } }];"
+      }
+    },
+    {
+      "id": "eb092f4a-a324-4a2a-9e78-c8a86e277e2a",
+      "name": "Enforce Digest Integrity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2760,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// DIGEST-INTEGRITY (the headline invariant, sibling B's citation-integrity transposed to a summary):\n// parse every quantitative claim back out of the digest markdown and require it to EQUAL the run record.\n// A summarizer (stub today, Ollama tomorrow) that states a number the data does not show -> passed=false.\nconst md = String(input.digest.markdown || '');\nconst q = input.quality;\nconst f = input.freshness;\nconst d = input.drift;\nfunction grab(key) {\n  const m = md.match(new RegExp(key + '=([^\\\\s]+)'));\n  return m ? m[1] : null;\n}\nconst checks = [];\nfunction check(name, actual) {\n  const parsed = grab(name);\n  const ok = parsed !== null && parsed === String(actual);\n  checks.push({ name, ok, parsed, actual: String(actual) });\n  return ok;\n}\nlet passed = true;\npassed = check('passRate', q.passRate) && passed;\npassed = check('passRateDelta', q.passRateDelta) && passed;\npassed = check('regressed', q.regressed) && passed;\npassed = check('changed', f.changed) && passed;\npassed = check('stale', f.stale) && passed;\npassed = check('unreachable', f.unreachable) && passed;\npassed = check('driftAny', d.any) && passed;\nreturn [{ json: { ...input, digestIntegrity: { passed, checks }, passed } }];"
+      }
+    },
+    {
+      "id": "e852a330-2d96-4a80-836b-4520f4a07b9d",
+      "name": "Create Redacted Audit Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3020,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nfunction hash(value) {\n  let h = 2166136261;\n  const s = String(value);\n  for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\n// Redacted audit: ids + counts + verdicts only — no source urls, no digest prose (masking invariant).\nconst runSeed = input.request.runId + '|' + (input.runtime.asOf || '');\nreturn [{\n  json: {\n    ...input,\n    auditEvent: {\n      auditEventId: 'audit_' + hash(runSeed),\n      runId: input.request.runId,\n      mode: input.runtime.mode,\n      reportOnly: input.runtime.reportOnly,\n      evalSource: input.quality.evalSource,\n      summarySource: input.digest.summarySource,\n      driftAny: input.drift.any,\n      reasonCount: input.drift.reasons.length,\n      changed: input.freshness.changed,\n      stale: input.freshness.stale,\n      unreachable: input.freshness.unreachable,\n      reembedded: input.freshness.reembedded,\n      regressed: input.quality.regressed,\n      passRate: input.quality.passRate,\n      passRateDelta: input.quality.passRateDelta,\n      digestIntegrityPassed: input.digestIntegrity.passed,\n      policyVersion: 'scheduled-drift-monitor-v0.1.0',\n      createdAt: new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "45e5315f-6837-4be2-88d3-f62d8e8c8577",
+      "name": "Build Run Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// The run record — the scorer contract shape from docs/eval-plan.md. entrypoint is surfaced at top level\n// so the terminal gate can route manual (editor display) vs scheduled (emit artifact).\nreturn [{\n  json: {\n    runId: input.request.runId,\n    entrypoint: input.runtime.entrypoint,\n    asOf: input.runtime.asOf,\n    mode: input.runtime.mode,\n    requestedMode: input.runtime.requestedMode,\n    reportOnly: input.runtime.reportOnly,\n    monitors: input.runtime.monitors,\n    freshness: {\n      fetchSource: input.freshness.fetchSource,\n      sources: input.freshness.sources,\n      changed: input.freshness.changed,\n      stale: input.freshness.stale,\n      unreachable: input.freshness.unreachable,\n      reembedRecommended: input.freshness.reembedRecommended,\n      reembedded: input.freshness.reembedded\n    },\n    quality: {\n      passRate: input.quality.passRate,\n      passRatePrev: input.quality.passRatePrev,\n      passRateDelta: input.quality.passRateDelta,\n      regressed: input.quality.regressed,\n      perRubric: input.quality.perRubric,\n      perRubricDelta: input.quality.perRubricDelta,\n      evalSource: input.quality.evalSource\n    },\n    drift: input.drift,\n    digest: input.digest,\n    digestIntegrity: input.digestIntegrity,\n    history: { priorRunId: input.baseline.runId, priorAsOf: input.baseline.asOf, baselineUpdated: false },\n    passed: input.passed === true,\n    auditEvent: input.auditEvent,\n    policyVersion: 'scheduled-drift-monitor-v0.1.0',\n    processedAt: new Date().toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "33c87240-d126-4730-8986-cfc436fe2da4",
+      "name": "Webhook Execution?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3540,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "webhook-execution",
+              "leftValue": "={{ $json.entrypoint === \"webhook\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4ca81cd2-b29e-44c5-bc59-afd8581169f1",
+      "name": "Return Run Record",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3820,
+        460
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "b6898035-3e51-410c-8e2a-a5a03c3bd660",
+      "name": "Manual UI Execution?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3540,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-execution",
+              "leftValue": "={{ $json.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e5ce5ec2-4bc8-4e28-8f92-b994e9c33744",
+      "name": "Show Run Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3800,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ok: true,\n    executionMode: 'manual-ui',\n    run: input,\n    note: 'Terminal result for n8n editor Execute Workflow. Scheduled executions emit the digest artifact instead.'\n  }\n}];"
+      }
+    },
+    {
+      "id": "62746e02-ac2d-4be2-87a3-ceb953e53ad2",
+      "name": "Emit Digest Artifact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3800,
+        440
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// Scheduled emit: in stub mode the run record + digest ARE the artifact (the harness persists them under\n// artifacts/runs/ and, opt-in, pushes to DIGEST_NOTIFY_WEBHOOK_URL). reportOnly default => notified:false\n// and no live writes occurred anywhere in this run.\nreturn [{\n  json: {\n    ok: true,\n    executionMode: 'scheduled',\n    emitted: { artifact: 'artifacts/runs/' + input.runId + '.json', notified: false },\n    run: input\n  }\n}];"
+      }
+    },
+    {
+      "id": "72e101a2-b05b-44e9-b422-f294607b52ae",
+      "name": "Run Demo From n8n UI",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        160,
+        460
+      ]
+    },
+    {
+      "id": "194070d6-277a-42fe-91bf-9a3b0bd30d0f",
+      "name": "Build Demo Run Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        460
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0]?.json ?? {};\nif (Object.keys(input).length > 0) {\n  return [{ json: { ...input, manualExecution: true } }];\n}\n// Default demo: a DRIFT-DETECTED run (quality regressed 1.0 -> 0.83 + one source changed) so the editor\n// demo shows the headline \"drift caught\" path. all-clear / stale / unreachable scenarios are exercised\n// by the Layer-2 suite via the same injection knobs.\nreturn [{\n  json: {\n    manualExecution: true,\n    runId: 'run_demo',\n    asOf: '2026-05-31',\n    stubQuality: { passRate: 0.83, perRubric: { 'connected-product-feedback': 0.83, 'connected-rag-abstain': 1 } },\n    stubSources: { 'institutepm-2026': { fingerprintNow: 'ffffffff' } }\n  }\n}];"
+      }
+    },
+    {
+      "id": "a374e4d5-699e-4be0-9dae-895008fabd9d",
+      "name": "Receive Run Request (on-demand)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        700
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/scheduled-drift-monitor",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "9894aeb7-566b-427c-8784-6088c87a3bf0"
+    }
+  ],
+  "connections": {
+    "Run Weekly (Schedule)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Run Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Run Config": {
+      "main": [
+        [
+          {
+            "node": "Load Prior Baseline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Prior Baseline": {
+      "main": [
+        [
+          {
+            "node": "M1 Collect Sources (stub)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "M1 Collect Sources (stub)": {
+      "main": [
+        [
+          {
+            "node": "M1 Detect Source Drift",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "M1 Detect Source Drift": {
+      "main": [
+        [
+          {
+            "node": "M2 Collect Eval Reading (stub)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "M2 Collect Eval Reading (stub)": {
+      "main": [
+        [
+          {
+            "node": "M2 Detect Quality Drift",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "M2 Detect Quality Drift": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Run Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Run Record": {
+      "main": [
+        [
+          {
+            "node": "Summarize Digest (stub)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Digest (stub)": {
+      "main": [
+        [
+          {
+            "node": "Enforce Digest Integrity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enforce Digest Integrity": {
+      "main": [
+        [
+          {
+            "node": "Create Redacted Audit Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Redacted Audit Event": {
+      "main": [
+        [
+          {
+            "node": "Build Run Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Run Output": {
+      "main": [
+        [
+          {
+            "node": "Webhook Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Execution?": {
+      "main": [
+        [
+          {
+            "node": "Return Run Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual UI Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Execution?": {
+      "main": [
+        [
+          {
+            "node": "Show Run Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emit Digest Artifact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Demo From n8n UI": {
+      "main": [
+        [
+          {
+            "node": "Build Demo Run Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Demo Run Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize Run Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Run Request (on-demand)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Run Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}

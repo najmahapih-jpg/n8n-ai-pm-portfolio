@@ -1,0 +1,6 @@
+{
+  "id": "all-clear",
+  "description": "No injections: the current quality reading equals the prior baseline and every source is unchanged + fresh. The all-clear path — the monitor must NOT raise a false alarm (the false-positive failure mode).",
+  "request": { "mode": "stub", "runId": "run_all-clear", "asOf": "2026-05-31" },
+  "expect": { "driftAny": false, "regressed": false, "changed": 0, "stale": 0, "unreachable": 0, "reembedded": 0, "passed": true }
+}
