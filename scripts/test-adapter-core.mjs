@@ -4,7 +4,7 @@
 // and reply building for every response family the gateway can return.
 import { createHmac } from 'node:crypto';
 import {
-  parseFeishuEvent, mapMessageToIntent, buildGatewayRequest, buildReplyText, INTENT_ALLOWLIST
+  parseFeishuEvent, mapMessageToIntent, buildGatewayRequest, buildReplyText, buildReplyPayload, INTENT_ALLOWLIST
 } from './lib/adapter-core.mjs';
 
 let pass = 0, fail = 0;
@@ -70,17 +70,27 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const id = 'reply';
   const fail401 = buildReplyText('rag', { ok: false, status: 401 });
   check(id, 'gateway failure -> honest failure reply', /未通过网关/.test(fail401) && /401/.test(fail401), fail401);
+  const failPayload = buildReplyPayload('rag', { ok: false, status: 401 });
+  check(id, 'gateway failure payload stays plain text', failPayload.msg_type === 'text' && /401/.test(failPayload.content.text), JSON.stringify(failPayload));
 
   // REAL gateway shape (caught live 2026-06-10): rag's executeWorkflow output is the FULL record
   // { statusCode, runtime, response } — the reply builder must unwrap .response or a HIT reads as
   // an abstain (every field undefined). This fixture pins the real nested shape.
-  const ragHit = buildReplyText('rag', {
+  const ragHitGateway = {
     ok: true, traceId: 'gw-t1',
-    result: { perTarget: [{ target: 'rag', result: { statusCode: 200, runtime: { queryLang: 'zh' }, response: { ok: true, abstained: false, retrievalSource: 'supabase', answer: '已知问题:导出在移动端崩溃,2.4 修复。', citations: [{ chunkId: 'known-export-mobile-crash', source: 'Internal KB' }] } } }] }
-  });
+    result: { perTarget: [{ target: 'rag', result: { statusCode: 200, runtime: { queryLang: 'zh' }, response: { ok: true, abstained: false, retrievalSource: 'supabase', generationSource: 'ollama', answer: '已知问题:导出在移动端崩溃,2.4 修复。', retrieval: { maxScore: 0.66, threshold: 0.35 }, citations: [{ chunkId: 'known-export-mobile-crash', source: 'Internal KB', url: 'https://kb.example/export', quote: 'mobile export crashes' }] } } }] }
+  };
+  const ragHit = buildReplyText('rag', ragHitGateway);
   check(id, 'rag hit (REAL nested gateway shape) -> answer + citation + traceId', /已知问题/.test(ragHit) && /known-export-mobile-crash/.test(ragHit) && /gw-t1/.test(ragHit), ragHit.slice(0, 80));
   check(id, 'rag hit surfaces the actual retrieval source (observability)', /\(retrieval supabase\)/.test(ragHit), ragHit.slice(-60));
   check(id, 'rag hit is NOT misread as abstain (the unwrap bug)', !/没有足够的信息/.test(ragHit), '');
+  const ragHitPayload = buildReplyPayload('rag', ragHitGateway);
+  const ragHitCard = ragHitPayload.content;
+  const ragHitCardText = JSON.stringify(ragHitCard);
+  check(id, 'rag hit payload is an interactive Feishu card', ragHitPayload.msg_type === 'interactive' && ragHitCard.header.title.content === '知识库回答', JSON.stringify(ragHitCard.header));
+  check(id, 'rag hit card contains answer + citation + source button', /已知问题/.test(ragHitCardText) && /known-export-mobile-crash/.test(ragHitCardText) && /打开来源 1/.test(ragHitCardText), ragHitCardText.slice(0, 160));
+  check(id, 'rag hit card surfaces retrieval/generation/trace observability', /retrieval: supabase/.test(ragHitCardText) && /generation: ollama/.test(ragHitCardText) && /gw-t1/.test(ragHitCardText), ragHitCardText.slice(-220));
+  check(id, 'rag hit payload keeps plain-text fallback', /已知问题/.test(ragHitPayload.fallbackText) && /retrieval supabase/.test(ragHitPayload.fallbackText), ragHitPayload.fallbackText);
 
   const ragHitBare = buildReplyText('rag', {
     ok: true,
@@ -88,9 +98,14 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   });
   check(id, 'rag hit (legacy bare shape) still parsed', /答案/.test(ragHitBare) && /c1/.test(ragHitBare), ragHitBare.slice(0, 60));
 
-  const ragAbstain = buildReplyText('rag', { ok: true, result: { perTarget: [{ target: 'rag', result: { statusCode: 200, response: { abstained: true, retrievalSource: 'supabase-fallback-stub', note: 'Not enough information to answer' } } }] } });
+  const ragAbstainGateway = { ok: true, result: { perTarget: [{ target: 'rag', result: { statusCode: 200, response: { abstained: true, retrievalSource: 'supabase-fallback-stub', note: 'Not enough information to answer' } } }] } };
+  const ragAbstain = buildReplyText('rag', ragAbstainGateway);
   check(id, 'rag abstain (nested shape) -> honest abstain reply (never fabricates)', /没有足够的信息/.test(ragAbstain), ragAbstain);
   check(id, 'rag abstain surfaces the degrade retrieval source', /supabase-fallback-stub/.test(ragAbstain), ragAbstain.slice(-60));
+  const ragAbstainPayload = buildReplyPayload('rag', ragAbstainGateway);
+  const ragAbstainCardText = JSON.stringify(ragAbstainPayload.content);
+  check(id, 'rag abstain payload is an honest warning card', ragAbstainPayload.msg_type === 'interactive' && ragAbstainPayload.content.header.template === 'yellow', JSON.stringify(ragAbstainPayload.content.header));
+  check(id, 'rag abstain card contains no fabricated citation', !/依据来源/.test(ragAbstainCardText) && /没有足够证据/.test(ragAbstainCardText), ragAbstainCardText.slice(0, 180));
 
   const driftReply = buildReplyText('drift', {
     ok: true, traceId: 'gw-t2',
