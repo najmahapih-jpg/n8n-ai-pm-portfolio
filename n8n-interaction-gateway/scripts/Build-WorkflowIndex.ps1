@@ -15,9 +15,9 @@ function ConvertTo-RelativePath {
     [string]$Path
   )
 
-  $baseUri = [System.Uri]((Resolve-Path -LiteralPath $BasePath).Path.TrimEnd("\") + "\")
-  $pathUri = [System.Uri]((Resolve-Path -LiteralPath $Path).Path)
-  return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($pathUri).ToString()).Replace("/", "\")
+  $resolvedBase = (Resolve-Path -LiteralPath $BasePath).Path
+  $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
+  return [System.IO.Path]::GetRelativePath($resolvedBase, $resolvedPath).Replace("/", "\")
 }
 
 function Escape-MarkdownCell {
@@ -28,6 +28,12 @@ function Escape-MarkdownCell {
   }
 
   return ([string]$Value).Replace("|", "\|").Replace("`r", " ").Replace("`n", " ")
+}
+
+function Normalize-NewLine {
+  param([string]$Value)
+
+  return ($Value -replace "`r`n", "`n") -replace "`r", "`n"
 }
 
 function Get-WorkflowComplexity {
@@ -132,13 +138,14 @@ foreach ($entry in @($entries | Sort-Object slug)) {
   $markdownLines.Add("| $(Escape-MarkdownCell $entry.title) | $(Escape-MarkdownCell $entry.version) | $(Escape-MarkdownCell $entry.status) | $(Escape-MarkdownCell $entry.trigger) | $($entry.nodeCount) | $(Escape-MarkdownCell $entry.complexity) | $(Escape-MarkdownCell $integrationsCell) | $(Escape-MarkdownCell $releaseCell) | $(Escape-MarkdownCell $smokeCell) |") | Out-Null
 }
 
-$markdown = ($markdownLines -join [Environment]::NewLine) + [Environment]::NewLine
-$json = ($index | ConvertTo-Json -Depth 100) + [Environment]::NewLine
+$newline = "`n"
+$markdown = ($markdownLines -join $newline) + $newline
+$json = ($index | ConvertTo-Json -Depth 100) + $newline
 
 if ($Check) {
   $expectedRegistry = if (Test-Path -LiteralPath $RegistryPath -PathType Leaf) { Get-Content -LiteralPath $RegistryPath -Raw } else { "" }
   $expectedIndex = if (Test-Path -LiteralPath $IndexPath -PathType Leaf) { Get-Content -LiteralPath $IndexPath -Raw } else { "" }
-  if ($expectedRegistry -ne $markdown -or $expectedIndex -ne $json) {
+  if ((Normalize-NewLine $expectedRegistry) -ne (Normalize-NewLine $markdown) -or (Normalize-NewLine $expectedIndex) -ne (Normalize-NewLine $json)) {
     Write-Error "Workflow registry is stale. Run scripts/Build-WorkflowIndex.ps1 and commit the generated files."
     exit 1
   }
