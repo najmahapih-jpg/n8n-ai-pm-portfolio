@@ -1,0 +1,888 @@
+{
+  "id": "rag-knowledge-assistant",
+  "name": "Portfolio - RAG Knowledge Assistant API",
+  "nodes": [
+    {
+      "id": "6ca24e29-f292-4d86-9b02-0ce00eb47310",
+      "name": "rag-knowledge-assistant overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        110,
+        -10
+      ],
+      "parameters": {
+        "content": "## RAG Knowledge Assistant v0.3.0 (zh \"AI 时代产品经理\" corpus, provenance-tracked; stub default + LIVE Supabase/Ollama, opt-in)\\nLocal retrieval-grounded API over a Chinese, authoritative-sourced, provenance-tracked corpus (fixtures/corpus/* — 13 chunks across 西方PM/中文社区/开源社区 sources, each carrying source title + url + retrievedAt). A webhook receives a query, then a RETRIEVAL-SOURCE gate routes: retrievalSource:\"supabase\" EMBEDS the query via Ollama nomic-embed-text-v2-moe (768-dim, \"search_query: \" prefix) and calls the Supabase match_documents pgvector RPC (header auth, User-Agent n8n); otherwise the DEFAULT deterministic STUB retriever (TF-IDF cosine over CJK bigrams + ASCII tokens, no model) searches the IN-REPO corpus. Both produce the same retrieval contract (topK=[{chunkId,source,score}], maxScore, threshold) but on DIFFERENT score scales, so the abstention floor is a PER-SOURCE default (stub TF-IDF 0.08; supabase nomic-embed cosine 0.35), overridable per request via body.threshold. A THRESHOLD GATE then routes to a GROUNDED ANSWER or a CLEAN ABSTAIN (abstained:true, answer:null, citations:[], note:\"信息不足,无法回答\" — the controlled failure mode, in Chinese). On the grounded branch a GENERATION-SOURCE gate routes: generationSource:\"ollama\" calls Ollama llama3.2:3b (temperature 0, \"只依据提供的上下文用简体中文作答;若信息不足则回答『信息不足,无法回答』\") for the prose; otherwise the DEFAULT stub composes a Chinese grounded extract. CRITICAL: on BOTH generation paths the CITATIONS are corpus-grounded (chunkId/source/url/quote derived from the retrieved chunks, never from the model), so B cites the REAL authoritative source + link and CITATION-INTEGRITY (every cited chunkId in retrieval.topK; the quote is a real span of its chunk) holds by construction and is ENFORCED deterministically (a cited chunk outside the retrieved set -> passed=false). Live nodes are onError-tolerant and DEGRADE to the deterministic result (retrievalSource:\"supabase-fallback\" / generationSource:\"ollama-fallback\"); the response reports what ACTUALLY ran. A redacted audit event (ids + scores + verdicts only — no raw query/answer/chunk text) precedes a structured JSON response per the eval-plan scorer contract (abstained, answer, note, citations, retrieval{topK,maxScore,threshold}, retrievalSource, generationSource, passed, policyVersion rag-knowledge-assistant-v0.4.0). The stub is the DEFAULT everywhere CI touches, so verify:static/json/live stay OFFLINE + deterministic; the live path is opt-in per request (verify:rag-live). Supabase is one-command-refreshable from the cited sources via scripts/Refresh-Corpus.ps1 (stub stays a pinned snapshot). Manual trigger runs an editor demo; the webhook serves the API. Mirrors the sibling eval-harness judgeSource:\"ollama\" live-gate idiom.",
+        "color": 4,
+        "width": 3180,
+        "height": 580
+      }
+    },
+    {
+      "id": "ea2af853-ecc5-4320-a2e2-df1a0505c2a9",
+      "name": "Run Demo Query From n8n UI",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        160,
+        40
+      ]
+    },
+    {
+      "id": "aae6827a-7538-414f-8c30-9b9d4c454640",
+      "name": "Build Demo Query Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0]?.json ?? {};\nif (Object.keys(input).length > 0) {\n  return [{ json: { ...input, manualExecution: true } }];\n}\n// Default demo run: an in-corpus zh query that retrieves chunk:three-skill-clusters and returns a\n// grounded, cited Chinese answer (exercises the answer-with-citation branch). The out-of-corpus abstain\n// branch is exercised by the webhook suite; the editor demo shows the headline grounded path.\nreturn [{\n  json: {\n    manualExecution: true,\n    query: '转型 AI 产品经理要补齐哪三大技能簇?'\n  }\n}];"
+      }
+    },
+    {
+      "id": "176402ac-83a6-4974-b03e-33c18738c819",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const source = items[0]?.json ?? {};\nconst body = source.body ?? source;\nconst entrypoint = source.manualExecution === true || body.manualExecution === true ? 'manual' : 'webhook';\nconst text = (v) => String(v ?? '').trim();\n\n// REQUIRED: query (a non-empty string). Accept a couple of aliases. A run is valid only with a query.\nconst query = text(body.query) || text(body.question) || text(body.q);\nconst hasQuery = query.length > 0;\n\n// Deterministic bilingual routing: queryLang is 'zh' when the query carries at least two CJK Han\n// characters, else 'en'. It drives ONLY the answer-extract language preference (Stub Grounded Answer)\n// and the abstain-note language (Clean Abstain) — it feeds no id/hash seed and never touches retrieval.\nconst queryLang = ((query.match(/[一-鿿]/g) || []).length) >= 2 ? 'zh' : 'en';\n\n// OPTIONAL knobs. topK = how many chunks to retrieve (clamped 1..8). threshold = the similarity floor\n// below which we ABSTAIN. There is NO single global default because the two retrieval methods score on\n// DIFFERENT scales: the stub's TF-IDF cosine puts in-corpus at ~0.2-0.4 and out-of-corpus at ~0 (a 0.08\n// floor separates them), while the live Supabase nomic-embed-text-v2-moe cosine puts in-corpus at\n// ~0.63-0.68 and out-of-corpus at ~0.15-0.17 (a 0.08 floor would NEVER abstain — out-of-corpus sits\n// above it). So the abstention floor is a PER-SOURCE default applied downstream (stub 0.08, supabase\n// 0.35), and we thread thresholdOverride = the EXPLICIT per-request value (clamped [0,1]) or null when\n// the request did not set one. Each retrieval branch then uses thresholdOverride ?? <its source default>.\nconst rawTopK = Number(body.topK);\nconst topK = Number.isFinite(rawTopK) && rawTopK >= 1 ? Math.min(Math.floor(rawTopK), 8) : 3;\nconst rawThreshold = Number(body.threshold);\nconst thresholdOverride = Number.isFinite(rawThreshold) && rawThreshold >= 0 ? Math.min(rawThreshold, 1) : null;\n\n// retrievalSource / generationSource: live backends are GATED so a misconfigured request can never\n// silently route the offline suite through a live store/model. The DEFAULT is 'stub' (deterministic +\n// offline); a request HONOURS the live label only when it explicitly asks for it: retrievalSource:\n// 'supabase' (live Supabase pgvector + Ollama query embedding) and generationSource:'ollama' (live\n// grounded generation). requestedRetrievalSource / requestedGenerationSource preserve the raw ask.\n// CI never sets these, so CI stays on the stub path; and even when set, the live nodes are\n// onError-tolerant and DEGRADE TO the deterministic result, so a live miss is never a crash.\n// (Mirrors the eval-harness judgeSource:'ollama' IF idiom: normalize -> IF -> live HTTP -> parse/fallback.)\nconst requestedRetrievalSource = text(body.retrievalSource).toLowerCase();\nconst requestedGenerationSource = text(body.generationSource).toLowerCase();\nconst retrievalSource = requestedRetrievalSource === 'supabase' ? 'supabase' : 'stub';\nconst generationSource = requestedGenerationSource === 'ollama' ? 'ollama' : 'stub';\n\n// Live endpoints are resolved here so a request can override them; defaults are container-local\n// (the workflow runs INSIDE the n8n container, which reaches the host via host.docker.internal).\n// supabaseRpcUrl is the match_documents RPC; the Supabase API CREDENTIAL (predefined auth on the\n// HTTP node) injects apikey + Authorization, so NO secret/URL host ever lives in the workflow JSON.\nconst ollamaEmbedUrl = text(body.ollamaEmbedUrl) || 'http://host.docker.internal:11434/api/embeddings';\nconst ollamaChatUrl = text(body.ollamaChatUrl) || 'http://host.docker.internal:11434/api/chat';\nconst embedModel = text(body.embedModel) || 'nomic-embed-text-v2-moe';\nconst genModel = text(body.genModel) || 'llama3.2:3b';\n// Supabase match_documents RPC URL. The Supabase project host is a SECRET-SCANNED token, so it must\n// NEVER live in the tracked workflow JSON: the deploy step substitutes the '__SUPABASE_RPC_URL__'\n// placeholder with the real URL in the PUT payload ONLY (the canonical/release snapshots keep the\n// placeholder). A request may also override it explicitly. If neither is set, the live retrieval\n// yields no rows and the run cleanly abstains (supabase-fallback) — never a crash.\nconst supabaseRpcUrl = text(body.supabaseRpcUrl) || '__SUPABASE_RPC_URL__';\n\n// Optional correlation id: capture-and-echo only (never generated, so the deterministic offline differential\n// stays reproducible). traceId falls back to requestId when traceId is absent; null when neither is supplied.\n// It is threaded onto runtime.traceId and echoed by the audit event + the grounded AND clean-abstain response\n// paths (both flow through Build Response). Additive: when absent it is null and changes nothing else — it\n// feeds NO id/hash seed and does not affect retrieval/citations/the abstain decision. Not on the 400 error.\nconst traceId = body.traceId ?? body.requestId ?? null;\n\nreturn [{\n  json: {\n    request: {\n      requestId: text(body.requestId) || ('req_' + Date.now().toString(36)),\n      requestedAt: text(body.requestedAt) || new Date().toISOString()\n    },\n    query,\n    validation: { hasQuery },\n    runtime: {\n      entrypoint,\n      // Optional caller/gateway-supplied correlation id, captured-and-echoed (never generated); null when\n      // absent. Echoed by Create Redacted Audit Event + Build Response; feeds no id/hash seed (purely additive).\n      traceId,\n      // 'zh' | 'en' — the deterministic query-language label (>= 2 Han chars -> zh). Read by the stub\n      // grounded answer (same-language extract preference) and the clean abstain (note language).\n      queryLang,\n      topK,\n      // thresholdOverride = the EXPLICIT per-request abstention floor, or null. Each retrieval branch\n      // resolves the effective threshold as thresholdOverride ?? <its per-source default> (stub 0.08,\n      // supabase 0.35) and writes it onto retrieval.threshold, which is what every downstream node reads.\n      thresholdOverride,\n      // 'stub' unless the request explicitly opted into the live backend; the requested* fields\n      // record what was asked. The live HTTP nodes degrade to the deterministic result on any error,\n      // and the *Source the response reports reflects what ACTUALLY ran (supabase/ollama vs a *-fallback).\n      retrievalSource,\n      generationSource,\n      requestedRetrievalSource: requestedRetrievalSource || 'stub',\n      requestedGenerationSource: requestedGenerationSource || 'stub',\n      ollamaEmbedUrl,\n      ollamaChatUrl,\n      embedModel,\n      genModel,\n      supabaseRpcUrl\n    },\n    sourcePayloadKeys: Object.keys(body)\n  }\n}];"
+      }
+    },
+    {
+      "id": "38e66b3c-d5f8-498e-9ed1-aed80d08ebeb",
+      "name": "Query Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "query-present",
+              "leftValue": "={{ $json.validation.hasQuery }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "78f3490c-6591-43a4-a48b-ee35db873c55",
+      "name": "Retrieval Source = Supabase?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "retrieval-source-supabase",
+              "leftValue": "={{ $json.runtime.retrievalSource === \"supabase\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a8b44276-b91a-4204-b50c-e3f1e8051f73",
+      "name": "Embed Query (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.runtime.ollamaEmbedUrl }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ model: ($json.runtime.embedModel || \"nomic-embed-text-v2-moe\"), prompt: (\"search_query: \" + $json.query) }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "dae751a8-8198-416d-9fb5-af26b5dcf913",
+      "name": "Match Documents (Supabase RPC)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2080,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ ($(\"Normalize Request\").item.json.runtime.supabaseRpcUrl || \"\") }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "jsonBody": "={{ ({ query_embedding: ($json.embedding || []), match_count: ($(\"Normalize Request\").item.json.runtime.topK || 3), filter: {} }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c2ad049e-b9a3-4e41-89d7-8ae9052b7b28",
+      "name": "Map Supabase Retrieval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        160
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Map the live Supabase match_documents rows to the SAME retrieval contract the stub produces, so\n// the threshold gate / citation-integrity / response downstream are source-agnostic. Recover the full\n// run context from Normalize (the live HTTP nodes only carried the embedding/rows through). On NO rows\n// (unreachable Supabase, empty table, or a failed query embedding) we DO NOT emit a false abstain:\n// we FALL BACK to the in-corpus deterministic TF-IDF retriever (the SAME algorithm + corpus the 'Stub\n// Embed + Retrieve' node runs, byte-faithful to rag-core.stubRetrieveCore) and return real topK/citations,\n// labelled retrievalSource:'supabase-fallback-stub' so the response truthfully reflects that the live store\n// yielded nothing AND that the grounded answer came from the deterministic stub over the committed corpus.\n// This is the portfolio rule \"live-degrade to a deterministic stub, NEVER to a false abstain\" — a degrade\n// is a reliable GROUNDED answer, not a missed one.\nconst base = $('Normalize Request').item.json;\nconst rows = Array.isArray(items) ? items.map((it) => it.json).filter((r) => r && (r.id || r.content || typeof r.similarity !== 'undefined')) : [];\n\n// Each row: { id (uuid), content (text), metadata: { chunkId, source, url, retrievedAt }, similarity }.\n// chunkId/source/url are taken from metadata (the ingest wrote them); fall back if ever absent, so the\n// live citation names the same AUTHORITATIVE source + link the stub does.\nconst mapped = rows.map((r) => {\n  const md = r && typeof r.metadata === 'object' && r.metadata ? r.metadata : {};\n  const chunkId = String(md.chunkId || r.id || '').trim();\n  const source = String(md.source || 'supabase').trim();\n  const url = String(md.url || '').trim();\n  const score = Number.isFinite(Number(r.similarity)) ? Number(Number(r.similarity).toFixed(4)) : 0;\n  return { chunkId, source, url, score, text: String(r.content || '') };\n}).filter((c) => c.chunkId.length > 0);\n\n// Rank by similarity desc (ties by chunkId), clamp to topK (the RPC already limited to match_count).\nmapped.sort((a, b) => (b.score - a.score) || (a.chunkId < b.chunkId ? -1 : a.chunkId > b.chunkId ? 1 : 0));\nconst liveTopKFull = mapped.slice(0, base.runtime.topK);\nconst live = liveTopKFull.length > 0;\n\n// GENUINE-CLEAN-HIT path (non-empty live rows) — UNCHANGED. PER-SOURCE abstention floor for the LIVE\n// supabase path (nomic-embed-text-v2-moe cosine): default 0.35, which separates live in-corpus\n// (~0.63-0.68) from out-of-corpus (~0.15-0.17). The stub's 0.08 floor would NEVER abstain here\n// (out-of-corpus sits above it). An explicit per-request body.threshold overrides it.\nif (live) {\n  const maxScore = liveTopKFull[0].score;\n  const threshold = base.runtime.thresholdOverride ?? 0.35;\n  return [{\n    json: {\n      ...base,\n      runtime: { ...base.runtime, retrievalSource: 'supabase' },\n      retrieval: {\n        topK: liveTopKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score })),\n        maxScore,\n        threshold,\n        retrievalSource: 'supabase'\n      },\n      retrievedChunks: liveTopKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, url: c.url, score: c.score, text: c.text }))\n    }\n  }];\n}\n\n// FALLBACK path (empty/unreachable live rows). Reuse the IDENTICAL deterministic TF-IDF retriever the\n// 'Stub Embed + Retrieve' node runs over the SAME committed corpus (this is rag-core.stubRetrieveCore's\n// algorithm + CORPUS, inlined verbatim so the live branch is self-contained). It returns the SAME\n// retrieval contract — retrieval.topK=[{chunkId,source,score}], maxScore, threshold(stub 0.08 default),\n// retrievedChunks(+text) — so the threshold gate / grounded answer / citation-integrity downstream stay\n// source-agnostic and a degrade routes to a GROUNDED, cited answer instead of a false abstain.\n//\n// CORPUS (source of truth: fixtures/corpus/*.md — 19 chunks: 13 Chinese \"AI 时代产品经理\" + 6 English\n// product-support known-issues/docs). Kept VERBATIM (byte-for-byte) from the 'Stub Embed + Retrieve'\n// node's CORPUS so the grounded quote matches; MUST stay in sync (the differential proves byte-identity).\nconst CORPUS = [\n  { chunkId: \"rag-eval-faithfulness\", source: \"Hugging Face LLM/Agents Course(mlabonne 等)与 Ragas / DeepEval 开源评测框架\", url: \"https://github.com/mlabonne/llm-course\", text: \"开源社区给出了评测 RAG 的标准做法:要分别评检索与生成两段——检索看 context precision / recall(召回到的上下文准不准、全不全),生成看 faithfulness(忠实度:答案是否扎根于检索到的上下文)与 answer relevancy(答案相关性);这些可用开源工具 Ragas / DeepEval 简化。RAG 本身则是\\\"无需微调即可扩展模型知识\\\"的常用手段。\" },\n  { chunkId: \"trust-reliability\", source: \"Lenny Rachitsky 等 — Lenny's Newsletter《Why most AI products fail》(2026)\", url: \"https://www.lennysnewsletter.com/p/what-openai-and-google-engineers-learned\", text: \"在 OpenAI、Google、Amazon 等公司 50+ 个企业级 AI 部署中,一条反复出现的教训是:\\\"obsessing about customer trust and reliability is an underrated driver of successful AI products\\\"(对客户信任与可靠性的执着,是 AI 产品成功被严重低估的驱动力)。评测必要但非万灵药——为可靠性与\\\"优雅失败\\\"路径而设计,才是把 demo 变成用户敢依赖的产品的关键。\" },\n  { chunkId: \"how-to-learn\", source: \"InstitutePM《How to Become an AI Product Manager in 2026》(2026)\", url: \"https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026\", text: \"对 PM 而言,技术学习的\\\"正确深度\\\"是 \\\"competent enough to make decisions and pressure-test your engineers\\\"(足以做决策、并能向工程师施压检验)——既不必推导反向传播,也不能只刷一张证书。推荐路径:读 Anthropic 与 OpenAI 的 prompt 工程指南,然后 \\\"build a RAG app, a tool-calling agent, and a fine-tuned classifier\\\"(亲手做一个 RAG 应用、一个工具调用 agent、一个微调分类器,哪怕都很小)——三个一起做才会逼你学会其中的取舍;并把一套 eval 框架端到端做透。\" },\n  { chunkId: \"portfolio-proof\", source: \"InstitutePM《How to Become an AI Product Manager in 2026》(2026)\", url: \"https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026\", text: \"转型最高杠杆的一步,是一份能证明\\\"你能交付、并能就 AI 产品做推理\\\"的作品集——因为招聘官\\\"在简历上花 90 秒,在一份强 case study 上花 8 分钟\\\"。能让你进面试的三件套:一个上线的产品(哪怕是 side project,有 URL 或仓库)、一篇带真实数字的 eval 驱动 case study、一套可演示的 eval 套件。\" },\n  { chunkId: \"model-as-coach\", source: \"Marty Cagan — Silicon Valley Product Group《Product Coaching and AI》(2026)\", url: \"https://www.svpg.com/product-coaching-and-ai/\", text: \"SVPG 现在建议产品人把基础模型本身当作\\\"个人产品教练\\\"来加速培养 product sense——用你的目标、约束与战略背景把它配置好。在他们的表述里,\\\"prompt engineering has evolved into context engineering\\\"(提示工程已演进为上下文工程);一个配置得当的模型,提供的产品教练水准可以不输给多数管理者,而且是持续在线、而非每周一次的 1:1。\" },\n  { chunkId: \"yujun-growth\", source: \"俞军 —《俞军产品方法论》(中信出版社,2019);《深度对话俞军》\", url: \"https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g\", text: \"俞军给出一条本土化的成长路径:产品经理的能力按\\\"为企业创造价值的能力\\\"分五级——可行性 → 创造 → 权衡 → 变迁 → 方法论。第一级\\\"可行性\\\"要求对用户价值、技术可行性、商业可行性有基本判断力;往上依次是为问题找最优解(创造)、跳出单点做全局取舍(权衡)、预判世事变迁(变迁),直到输出成体系的方法论。\" },\n  { chunkId: \"pm-more-essential\", source: \"Marty Cagan — Silicon Valley Product Group《AI Product Management》(2024)\", url: \"https://www.svpg.com/ai-product-management/\", text: \"Marty Cagan(SVPG 创始人、《INSPIRED》作者)认为,几乎所有产品经理都将需要成为 AI 产品经理;且与\\\"AI 让 PM 变多余\\\"的流行担忧相反——他说 \\\"the PM role becomes more essential but also more difficult with generative AI-powered products, not less\\\"(在生成式 AI 产品中,PM 角色变得更关键、也更难,而不是更不重要)。AI 素养只是又一个例证:产品经理需要扎实的技术基础。\" },\n  { chunkId: \"genuine-value\", source: \"Marty Cagan — Silicon Valley Product Group《AI Product Management》(2024)\", url: \"https://www.svpg.com/ai-product-management/\", text: \"按 SVPG 的说法,AI 产品经理的首要职责,是确保 AI 功能交付 \\\"genuine, incremental value\\\"(真实、增量的价值)——以明显优于现有方案的方式解决真问题。要极力避免的失败模式,是做出 \\\"AI in name only\\\" 的产品:为营销或竞争跟风而加 AI,而非为价值。\" },\n  { chunkId: \"yujun-user-value\", source: \"俞军 —《俞军产品方法论》(中信出版社,2019);亦见《深度对话俞军》\", url: \"https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g\", text: \"俞军(《俞军产品方法论》作者、前百度产品副总裁)给出一个根基性定义:\\\"产品经理是一个用科学方法研究复杂且非科学的人性,并转化为可执行的商业方案的实践验证学科。\\\" 在他看来,产品经理的工作是找到\\\"真的用户价值\\\";一个具备人文逻辑的产品经理,最重要的是拥有批判性思维,其次是愿意并能够理解人和世界。\" },\n  { chunkId: \"evals-defining-skill\", source: \"Aman Khan — Lenny's Newsletter《Beyond vibe checks: A PM's complete guide to evals》(2025)\", url: \"https://www.lennysnewsletter.com/p/beyond-vibe-checks-a-pms-complete\", text: \"写好评测(eval)正在成为做 AI 产品的决定性技能。Aman Khan(Arize AI 产品总监,与 Andrew Ng 合作开设 eval 课程)直言:写好 eval 的能力 \\\"is rapidly becoming the defining skill for AI PMs in 2025 and beyond\\\"(正迅速成为 2025 年及以后 AI 产品经理的决定性技能)。评测像传统软件的回归测试一样,为非确定性系统定义\\\"什么叫好\\\",让你能度量每次 prompt/模型/检索改动的影响,而不是靠\\\"感觉\\\"(vibe check)。\" },\n  { chunkId: \"three-skill-clusters\", source: \"InstitutePM《How to Become an AI Product Manager in 2026》(2026)\", url: \"https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026\", text: \"转型 AI 产品经理要同时补齐三大技能簇:技术素养(足以做 eval/模型/成本决策——看得懂模型卡、算得清延迟预算、能用代码跑 eval)、适配 AI 不确定性的产品功力(写 eval 驱动的 spec 而非功能 spec,指标树看质量分布而非只看均值)、以及 AI 专属判断(模型选型、失败态 UX、成本-质量-延迟三角)。其中\\\"判断\\\"这一簇被认为\\\"最难伪装,也是多数候选人最被低估的一项\\\"。\" },\n  { chunkId: \"hanniman-humanity\", source: \"黄钊 hanniman —《AI产品经理能力模型的重点素质:人文素养和灵魂境界》,人人都是产品经理 (2022);摘自《AI产品经理的实操手册》\", url: \"https://www.woshipm.com/pmd/5396083.html\", text: \"在 AI 产品经理的能力模型里,黄钊(hanniman,前腾讯 PM、\\\"AI产品经理大本营\\\"创始人)提出一个中文社区独有的关键差异点:\\\"人文素养和灵魂境界\\\"。他认为,常规产品能力、AI 知识、行业认知决定你产出价值的下限,而\\\"人文素养和灵魂境界\\\"决定上限——\\\"如果你想成为 TOP 5%、甚至 TOP 1% 的 AI 产品经理,就一定不能忽视这个方面\\\"。\" },\n  { chunkId: \"geektime-abilities\", source: \"刘海丰 — 极客时间专栏《成为AI产品经理》,极客时间(time.geekbang.org)\", url: \"https://time.geekbang.org\", text: \"极客时间专栏《成为 AI 产品经理》(刘海丰)把 AI 产品经理的核心能力概括为三大能力:项目管控、算法技能、模型评估,并强调要能\\\"主导 AI 项目、带领算法同学达成业务目标\\\"。其中\\\"模型评估\\\"能力,与\\\"eval 是 AI PM 决定性技能\\\"的判断相互印证。\" },\n  { chunkId: \"known-export-mobile-crash\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"The data export button crashes the mobile app on both iOS and Android when a report is exported to CSV or PDF. This is a known issue affecting mobile app versions 2.2 and 2.3; a fix is scheduled for version 2.4. Workaround: run the export from the desktop web app instead, where export works normally. Owning team: product-engineering. Severity: high. 移动端 App 在将报表导出为 CSV 或 PDF 时会崩溃,这是影响近期移动端版本的已知问题,临时方案是改用桌面网页版导出,修复已排入下一个版本,负责团队为产品工程组,严重级别为高。\" },\n  { chunkId: \"known-dashboard-slow\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"The analytics dashboard loads slowly, often taking ten seconds or more, for workspaces with large datasets. The known cause is unbounded client-side aggregation of the trend charts. A server-side aggregation fix is in progress. Workaround: narrow the dashboard date range, or open a saved view with fewer segments. Owning team: product-engineering. Severity: medium. 大数据量工作区的分析看板加载缓慢是已知问题,原因是趋势图在客户端做了无上限聚合,临时方案是缩小看板日期范围或改用分段更少的已保存视图,严重级别为中。\" },\n  { chunkId: \"known-sso-login-loop\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"Single sign-on users are sometimes stuck in a login redirect loop after their session expires. The known cause is the browser blocking third-party cookies. Workaround: allow cookies for the app domain, or sign in with the email-and-password fallback. Owning team: platform-security. Severity: high. 单点登录用户在会话过期后可能陷入登录跳转循环,这是已知问题,原因是浏览器拦截了第三方 Cookie,临时方案是允许应用域名的 Cookie 或改用邮箱密码方式登录,严重级别为高。\" },\n  { chunkId: \"doc-export-howto\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"To export data, open any report or dashboard, click the Export button, and choose a format: CSV, XLSX, or PDF. Exports run in the background, and you receive an email with a download link when the file is ready. Large exports over one million rows are queued and may take a few minutes. 导出数据时,打开任意报表或看板,点击导出按钮并选择 CSV、XLSX 或 PDF 格式,导出在后台运行,文件就绪后会通过邮件发送下载链接,超过一百万行的大型导出会进入队列。\" },\n  { chunkId: \"doc-dashboard-overview\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"The analytics dashboard has three areas. KPI cards at the top show headline metrics, trend charts in the middle show changes over time, and a data table at the bottom lists the underlying records. You can filter the whole dashboard by date range, by segment, and by saved views that you create and share with your team. 分析看板分为三个区域,顶部 KPI 卡片展示关键指标,中部趋势图展示随时间的变化,底部数据表列出底层记录,整个看板可按日期范围、分段和已保存视图筛选。\" },\n  { chunkId: \"faq-mobile-support\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"The mobile app supports viewing dashboards, reports, and notifications. Some administrative features, including data export, user management, and billing, are available on the desktop web app only and not on mobile. 移动端 App 支持查看看板、报表和通知,而数据导出、用户管理、账单等管理功能仅在桌面网页版提供,移动端不可用。\" },\n  { chunkId: \"known-import-csv-encoding\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"Importing a CSV file that is not UTF-8 encoded (for example GBK or GB2312 exports from older spreadsheet tools) shows garbled Chinese characters in the imported records. This is a known issue; an encoding auto-detection fix is planned for version 2.5. Workaround: re-save the file as UTF-8 (in Excel use Save As - CSV UTF-8) before importing. Owning team: product-engineering. Severity: medium. 导入非 UTF-8 编码(例如 GBK 或 GB2312)的 CSV 文件会出现中文乱码,这是已知问题,临时方案是先把文件另存为 UTF-8 编码的 CSV 再导入,编码自动检测的修复已在计划中。\" },\n  { chunkId: \"known-notification-delay\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"Email notifications can be delayed by up to thirty minutes during peak hours. The known cause is queue worker saturation in the notification service; an autoscaling fix is in progress. Workaround: rely on in-app notifications, which are delivered in real time and are not affected. Owning team: platform-infra. Severity: low. 高峰时段邮件通知最多可能延迟三十分钟,这是已知问题,原因是通知服务的队列工作进程饱和,临时方案是依赖实时送达、不受影响的应用内通知,严重级别为低。\" },\n  { chunkId: \"doc-api-rate-limits\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"The public API allows 100 requests per minute per token on the standard plan and 1000 on the enterprise plan. Requests over the limit receive HTTP 429 with a Retry-After header. Integrations should use exponential backoff and batch endpoints where possible; sustained higher throughput requires an enterprise token. 公开 API 的限流为标准版每令牌每分钟 100 次请求、企业版 1000 次,超限请求会收到 HTTP 429 与 Retry-After 响应头,集成方应使用指数退避并尽量使用批量端点。\" },\n  { chunkId: \"doc-permissions-roles\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"The product has three workspace roles. Admins manage billing, users, and security settings. Editors create and edit dashboards and reports and can run exports. Viewers can view shared dashboards and export the data they can see, but cannot edit. Only an admin can change a member role, and the change takes effect the next time that member signs in. 产品有三种工作区角色,管理员负责账单、用户与安全设置,编辑者可创建和编辑看板报表并运行导出,查看者只能查看共享看板并导出可见数据,只有管理员能变更成员角色。\" },\n  { chunkId: \"doc-data-retention\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"Analytics event data is retained for thirteen months on the standard plan and thirty-six months on the enterprise plan; data older than the retention window is dropped from dashboards and exports. When a workspace is deleted, all of its data is permanently purged after a thirty-day grace period and cannot be recovered. 分析事件数据在标准版保留十三个月、企业版保留三十六个月,超出保留窗口的数据会从看板和导出中移除,工作区删除后经过三十天宽限期所有数据将被永久清除且无法恢复。\" },\n  { chunkId: \"pf-gateway-security\", source: \"Internal Portfolio Docs — interaction-gateway workflow-contract 与 ADR-0001\", url: \"\", text: \"作品集的统一入口是 interaction-gateway(签名网关):每个请求必须带 HMAC-SHA256 签名(对时间戳加请求体的精确字节签名,带重放窗口),超大请求体直接 413 拒绝,载荷中的疑似秘密(API key、Bearer token 等)在路由前被剥离并计数,intent 必须命中白名单否则 422 不路由。这些控制全部 fail-closed:空密钥、过期时间戳一律拒绝。安全核心是纯函数,由 20 项核心断言加 171 项编译后差分断言离线验证。 The interaction gateway is the portfolio's single signed entrance: every request must carry an HMAC-SHA256 signature over the exact timestamp-plus-body bytes inside a replay window, oversized bodies are rejected with 413, suspected secrets are stripped and counted before routing, non-allowlisted intents get 422, and every control fails closed. 对请求字节的 HMAC 签名加上重放窗口,就是网关防篡改、防重放的核心安全机制。\" },\n  { chunkId: \"pf-rag-abstention\", source: \"Internal Portfolio Docs — rag-knowledge-assistant ADR-0001 与 workflow-contract\", url: \"\", text: \"RAG 知识助手的诚实性由三层机制保证:每个回答必须引用真实检索到的语料片段(引用完整性门:引用了未检索到的片段即失败);检索得分低于阈值时返回「我没有足够的信息」而不是编造;live 向量检索(Supabase pgvector)出错或为空时降级为对同一语料的确定性 TF-IDF 检索,并如实标注 retrievalSource,绝不产生假弃答。 The RAG assistant stays honest through citation integrity (every answer must cite chunks that were really retrieved), threshold-gated abstention (below the similarity floor it answers that it does not have enough information instead of fabricating), and a truthful retrievalSource label whenever live vector retrieval degrades.\" },\n  { chunkId: \"pf-drift-integrity\", source: \"Internal Portfolio Docs — scheduled-drift-monitor ADR-0001 与 eval-plan\", url: \"\", text: \"定时漂移监控的简报完整性由两个以运行记录为准的检查保证:简报末尾机器追加的 METRICS 行逐项与记录重新核对;摘要散文中出现的任何通过率形状的数字(百分比或 0 到 1 的小数)必须等于记录里真实存在的比率——LLM 或注入的摘要若声称数据不支持的通过率,这次运行直接判失败。简报卡片(飞书)也从同一记录确定性生成,红绿色由 drift.any 决定。 The scheduled drift monitor re-checks every machine-appended METRICS line and every pass-rate-shaped number in the digest prose against the actual run record, and the run fails outright if an LLM summary claims a rate the data does not support.\" },\n  { chunkId: \"pf-agent-guardrails\", source: \"Internal Portfolio Docs — autonomous-agent eval-plan 与 workflow-contract\", url: \"\", text: \"自治代理(autonomous agent)在四条护栏内工作:工具白名单与网关 intent 一字不差,代理无法调用任何未注册目标;步数上限防止无限循环;不安全请求直接拒绝且零工具调用;工具失败(下游 4xx)如实返回 ok:false,绝不编造结果。代理轨迹由统一的 rubric 评分,同一套 rubric 同时评判确定性 stub 规划器和真实 LLM 规划器。 The autonomous agent operates inside four guardrails: a tool allowlist identical to the gateway intents, a hard step cap, outright refusal of unsafe tasks with zero tool calls, and honest ok:false results on downstream tool failures, with one shared rubric scoring both the stub planner and the live LLM planner.\" },\n  { chunkId: \"pf-eval-honest\", source: \"Internal Portfolio Docs — llm-eval-harness eval-plan 与 honest-eval 框架说明\", url: \"\", text: \"评测台(eval harness)给任意被测系统打分:可核对的事实用确定性断言,主观质量用 LLM-as-judge,且裁判本身永不被当作真值——裁判与人工标注的一致率被持续校准,并设有裁判漂移护栏。全套评测默认走可复现的 stub 路径,CI 离线即可全绿;live 模型评测是显式 opt-in。 The eval harness scores any system under test with deterministic assertions for checkable facts and an LLM judge for subjective quality, never treats the judge as ground truth, keeps judge-human agreement calibrated, and stays fully green offline on the reproducible stub path while live model evaluation is opt-in.\" },\n  { chunkId: \"pf-connected-loop\", source: \"Internal Portfolio Docs — 跨仓库 registry 与 adopt-on-your-n8n 部署文档\", url: \"\", text: \"九个仓库构成一个互联系统:评测台(A)把 RAG 助手(B)当黑盒被测系统打分;漂移监控(D)定期保鲜 B 的语料并跟踪 A 的评分是否漂移;签名网关把所有工作流变成进程内可调用的目标;自治代理把它们当工具编排;飞书适配器提供进出双向的聊天入口。每个仓库都有离线验证门、canonical 一致性门和逐文件提交纪律。 The nine repositories form one connected system: the eval harness grades the RAG assistant as a black box, the drift monitor refreshes its corpus and tracks score drift, the signed gateway turns every workflow into an in-process callable target, the autonomous agent orchestrates them as tools, and the Feishu adapter provides the two-way chat entrance.\" },\n  { chunkId: \"own-system-behavior\", source: \"Akhil Tiwari — The Product Space《What an AI PM Portfolio Must Show in 2026》(2026-01-14)\", url: \"https://theproductspace.substack.com/p/what-an-ai-pm-portfolio-must-show\", text: \"2026 年的 AI-PM 招聘共识之一:AI 产品经理不是被雇来设计功能,而是被雇来掌控系统行为(own system behavior)。只展示输出、不展示控制机制(评测、护栏、失败处理)的作品集会被静默筛掉;能解释「系统为什么这样表现、怎么约束它」的候选人才有差异化。\" },\n  { chunkId: \"hireability-ranking\", source: \"InstitutePM《12 AI PM Portfolio Projects Ranked by Hireability (2026)》(2026-05-10)\", url: \"https://www.institutepm.com/knowledge-hub/ai-pm-learning-by-building-projects\", text: \"InstitutePM 对 12 个 AI-PM 作品集项目按可雇佣性排序:评测框架(Eval Harness)排第一——被称为 2026 年单一最高信号项目,几乎没有 PM 候选人真正建过,能谈 LLM-as-judge 偏差、golden dataset、pass@k 就进前 5%;RAG 是最抢手技能,要点是来源引用与检索失败时说「我不知道」;工具调用 agent 是前沿;漂移监控则是大多数作品集失败的地方。\" },\n  { chunkId: \"failure-analysis-decisions\", source: \"Klement Gunndu — dev.to《5 AI Portfolio Projects That Actually Get You Hired in 2026》(2026-03-07)\", url: \"https://dev.to/klement_gunndu/5-ai-portfolio-projects-that-actually-get-you-hired-in-2026-5bpl\", text: \"2026 年 AI 作品集的通行要求是四件配套工件:行为规格(behavior spec,取代传统 PRD)、评测准则(eval rubric)、失败分析(failure analysis——主动展示失败案例与处置)、以及 DECISIONS.md(记录为什么选这个模型、这种分块、这个向量库)。光有能跑的 demo 而没有这些控制工件,会被视为没有系统思维。\" },\n  { chunkId: \"go-build-something\", source: \"Jaclyn Konzelmann《If you want to get hired as an AI PM — Go Build Something》(2026-02-12)\", url: \"https://blog.jaclynkonzelmann.com/p/if-you-want-to-get-hired-as-an-ai\", text: \"对想转型 AI-PM 的人,最有效的一条建议是 Go Build Something:亲手把一个真实的东西做出来并部署,能讲清你 prototyped、built、deployed 的全过程,远胜于任何证书或纸面分析——招聘方要看的是动手证据与系统思维。\" }\n];\n\n// terms/STOP/IDF/vec/scoring — BYTE-FAITHFUL to the 'Stub Embed + Retrieve' node (= rag-core.stubRetrieveCore).\nconst STOP = new Set(['the','a','an','and','or','of','to','in','is','are','was','were','be','as','at','by','for','on','it','its','that','this','these','those','with','from','into','your','you','my','our','their','his','her','do','does','how','what','why','when','where','which','who','whom','can','could','would','should','will','also','any','all','so','such','than','then','out','up','down','over']);\nfunction terms(s) {\n  const arr = [];\n  const str = String(s ?? '');\n  (str.toLowerCase().match(/[a-z0-9]+/g) || []).forEach((w) => { if (w.length >= 2 && !STOP.has(w)) arr.push(w); });\n  const han = str.match(/[\\u4e00-\\u9fff]/g) || [];\n  for (let i = 0; i < han.length - 1; i += 1) arr.push(han[i] + han[i + 1]);\n  return arr;\n}\n// stubRetrieveCore — the SAME deterministic TF-IDF cosine retriever as the stub node / rag-core, parameterized\n// by (query, corpus, topKLimit, thresholdOverride). Returns { topK, maxScore, threshold, retrievedChunks }.\nfunction stubRetrieveCore(query, corpus, topKLimit, thresholdOverride) {\n  const docTerms = corpus.map((c) => terms(c.text + ' ' + c.chunkId.replace(/-/g, ' ')));\n  const N = docTerms.length;\n  const df = new Map();\n  for (const d of docTerms) { for (const t of new Set(d)) df.set(t, (df.get(t) || 0) + 1); }\n  function idf(t) { return Math.log((1 + N) / (1 + (df.get(t) || 0))) + 1; }\n  function vec(arr) {\n    const tf = new Map();\n    for (const t of arr) tf.set(t, (tf.get(t) || 0) + 1);\n    const v = new Map();\n    let norm = 0;\n    tf.forEach((f, t) => { const w = f * idf(t); v.set(t, w); norm += w * w; });\n    norm = Math.sqrt(norm) || 1;\n    v.forEach((w, t) => v.set(t, w / norm));\n    return v;\n  }\n  const docVecs = docTerms.map(vec);\n  const qVec = vec(terms(query));\n  const scored = corpus.map((c, i) => {\n    const dVec = docVecs[i];\n    let dot = 0;\n    const [small, big] = qVec.size <= dVec.size ? [qVec, dVec] : [dVec, qVec];\n    small.forEach((w, t) => { if (big.has(t)) dot += w * big.get(t); });\n    const score = Number(dot.toFixed(4));\n    return { chunkId: c.chunkId, source: c.source, url: c.url, score, text: c.text };\n  });\n  scored.sort((a, b) => (b.score - a.score) || (a.chunkId < b.chunkId ? -1 : a.chunkId > b.chunkId ? 1 : 0));\n  const topKFull = scored.slice(0, topKLimit);\n  const maxScore = topKFull.length > 0 ? topKFull[0].score : 0;\n  const topK = topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score }));\n  const threshold = thresholdOverride ?? 0.08;\n  return {\n    topK,\n    maxScore,\n    threshold,\n    retrievedChunks: topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, url: c.url, score: c.score, text: c.text }))\n  };\n}\n\n// The live store yielded nothing -> deterministic TF-IDF over the committed corpus (stub 0.08 floor). The\n// SAME retrieval contract the stub produces, so a degrade routes to a GROUNDED, cited answer (NOT a false\n// abstain). retrievalSource is 'supabase-fallback-stub' so the response is truthful: live missed, the stub\n// retriever over the committed corpus produced the grounding.\nconst r = stubRetrieveCore(base.query, CORPUS, base.runtime.topK, base.runtime.thresholdOverride);\nreturn [{\n  json: {\n    ...base,\n    runtime: { ...base.runtime, retrievalSource: 'supabase-fallback-stub' },\n    retrieval: {\n      topK: r.topK,\n      maxScore: r.maxScore,\n      threshold: r.threshold,\n      retrievalSource: 'supabase-fallback-stub'\n    },\n    retrievedChunks: r.retrievedChunks\n  }\n}];"
+      }
+    },
+    {
+      "id": "3dde1b34-62c8-4465-be7f-c295f731e2d7",
+      "name": "Retrieval Clears Threshold?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2720,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "retrieval-clears-threshold",
+              "leftValue": "={{ $json.retrieval.maxScore >= $json.retrieval.threshold }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c34c4be0-f7e0-4f3f-b106-392a80f71b8b",
+      "name": "Generation Source = Ollama?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2080,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "generation-source-ollama",
+              "leftValue": "={{ $json.runtime.generationSource === \"ollama\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "11278cd0-f408-4e60-b56c-24ac9cf75795",
+      "name": "Build Grounding Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// Assemble the grounding context (the chunks at/above threshold — the same set the stub would cite)\n// and stash it on the item so the Ollama HTTP node can read context + query, and the parse node can\n// rebuild the grounded citations. We carry the full run context forward unchanged.\nfunction groundedExtract(t) {\n  const s = String(t ?? '').trim();\n  const m = s.match(/^[\\s\\S]*?[.!?。！？]/);\n  return (m ? m[0] : s).trim();\n}\nconst chunks = Array.isArray(input.retrievedChunks) ? input.retrievedChunks : [];\nconst threshold = input.retrieval.threshold;\nconst grounding = chunks.filter((c) => c.score >= threshold);\nconst used = grounding.length > 0 ? grounding : chunks.slice(0, 1);\n// Context block the model must answer strictly from. Each chunk is labelled with its source + id.\nconst contextText = used.map((c, i) => '[' + (i + 1) + '] (' + c.source + '#' + c.chunkId + ') ' + String(c.text || '')).join('\\n\\n');\n// Grounded citations are pre-computed here from the corpus chunks (NOT from the model) so attribution\n// integrity is guaranteed regardless of the model output — carrying the AUTHORITATIVE source + url.\nconst groundedCitations = used.map((c) => ({ chunkId: c.chunkId, source: c.source, url: c.url, quote: groundedExtract(c.text) }));\nreturn [{ json: { ...input, gen: { contextText, groundedCitations } } }];"
+      }
+    },
+    {
+      "id": "c77b97d7-5471-45c6-a2f6-c4221929bf57",
+      "name": "Generate Answer (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2720,
+        40
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.runtime.ollamaChatUrl }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ model: ($json.runtime.genModel || \"llama3.2:3b\"), stream: false, options: { temperature: 0 }, messages: [ { role: \"system\", content: \"你是一个基于检索的助手。只依据提供的上下文用简体中文作答;不要使用上下文以外的任何知识。若上下文不足以回答,则只回答这一句:信息不足,无法回答。请简洁(1-3 句)。\" }, { role: \"user\", content: \"上下文:\\n\" + $json.gen.contextText + \"\\n\\n问题:\\n\" + $json.query } ] }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "0cd32895-ea17-446a-a3b3-1f4d873d5c69",
+      "name": "Parse + Ground Answer (Ollama)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// 'items[0]' is the Ollama /api/chat response. Recover the full run context (with gen.* and the\n// retrieved chunks) from the 'Build Grounding Context' node. Extract the answer text defensively across\n// the shapes n8n may wrap it in. The CITATIONS are the pre-computed grounded citations (corpus-derived,\n// guaranteed to map to retrieval.topK) — we NEVER trust the model for attribution. On empty/unreachable\n// model output, engage the deterministic FALLBACK: the stub grounded extract, generationSource:\n// 'ollama-fallback' (so the response truthfully reflects that live generation did not produce text).\nconst base = $('Build Grounding Context').item.json;\nconst http = items[0] ? items[0].json : null;\n\nfunction readContent(j) {\n  if (j == null) return '';\n  if (typeof j === 'string') return j;\n  if (j.message && typeof j.message.content === 'string') return j.message.content;\n  if (typeof j.response === 'string') return j.response;\n  return '';\n}\nfunction groundedExtract(t) {\n  const s = String(t ?? '').trim();\n  const m = s.match(/^[\\s\\S]*?[.!?。！？]/);\n  return (m ? m[0] : s).trim();\n}\n\nconst groundedCitations = Array.isArray(base.gen && base.gen.groundedCitations) ? base.gen.groundedCitations : [];\nlet answerText = readContent(http).trim();\nlet generationSource = 'ollama';\n\n// Fallback: if the model returned nothing usable, deterministically compose the stub grounded extract\n// (a Chinese grounded quote) from the same chunks (so the grounded branch ALWAYS yields a cited answer,\n// never an empty one).\nif (answerText.length === 0) {\n  generationSource = 'ollama-fallback';\n  const chunks = Array.isArray(base.retrievedChunks) ? base.retrievedChunks : [];\n  const threshold = base.retrieval.threshold;\n  const grounding = chunks.filter((c) => c.score >= threshold);\n  const used = grounding.length > 0 ? grounding : chunks.slice(0, 1);\n  answerText = used.map((c) => groundedExtract(c.text)).join(' ');\n}\n\nreturn [{\n  json: {\n    ...base,\n    runtime: { ...base.runtime, generationSource },\n    generation: {\n      abstained: false,\n      answer: answerText,\n      // Corpus-grounded citations — guaranteed citation-integrity regardless of the model output.\n      citations: groundedCitations,\n      generationSource\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "27394dd2-ab69-44e7-8ddb-04ff5b6d2fda",
+      "name": "Enforce Citation Integrity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// CITATION-INTEGRITY enforcement (the headline invariant). 'passed' is true iff the response is a\n// VALID grounded answer OR a VALID clean abstain:\n//   - grounded: every citations[].chunkId MUST appear in retrieval.topK (cite-what-you-were-given),\n//     there is >= 1 citation, an answer is present, AND each citation's quote actually exists in its\n//     cited chunk's retrieved text (no fabricated span). A citation outside the retrieved set is\n//     hallucinated attribution -> passed=false.\n//   - abstain: answer == null AND citations == [] (a clean abstain is a correct, passing outcome).\n// This is computed deterministically here so the suite can assert it and the response can surface it.\nconst gen = input.generation;\nconst retrievedIds = new Set((input.retrieval.topK || []).map((c) => c.chunkId));\nconst retrievedTextById = {};\nfor (const c of (input.retrievedChunks || [])) retrievedTextById[c.chunkId] = String(c.text ?? '');\n\nconst integrity = { checks: [] };\nlet passed;\nif (gen.abstained === true) {\n  const answerNull = gen.answer === null || typeof gen.answer === 'undefined';\n  const noCites = Array.isArray(gen.citations) && gen.citations.length === 0;\n  integrity.checks.push({ type: 'abstain-shape', ok: answerNull && noCites, detail: 'abstained -> answer null + citations []' });\n  passed = answerNull && noCites;\n} else {\n  const cites = Array.isArray(gen.citations) ? gen.citations : [];\n  const hasCite = cites.length > 0;\n  const hasAnswer = typeof gen.answer === 'string' && gen.answer.trim().length > 0;\n  const allMap = cites.every((c) => retrievedIds.has(c.chunkId));\n  const quotesExist = cites.every((c) => {\n    const body = retrievedTextById[c.chunkId];\n    return typeof body === 'string' && body.length > 0 && typeof c.quote === 'string' && c.quote.length > 0 && body.includes(c.quote);\n  });\n  integrity.checks.push({ type: 'has-citation', ok: hasCite, detail: '>= 1 citation' });\n  integrity.checks.push({ type: 'has-answer', ok: hasAnswer, detail: 'non-empty answer' });\n  integrity.checks.push({ type: 'citations-map-to-retrieval', ok: allMap, detail: 'every citation chunkId in retrieval.topK' });\n  integrity.checks.push({ type: 'quote-exists-in-chunk', ok: quotesExist, detail: 'every cited quote is a span of its retrieved chunk' });\n  passed = hasCite && hasAnswer && allMap && quotesExist;\n}\nintegrity.passed = passed;\n\nreturn [{ json: { ...input, integrity, passed } }];"
+      }
+    },
+    {
+      "id": "9ab22212-3d7d-4313-8d39-4c7f2e5a1f3b",
+      "name": "Create Redacted Audit Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nfunction hash(value) {\n  let h = 2166136261;\n  for (let i = 0; i < value.length; i += 1) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\n// Redacted audit: carries ONLY ids, scores, verdicts and counts — never the raw query text, the\n// answer text, the chunk bodies, or the citation quotes (masking invariant asserted by the Layer-2\n// suite). Any email-shaped token that somehow reached a surfaced field is masked defensively.\nconst emailRe = /[^\\s@]+@[^\\s@]+\\.[^\\s@]+/g;\nconst runSeed = input.request.requestId + '|' + input.request.requestedAt;\nconst gen = input.generation;\n\nreturn [{\n  json: {\n    ...input,\n    auditEvent: {\n      auditEventId: 'audit_' + hash(runSeed),\n      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when absent.\n      traceId: input.runtime.traceId ?? null,\n      requestId: input.request.requestId,\n      retrievalSource: input.runtime.retrievalSource,\n      generationSource: input.runtime.generationSource,\n      requestedRetrievalSource: input.runtime.requestedRetrievalSource,\n      requestedGenerationSource: input.runtime.requestedGenerationSource,\n      abstained: gen.abstained === true,\n      passed: input.passed === true,\n      // ids + scores only — no chunk text, no quotes.\n      topK: (input.retrieval.topK || []).map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score })),\n      maxScore: input.retrieval.maxScore,\n      threshold: input.retrieval.threshold,\n      citedChunkIds: Array.isArray(gen.citations) ? gen.citations.map((c) => c.chunkId) : [],\n      citationCount: Array.isArray(gen.citations) ? gen.citations.length : 0,\n      // Query is NOT stored raw; only its length + a stable hash, so audit correlation is possible\n      // without retaining user text (and any stray email token is masked before hashing/length).\n      queryLength: String(input.query ?? '').length,\n      queryHash: 'q_' + hash(String(input.query ?? '').replace(emailRe, (e) => { const p = e.split('@'); return (p[0] ? p[0][0] + '***' : '***') + '@' + (p[1] ?? ''); })),\n      policyVersion: 'rag-knowledge-assistant-v0.4.0',\n      createdAt: new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "5efbe5d5-bf89-443b-a979-5b23893243a9",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nconst gen = input.generation;\n// Structured JSON response — the scorer contract shape from docs/eval-plan.md. retrieval.topK is the\n// id/source/score surface; retrievedChunks (internal chunk text) is deliberately NOT included.\nreturn [{\n  json: {\n    statusCode: 200,\n    runtime: input.runtime,\n    response: {\n      ok: true,\n      requestId: input.request.requestId,\n      // Optional correlation id echoed from the request (capture-and-echo, never generated); null when\n      // absent. Surfaced on BOTH the grounded answer and the clean-abstain response (this node serves both).\n      traceId: input.runtime.traceId ?? null,\n      abstained: gen.abstained === true,\n      answer: gen.abstained === true ? null : gen.answer,\n      // On abstain, surface the CHINESE 'insufficient information' message (answer stays null); on a\n      // grounded answer there is no note. This keeps the abstain human-readable + Chinese per spec.\n      note: gen.abstained === true ? (gen.note || '信息不足,无法回答') : null,\n      citations: Array.isArray(gen.citations) ? gen.citations : [],\n      retrieval: {\n        topK: input.retrieval.topK,\n        maxScore: input.retrieval.maxScore,\n        threshold: input.retrieval.threshold\n      },\n      retrievalSource: input.runtime.retrievalSource,\n      generationSource: input.runtime.generationSource,\n      passed: input.passed === true,\n      integrity: input.integrity,\n      auditEventId: input.auditEvent.auditEventId,\n      processedAt: new Date().toISOString(),\n      policyVersion: 'rag-knowledge-assistant-v0.4.0'\n    },\n    auditEvent: input.auditEvent\n  }\n}];"
+      }
+    },
+    {
+      "id": "b5c10f36-f0ad-414c-b254-9024e122981e",
+      "name": "Manual UI Execution?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3040,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-execution",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "230fd6dc-50eb-406a-a457-da8067d27e60",
+      "name": "Show UI Execution Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    ok: true,\n    executionMode: 'manual-ui',\n    statusCode: input.statusCode,\n    response: input.response,\n    auditEvent: input.auditEvent ?? null,\n    note: 'Terminal result for n8n editor Execute Workflow. Webhook executions use Return Response instead.'\n  }\n}];"
+      }
+    },
+    {
+      "id": "8f30c900-f974-4993-ae88-04ac3d4244eb",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3360,
+        420
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "id": "3e5ee6a0-a533-4356-875b-ffcc1020c0d6",
+      "name": "Stub Grounded Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// DETERMINISTIC stub generator (the default + only implemented path this phase). It composes the\n// answer ONLY from retrieved chunk text — it has no other knowledge source, so it structurally cannot\n// hallucinate beyond the corpus or leak an injected system prompt/secret (the adversarial-injection\n// golden case relies on exactly this). The corpus is Chinese, so the assembled answer is Chinese (the\n// live path's prompt likewise constrains llama3.2:3b to answer 用简体中文). Phase 2b swaps this for Ollama\n// 'llama3.2:3b' behind the generationSource gate with the zh 'answer only from the provided context,\n// else abstain' prompt.\n//\n// Grounding policy: cite the chunks that clear the threshold (the answer stands on them); compose the\n// Chinese answer by quoting the grounded chunk text verbatim (a 'grounded extract'). citations =\n// [{ chunkId, source, url, quote }] where source+url are the chunk's AUTHORITATIVE provenance (the real\n// citation title + link, carried from the corpus) and quote is a span that EXISTS in the cited chunk, so\n// citation-integrity + 'quote exists in chunk' both hold by construction and B cites a real source + URL.\nconst chunks = Array.isArray(input.retrievedChunks) ? input.retrievedChunks : [];\nconst threshold = input.retrieval.threshold;\n// Only chunks at/above threshold are grounding-worthy. The top chunk always qualifies on this branch\n// (maxScore >= threshold gated us here); include any other retrieved chunk that also clears it.\nconst grounding = chunks.filter((c) => c.score >= threshold);\nconst used = grounding.length > 0 ? grounding : chunks.slice(0, 1);\nconst lang = input.runtime.queryLang;\n\n// groundedExtract — LANGUAGE-AWARE verbatim extract: split the chunk into sentence segments (the same\n// half-width terminator class as before), prefer the FIRST segment whose language matches the query\n// (zh = >= 2 Han chars), and fall back to the first segment (the previous behavior) when none matches.\n// Bilingual chunks carry an appended translation sentence with no internal half-width terminators, so\n// a zh query over an en chunk (or vice versa) extracts the matching-language sentence — still a\n// guaranteed-present span of the cited chunk, so citation integrity holds by construction.\nfunction groundedExtract(t, lang) {\n  const s = String(t ?? '').trim();\n  const segs = s.match(/[\\s\\S]*?[.!?。!?]/g) || [];\n  const isZh = (seg) => ((seg.match(/[一-鿿]/g) || []).length) >= 2;\n  const pick = segs.find((seg) => (lang === 'zh') === isZh(seg));\n  return ((pick ?? segs[0]) ?? s).trim();\n}\n\nconst citations = used.map((c) => ({\n  chunkId: c.chunkId,\n  source: c.source,\n  url: c.url,\n  quote: groundedExtract(c.text, lang)\n}));\n\n// The answer is a deterministic same-language composition of the grounded extract(s). No external text added.\nconst answer = used.map((c) => groundedExtract(c.text, lang)).join(' ');\n\nreturn [{\n  json: {\n    ...input,\n    generation: {\n      abstained: false,\n      answer,\n      citations,\n      generationSource: input.runtime.generationSource\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "090cc74a-2d22-495a-8845-593ac9cc5adb",
+      "name": "Clean Abstain",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// CLEAN ABSTAIN branch: retrieval did not clear the threshold (out-of-corpus, or the corpus genuinely\n// lacks the answer). Per the eval-plan abstain rule, we emit NO answer and NO fabricated citation:\n//   abstained:true, answer:null, citations:[]. The human-readable abstain message is carried as a\n// separate 'note' field IN THE QUERY'S LANGUAGE (runtime.queryLang 'en' -> English, else the original\n// Chinese '信息不足,无法回答') — while answer stays strictly null so Assert-CleanAbstain (answer==null\n// AND citations==[]) holds unchanged. This is the system's controlled failure mode (an asserted invariant).\nreturn [{\n  json: {\n    ...input,\n    generation: {\n      abstained: true,\n      answer: null,\n      citations: [],\n      note: input.runtime.queryLang === 'en' ? 'Not enough information to answer' : '信息不足,无法回答',\n      generationSource: input.runtime.generationSource\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "2a2c3d0d-6ce2-4762-b9f0-d97338ab8a58",
+      "name": "Stub Embed + Retrieve",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\n// DETERMINISTIC stub retriever (the default + only implemented path this phase). No model, no vector\n// store: it scores the query against an IN-REPO corpus with a TF-IDF COSINE over content terms\n// (CJK character bigrams + ASCII word tokens, smoothed IDF, L2-normalized) so a fixed query maps to\n// fixed chunks and an out-of-corpus query maps to (near-)nothing — driving the abstain branch\n// deterministically. TF-IDF (vs raw token overlap) down-weights the ubiquitous \"AI 产品经理\" boilerplate\n// and normalizes for chunk length, which the short generic chunks would otherwise exploit; the corpus is\n// Chinese (zh) so an English/whitespace tokenizer would tokenize to nothing — hence CJK bigrams. Phase 2b\n// replaces this with Supabase pgvector + Ollama 'nomic-embed-text-v2-moe' behind the retrievalSource gate;\n// the row shape below is the contract the live retriever must also produce:\n// retrieval.topK = [{ chunkId, source, score }], maxScore, threshold. Each corpus entry also carries the\n// authoritative provenance (source = citation title, url) so the citation can name the real source + link.\n//\n// CORPUS (source of truth: fixtures/corpus/*.md — 19 chunks: 13 Chinese \"AI 时代产品经理\" + 6 English\n// product-support known-issues/docs that make rag the \"known-issue brain\" for the agent->rag->support-triage\n// collaboration). Kept VERBATIM (byte-for-byte) from those chunks so the grounded quote matches; MUST stay in sync.\nconst CORPUS = [\n  { chunkId: \"rag-eval-faithfulness\", source: \"Hugging Face LLM/Agents Course(mlabonne 等)与 Ragas / DeepEval 开源评测框架\", url: \"https://github.com/mlabonne/llm-course\", text: \"开源社区给出了评测 RAG 的标准做法:要分别评检索与生成两段——检索看 context precision / recall(召回到的上下文准不准、全不全),生成看 faithfulness(忠实度:答案是否扎根于检索到的上下文)与 answer relevancy(答案相关性);这些可用开源工具 Ragas / DeepEval 简化。RAG 本身则是\\\"无需微调即可扩展模型知识\\\"的常用手段。\" },\n  { chunkId: \"trust-reliability\", source: \"Lenny Rachitsky 等 — Lenny's Newsletter《Why most AI products fail》(2026)\", url: \"https://www.lennysnewsletter.com/p/what-openai-and-google-engineers-learned\", text: \"在 OpenAI、Google、Amazon 等公司 50+ 个企业级 AI 部署中,一条反复出现的教训是:\\\"obsessing about customer trust and reliability is an underrated driver of successful AI products\\\"(对客户信任与可靠性的执着,是 AI 产品成功被严重低估的驱动力)。评测必要但非万灵药——为可靠性与\\\"优雅失败\\\"路径而设计,才是把 demo 变成用户敢依赖的产品的关键。\" },\n  { chunkId: \"how-to-learn\", source: \"InstitutePM《How to Become an AI Product Manager in 2026》(2026)\", url: \"https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026\", text: \"对 PM 而言,技术学习的\\\"正确深度\\\"是 \\\"competent enough to make decisions and pressure-test your engineers\\\"(足以做决策、并能向工程师施压检验)——既不必推导反向传播,也不能只刷一张证书。推荐路径:读 Anthropic 与 OpenAI 的 prompt 工程指南,然后 \\\"build a RAG app, a tool-calling agent, and a fine-tuned classifier\\\"(亲手做一个 RAG 应用、一个工具调用 agent、一个微调分类器,哪怕都很小)——三个一起做才会逼你学会其中的取舍;并把一套 eval 框架端到端做透。\" },\n  { chunkId: \"portfolio-proof\", source: \"InstitutePM《How to Become an AI Product Manager in 2026》(2026)\", url: \"https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026\", text: \"转型最高杠杆的一步,是一份能证明\\\"你能交付、并能就 AI 产品做推理\\\"的作品集——因为招聘官\\\"在简历上花 90 秒,在一份强 case study 上花 8 分钟\\\"。能让你进面试的三件套:一个上线的产品(哪怕是 side project,有 URL 或仓库)、一篇带真实数字的 eval 驱动 case study、一套可演示的 eval 套件。\" },\n  { chunkId: \"model-as-coach\", source: \"Marty Cagan — Silicon Valley Product Group《Product Coaching and AI》(2026)\", url: \"https://www.svpg.com/product-coaching-and-ai/\", text: \"SVPG 现在建议产品人把基础模型本身当作\\\"个人产品教练\\\"来加速培养 product sense——用你的目标、约束与战略背景把它配置好。在他们的表述里,\\\"prompt engineering has evolved into context engineering\\\"(提示工程已演进为上下文工程);一个配置得当的模型,提供的产品教练水准可以不输给多数管理者,而且是持续在线、而非每周一次的 1:1。\" },\n  { chunkId: \"yujun-growth\", source: \"俞军 —《俞军产品方法论》(中信出版社,2019);《深度对话俞军》\", url: \"https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g\", text: \"俞军给出一条本土化的成长路径:产品经理的能力按\\\"为企业创造价值的能力\\\"分五级——可行性 → 创造 → 权衡 → 变迁 → 方法论。第一级\\\"可行性\\\"要求对用户价值、技术可行性、商业可行性有基本判断力;往上依次是为问题找最优解(创造)、跳出单点做全局取舍(权衡)、预判世事变迁(变迁),直到输出成体系的方法论。\" },\n  { chunkId: \"pm-more-essential\", source: \"Marty Cagan — Silicon Valley Product Group《AI Product Management》(2024)\", url: \"https://www.svpg.com/ai-product-management/\", text: \"Marty Cagan(SVPG 创始人、《INSPIRED》作者)认为,几乎所有产品经理都将需要成为 AI 产品经理;且与\\\"AI 让 PM 变多余\\\"的流行担忧相反——他说 \\\"the PM role becomes more essential but also more difficult with generative AI-powered products, not less\\\"(在生成式 AI 产品中,PM 角色变得更关键、也更难,而不是更不重要)。AI 素养只是又一个例证:产品经理需要扎实的技术基础。\" },\n  { chunkId: \"genuine-value\", source: \"Marty Cagan — Silicon Valley Product Group《AI Product Management》(2024)\", url: \"https://www.svpg.com/ai-product-management/\", text: \"按 SVPG 的说法,AI 产品经理的首要职责,是确保 AI 功能交付 \\\"genuine, incremental value\\\"(真实、增量的价值)——以明显优于现有方案的方式解决真问题。要极力避免的失败模式,是做出 \\\"AI in name only\\\" 的产品:为营销或竞争跟风而加 AI,而非为价值。\" },\n  { chunkId: \"yujun-user-value\", source: \"俞军 —《俞军产品方法论》(中信出版社,2019);亦见《深度对话俞军》\", url: \"https://docs.feishu.cn/article/wiki/EzRKwB8NDi2gd0keAhhce6hFn8g\", text: \"俞军(《俞军产品方法论》作者、前百度产品副总裁)给出一个根基性定义:\\\"产品经理是一个用科学方法研究复杂且非科学的人性,并转化为可执行的商业方案的实践验证学科。\\\" 在他看来,产品经理的工作是找到\\\"真的用户价值\\\";一个具备人文逻辑的产品经理,最重要的是拥有批判性思维,其次是愿意并能够理解人和世界。\" },\n  { chunkId: \"evals-defining-skill\", source: \"Aman Khan — Lenny's Newsletter《Beyond vibe checks: A PM's complete guide to evals》(2025)\", url: \"https://www.lennysnewsletter.com/p/beyond-vibe-checks-a-pms-complete\", text: \"写好评测(eval)正在成为做 AI 产品的决定性技能。Aman Khan(Arize AI 产品总监,与 Andrew Ng 合作开设 eval 课程)直言:写好 eval 的能力 \\\"is rapidly becoming the defining skill for AI PMs in 2025 and beyond\\\"(正迅速成为 2025 年及以后 AI 产品经理的决定性技能)。评测像传统软件的回归测试一样,为非确定性系统定义\\\"什么叫好\\\",让你能度量每次 prompt/模型/检索改动的影响,而不是靠\\\"感觉\\\"(vibe check)。\" },\n  { chunkId: \"three-skill-clusters\", source: \"InstitutePM《How to Become an AI Product Manager in 2026》(2026)\", url: \"https://www.institutepm.com/knowledge-hub/how-to-become-an-ai-product-manager-2026\", text: \"转型 AI 产品经理要同时补齐三大技能簇:技术素养(足以做 eval/模型/成本决策——看得懂模型卡、算得清延迟预算、能用代码跑 eval)、适配 AI 不确定性的产品功力(写 eval 驱动的 spec 而非功能 spec,指标树看质量分布而非只看均值)、以及 AI 专属判断(模型选型、失败态 UX、成本-质量-延迟三角)。其中\\\"判断\\\"这一簇被认为\\\"最难伪装,也是多数候选人最被低估的一项\\\"。\" },\n  { chunkId: \"hanniman-humanity\", source: \"黄钊 hanniman —《AI产品经理能力模型的重点素质:人文素养和灵魂境界》,人人都是产品经理 (2022);摘自《AI产品经理的实操手册》\", url: \"https://www.woshipm.com/pmd/5396083.html\", text: \"在 AI 产品经理的能力模型里,黄钊(hanniman,前腾讯 PM、\\\"AI产品经理大本营\\\"创始人)提出一个中文社区独有的关键差异点:\\\"人文素养和灵魂境界\\\"。他认为,常规产品能力、AI 知识、行业认知决定你产出价值的下限,而\\\"人文素养和灵魂境界\\\"决定上限——\\\"如果你想成为 TOP 5%、甚至 TOP 1% 的 AI 产品经理,就一定不能忽视这个方面\\\"。\" },\n  { chunkId: \"geektime-abilities\", source: \"刘海丰 — 极客时间专栏《成为AI产品经理》,极客时间(time.geekbang.org)\", url: \"https://time.geekbang.org\", text: \"极客时间专栏《成为 AI 产品经理》(刘海丰)把 AI 产品经理的核心能力概括为三大能力:项目管控、算法技能、模型评估,并强调要能\\\"主导 AI 项目、带领算法同学达成业务目标\\\"。其中\\\"模型评估\\\"能力,与\\\"eval 是 AI PM 决定性技能\\\"的判断相互印证。\" },\n  { chunkId: \"known-export-mobile-crash\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"The data export button crashes the mobile app on both iOS and Android when a report is exported to CSV or PDF. This is a known issue affecting mobile app versions 2.2 and 2.3; a fix is scheduled for version 2.4. Workaround: run the export from the desktop web app instead, where export works normally. Owning team: product-engineering. Severity: high. 移动端 App 在将报表导出为 CSV 或 PDF 时会崩溃,这是影响近期移动端版本的已知问题,临时方案是改用桌面网页版导出,修复已排入下一个版本,负责团队为产品工程组,严重级别为高。\" },\n  { chunkId: \"known-dashboard-slow\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"The analytics dashboard loads slowly, often taking ten seconds or more, for workspaces with large datasets. The known cause is unbounded client-side aggregation of the trend charts. A server-side aggregation fix is in progress. Workaround: narrow the dashboard date range, or open a saved view with fewer segments. Owning team: product-engineering. Severity: medium. 大数据量工作区的分析看板加载缓慢是已知问题,原因是趋势图在客户端做了无上限聚合,临时方案是缩小看板日期范围或改用分段更少的已保存视图,严重级别为中。\" },\n  { chunkId: \"known-sso-login-loop\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"Single sign-on users are sometimes stuck in a login redirect loop after their session expires. The known cause is the browser blocking third-party cookies. Workaround: allow cookies for the app domain, or sign in with the email-and-password fallback. Owning team: platform-security. Severity: high. 单点登录用户在会话过期后可能陷入登录跳转循环,这是已知问题,原因是浏览器拦截了第三方 Cookie,临时方案是允许应用域名的 Cookie 或改用邮箱密码方式登录,严重级别为高。\" },\n  { chunkId: \"doc-export-howto\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"To export data, open any report or dashboard, click the Export button, and choose a format: CSV, XLSX, or PDF. Exports run in the background, and you receive an email with a download link when the file is ready. Large exports over one million rows are queued and may take a few minutes. 导出数据时,打开任意报表或看板,点击导出按钮并选择 CSV、XLSX 或 PDF 格式,导出在后台运行,文件就绪后会通过邮件发送下载链接,超过一百万行的大型导出会进入队列。\" },\n  { chunkId: \"doc-dashboard-overview\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"The analytics dashboard has three areas. KPI cards at the top show headline metrics, trend charts in the middle show changes over time, and a data table at the bottom lists the underlying records. You can filter the whole dashboard by date range, by segment, and by saved views that you create and share with your team. 分析看板分为三个区域,顶部 KPI 卡片展示关键指标,中部趋势图展示随时间的变化,底部数据表列出底层记录,整个看板可按日期范围、分段和已保存视图筛选。\" },\n  { chunkId: \"faq-mobile-support\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"The mobile app supports viewing dashboards, reports, and notifications. Some administrative features, including data export, user management, and billing, are available on the desktop web app only and not on mobile. 移动端 App 支持查看看板、报表和通知,而数据导出、用户管理、账单等管理功能仅在桌面网页版提供,移动端不可用。\" },\n  { chunkId: \"known-import-csv-encoding\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"Importing a CSV file that is not UTF-8 encoded (for example GBK or GB2312 exports from older spreadsheet tools) shows garbled Chinese characters in the imported records. This is a known issue; an encoding auto-detection fix is planned for version 2.5. Workaround: re-save the file as UTF-8 (in Excel use Save As - CSV UTF-8) before importing. Owning team: product-engineering. Severity: medium. 导入非 UTF-8 编码(例如 GBK 或 GB2312)的 CSV 文件会出现中文乱码,这是已知问题,临时方案是先把文件另存为 UTF-8 编码的 CSV 再导入,编码自动检测的修复已在计划中。\" },\n  { chunkId: \"known-notification-delay\", source: \"Internal Product Knowledge Base — Known Issues\", url: \"\", text: \"Email notifications can be delayed by up to thirty minutes during peak hours. The known cause is queue worker saturation in the notification service; an autoscaling fix is in progress. Workaround: rely on in-app notifications, which are delivered in real time and are not affected. Owning team: platform-infra. Severity: low. 高峰时段邮件通知最多可能延迟三十分钟,这是已知问题,原因是通知服务的队列工作进程饱和,临时方案是依赖实时送达、不受影响的应用内通知,严重级别为低。\" },\n  { chunkId: \"doc-api-rate-limits\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"The public API allows 100 requests per minute per token on the standard plan and 1000 on the enterprise plan. Requests over the limit receive HTTP 429 with a Retry-After header. Integrations should use exponential backoff and batch endpoints where possible; sustained higher throughput requires an enterprise token. 公开 API 的限流为标准版每令牌每分钟 100 次请求、企业版 1000 次,超限请求会收到 HTTP 429 与 Retry-After 响应头,集成方应使用指数退避并尽量使用批量端点。\" },\n  { chunkId: \"doc-permissions-roles\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"The product has three workspace roles. Admins manage billing, users, and security settings. Editors create and edit dashboards and reports and can run exports. Viewers can view shared dashboards and export the data they can see, but cannot edit. Only an admin can change a member role, and the change takes effect the next time that member signs in. 产品有三种工作区角色,管理员负责账单、用户与安全设置,编辑者可创建和编辑看板报表并运行导出,查看者只能查看共享看板并导出可见数据,只有管理员能变更成员角色。\" },\n  { chunkId: \"doc-data-retention\", source: \"Internal Product Knowledge Base — Product Docs\", url: \"\", text: \"Analytics event data is retained for thirteen months on the standard plan and thirty-six months on the enterprise plan; data older than the retention window is dropped from dashboards and exports. When a workspace is deleted, all of its data is permanently purged after a thirty-day grace period and cannot be recovered. 分析事件数据在标准版保留十三个月、企业版保留三十六个月,超出保留窗口的数据会从看板和导出中移除,工作区删除后经过三十天宽限期所有数据将被永久清除且无法恢复。\" },\n  { chunkId: \"pf-gateway-security\", source: \"Internal Portfolio Docs — interaction-gateway workflow-contract 与 ADR-0001\", url: \"\", text: \"作品集的统一入口是 interaction-gateway(签名网关):每个请求必须带 HMAC-SHA256 签名(对时间戳加请求体的精确字节签名,带重放窗口),超大请求体直接 413 拒绝,载荷中的疑似秘密(API key、Bearer token 等)在路由前被剥离并计数,intent 必须命中白名单否则 422 不路由。这些控制全部 fail-closed:空密钥、过期时间戳一律拒绝。安全核心是纯函数,由 20 项核心断言加 171 项编译后差分断言离线验证。 The interaction gateway is the portfolio's single signed entrance: every request must carry an HMAC-SHA256 signature over the exact timestamp-plus-body bytes inside a replay window, oversized bodies are rejected with 413, suspected secrets are stripped and counted before routing, non-allowlisted intents get 422, and every control fails closed. 对请求字节的 HMAC 签名加上重放窗口,就是网关防篡改、防重放的核心安全机制。\" },\n  { chunkId: \"pf-rag-abstention\", source: \"Internal Portfolio Docs — rag-knowledge-assistant ADR-0001 与 workflow-contract\", url: \"\", text: \"RAG 知识助手的诚实性由三层机制保证:每个回答必须引用真实检索到的语料片段(引用完整性门:引用了未检索到的片段即失败);检索得分低于阈值时返回「我没有足够的信息」而不是编造;live 向量检索(Supabase pgvector)出错或为空时降级为对同一语料的确定性 TF-IDF 检索,并如实标注 retrievalSource,绝不产生假弃答。 The RAG assistant stays honest through citation integrity (every answer must cite chunks that were really retrieved), threshold-gated abstention (below the similarity floor it answers that it does not have enough information instead of fabricating), and a truthful retrievalSource label whenever live vector retrieval degrades.\" },\n  { chunkId: \"pf-drift-integrity\", source: \"Internal Portfolio Docs — scheduled-drift-monitor ADR-0001 与 eval-plan\", url: \"\", text: \"定时漂移监控的简报完整性由两个以运行记录为准的检查保证:简报末尾机器追加的 METRICS 行逐项与记录重新核对;摘要散文中出现的任何通过率形状的数字(百分比或 0 到 1 的小数)必须等于记录里真实存在的比率——LLM 或注入的摘要若声称数据不支持的通过率,这次运行直接判失败。简报卡片(飞书)也从同一记录确定性生成,红绿色由 drift.any 决定。 The scheduled drift monitor re-checks every machine-appended METRICS line and every pass-rate-shaped number in the digest prose against the actual run record, and the run fails outright if an LLM summary claims a rate the data does not support.\" },\n  { chunkId: \"pf-agent-guardrails\", source: \"Internal Portfolio Docs — autonomous-agent eval-plan 与 workflow-contract\", url: \"\", text: \"自治代理(autonomous agent)在四条护栏内工作:工具白名单与网关 intent 一字不差,代理无法调用任何未注册目标;步数上限防止无限循环;不安全请求直接拒绝且零工具调用;工具失败(下游 4xx)如实返回 ok:false,绝不编造结果。代理轨迹由统一的 rubric 评分,同一套 rubric 同时评判确定性 stub 规划器和真实 LLM 规划器。 The autonomous agent operates inside four guardrails: a tool allowlist identical to the gateway intents, a hard step cap, outright refusal of unsafe tasks with zero tool calls, and honest ok:false results on downstream tool failures, with one shared rubric scoring both the stub planner and the live LLM planner.\" },\n  { chunkId: \"pf-eval-honest\", source: \"Internal Portfolio Docs — llm-eval-harness eval-plan 与 honest-eval 框架说明\", url: \"\", text: \"评测台(eval harness)给任意被测系统打分:可核对的事实用确定性断言,主观质量用 LLM-as-judge,且裁判本身永不被当作真值——裁判与人工标注的一致率被持续校准,并设有裁判漂移护栏。全套评测默认走可复现的 stub 路径,CI 离线即可全绿;live 模型评测是显式 opt-in。 The eval harness scores any system under test with deterministic assertions for checkable facts and an LLM judge for subjective quality, never treats the judge as ground truth, keeps judge-human agreement calibrated, and stays fully green offline on the reproducible stub path while live model evaluation is opt-in.\" },\n  { chunkId: \"pf-connected-loop\", source: \"Internal Portfolio Docs — 跨仓库 registry 与 adopt-on-your-n8n 部署文档\", url: \"\", text: \"九个仓库构成一个互联系统:评测台(A)把 RAG 助手(B)当黑盒被测系统打分;漂移监控(D)定期保鲜 B 的语料并跟踪 A 的评分是否漂移;签名网关把所有工作流变成进程内可调用的目标;自治代理把它们当工具编排;飞书适配器提供进出双向的聊天入口。每个仓库都有离线验证门、canonical 一致性门和逐文件提交纪律。 The nine repositories form one connected system: the eval harness grades the RAG assistant as a black box, the drift monitor refreshes its corpus and tracks score drift, the signed gateway turns every workflow into an in-process callable target, the autonomous agent orchestrates them as tools, and the Feishu adapter provides the two-way chat entrance.\" },\n  { chunkId: \"own-system-behavior\", source: \"Akhil Tiwari — The Product Space《What an AI PM Portfolio Must Show in 2026》(2026-01-14)\", url: \"https://theproductspace.substack.com/p/what-an-ai-pm-portfolio-must-show\", text: \"2026 年的 AI-PM 招聘共识之一:AI 产品经理不是被雇来设计功能,而是被雇来掌控系统行为(own system behavior)。只展示输出、不展示控制机制(评测、护栏、失败处理)的作品集会被静默筛掉;能解释「系统为什么这样表现、怎么约束它」的候选人才有差异化。\" },\n  { chunkId: \"hireability-ranking\", source: \"InstitutePM《12 AI PM Portfolio Projects Ranked by Hireability (2026)》(2026-05-10)\", url: \"https://www.institutepm.com/knowledge-hub/ai-pm-learning-by-building-projects\", text: \"InstitutePM 对 12 个 AI-PM 作品集项目按可雇佣性排序:评测框架(Eval Harness)排第一——被称为 2026 年单一最高信号项目,几乎没有 PM 候选人真正建过,能谈 LLM-as-judge 偏差、golden dataset、pass@k 就进前 5%;RAG 是最抢手技能,要点是来源引用与检索失败时说「我不知道」;工具调用 agent 是前沿;漂移监控则是大多数作品集失败的地方。\" },\n  { chunkId: \"failure-analysis-decisions\", source: \"Klement Gunndu — dev.to《5 AI Portfolio Projects That Actually Get You Hired in 2026》(2026-03-07)\", url: \"https://dev.to/klement_gunndu/5-ai-portfolio-projects-that-actually-get-you-hired-in-2026-5bpl\", text: \"2026 年 AI 作品集的通行要求是四件配套工件:行为规格(behavior spec,取代传统 PRD)、评测准则(eval rubric)、失败分析(failure analysis——主动展示失败案例与处置)、以及 DECISIONS.md(记录为什么选这个模型、这种分块、这个向量库)。光有能跑的 demo 而没有这些控制工件,会被视为没有系统思维。\" },\n  { chunkId: \"go-build-something\", source: \"Jaclyn Konzelmann《If you want to get hired as an AI PM — Go Build Something》(2026-02-12)\", url: \"https://blog.jaclynkonzelmann.com/p/if-you-want-to-get-hired-as-an-ai\", text: \"对想转型 AI-PM 的人,最有效的一条建议是 Go Build Something:亲手把一个真实的东西做出来并部署,能讲清你 prototyped、built、deployed 的全过程,远胜于任何证书或纸面分析——招聘方要看的是动手证据与系统思维。\" }\n];\n\n// Minimal ASCII stopword set so high-frequency function words don't inflate overlap. ASCII tokens shorter\n// than 2 chars are dropped (so 'ai','pm','rag' survive). Chinese has no spaces, so CJK terms are character\n// BIGRAMS (adjacent Han pairs) — the standard segmentation-free zh retrieval primitive.\nconst STOP = new Set(['the','a','an','and','or','of','to','in','is','are','was','were','be','as','at','by','for','on','it','its','that','this','these','those','with','from','into','your','you','my','our','their','his','her','do','does','how','what','why','when','where','which','who','whom','can','could','would','should','will','also','any','all','so','such','than','then','out','up','down','over']);\n// terms(s) -> an ordered BAG (array, TF matters) of content terms: ASCII alnum words (>=2 chars, non-stop)\n// plus CJK character bigrams. (chunkId hyphens are turned into spaces so its words count as ASCII tokens.)\nfunction terms(s) {\n  const arr = [];\n  const str = String(s ?? '');\n  (str.toLowerCase().match(/[a-z0-9]+/g) || []).forEach((w) => { if (w.length >= 2 && !STOP.has(w)) arr.push(w); });\n  const han = str.match(/[\\u4e00-\\u9fff]/g) || [];\n  for (let i = 0; i < han.length - 1; i += 1) arr.push(han[i] + han[i + 1]);\n  return arr;\n}\n\n// Build smoothed IDF over the FIXED corpus (deterministic: corpus is a constant). idf = ln((1+N)/(1+df))+1.\nconst docTerms = CORPUS.map((c) => terms(c.text + ' ' + c.chunkId.replace(/-/g, ' ')));\nconst N = docTerms.length;\nconst df = new Map();\nfor (const d of docTerms) { for (const t of new Set(d)) df.set(t, (df.get(t) || 0) + 1); }\nfunction idf(t) { return Math.log((1 + N) / (1 + (df.get(t) || 0))) + 1; }\n// tf-idf vector, L2-normalized, as a Map term -> weight.\nfunction vec(arr) {\n  const tf = new Map();\n  for (const t of arr) tf.set(t, (tf.get(t) || 0) + 1);\n  const v = new Map();\n  let norm = 0;\n  tf.forEach((f, t) => { const w = f * idf(t); v.set(t, w); norm += w * w; });\n  norm = Math.sqrt(norm) || 1;\n  v.forEach((w, t) => v.set(t, w / norm));\n  return v;\n}\nconst docVecs = docTerms.map(vec);\n\nconst qVec = vec(terms(input.query));\nconst scored = CORPUS.map((c, i) => {\n  const dVec = docVecs[i];\n  // Cosine = dot product of two L2-normalized tf-idf vectors. Iterate the smaller map for speed.\n  let dot = 0;\n  const [small, big] = qVec.size <= dVec.size ? [qVec, dVec] : [dVec, qVec];\n  small.forEach((w, t) => { if (big.has(t)) dot += w * big.get(t); });\n  const score = Number(dot.toFixed(4));\n  return { chunkId: c.chunkId, source: c.source, url: c.url, score, text: c.text };\n});\n\n// Rank by score desc (ties broken by chunkId for determinism), take top-K.\nscored.sort((a, b) => (b.score - a.score) || (a.chunkId < b.chunkId ? -1 : a.chunkId > b.chunkId ? 1 : 0));\nconst topKFull = scored.slice(0, input.runtime.topK);\nconst maxScore = topKFull.length > 0 ? topKFull[0].score : 0;\n// The public retrieval surface carries id/source/score only (no chunk text) — the grounded-answer\n// node still has the text via topKFull. This keeps the response payload tight + the audit redacted.\nconst topK = topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, score: c.score }));\n\n// PER-SOURCE abstention floor for the STUB (TF-IDF cosine): default 0.08, which separates the stub's\n// in-corpus (~0.2-0.4) from out-of-corpus (~0). An explicit per-request body.threshold overrides it.\nconst threshold = input.runtime.thresholdOverride ?? 0.08;\n\nreturn [{\n  json: {\n    ...input,\n    retrieval: {\n      topK,\n      maxScore,\n      threshold,\n      retrievalSource: input.runtime.retrievalSource\n    },\n    // Internal: the retrieved chunk text + provenance (source/url), carried for the grounded-answer node\n    // only. Stripped before the response/audit are built so chunk bodies never bloat the public payload.\n    retrievedChunks: topKFull.map((c) => ({ chunkId: c.chunkId, source: c.source, url: c.url, score: c.score, text: c.text }))\n  }\n}];"
+      }
+    },
+    {
+      "id": "4e57565c-6b9f-4da5-b028-1f998450ada4",
+      "name": "Build Missing Query Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        640
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = items[0].json;\nreturn [{\n  json: {\n    statusCode: 400,\n    runtime: input.runtime,\n    response: {\n      ok: false,\n      error: 'Missing required \\'query\\' (non-empty string)',\n      policyVersion: 'rag-knowledge-assistant-v0.4.0'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "e461b40a-fede-4560-9ad9-cd678991131d",
+      "name": "Manual UI Missing Query Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        640
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "manual-ui-missing-query",
+              "leftValue": "={{ $json.runtime.entrypoint === \"manual\" }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "201c79d2-9c67-4930-b66b-18491a6f756d",
+      "name": "Return Missing Query Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1760,
+        760
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.response }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      }
+    },
+    {
+      "id": "5cbc0673-da23-4f55-83db-5ef2f5bed022",
+      "name": "Receive Query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        420
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio/rag-knowledge-assistant",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "webhookId": "fbf7de97-ea68-4f99-bdc6-a2ed5c9b370d"
+    },
+    {
+      "id": "19a960b0-7215-4595-aa51-2acc32692c28",
+      "name": "Called By Gateway (Execute Workflow)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        760
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    }
+  ],
+  "connections": {
+    "Run Demo Query From n8n UI": {
+      "main": [
+        [
+          {
+            "node": "Build Demo Query Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Demo Query Payload": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Query Present?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Present?": {
+      "main": [
+        [
+          {
+            "node": "Retrieval Source = Supabase?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Missing Query Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieval Source = Supabase?": {
+      "main": [
+        [
+          {
+            "node": "Embed Query (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stub Embed + Retrieve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Query (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Match Documents (Supabase RPC)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Documents (Supabase RPC)": {
+      "main": [
+        [
+          {
+            "node": "Map Supabase Retrieval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Supabase Retrieval": {
+      "main": [
+        [
+          {
+            "node": "Retrieval Clears Threshold?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieval Clears Threshold?": {
+      "main": [
+        [
+          {
+            "node": "Generation Source = Ollama?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clean Abstain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generation Source = Ollama?": {
+      "main": [
+        [
+          {
+            "node": "Build Grounding Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stub Grounded Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Grounding Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Answer (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Answer (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Parse + Ground Answer (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse + Ground Answer (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Enforce Citation Integrity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enforce Citation Integrity": {
+      "main": [
+        [
+          {
+            "node": "Create Redacted Audit Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Redacted Audit Event": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Execution?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stub Grounded Answer": {
+      "main": [
+        [
+          {
+            "node": "Enforce Citation Integrity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Abstain": {
+      "main": [
+        [
+          {
+            "node": "Enforce Citation Integrity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stub Embed + Retrieve": {
+      "main": [
+        [
+          {
+            "node": "Retrieval Clears Threshold?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Missing Query Error": {
+      "main": [
+        [
+          {
+            "node": "Manual UI Missing Query Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual UI Missing Query Error?": {
+      "main": [
+        [
+          {
+            "node": "Show UI Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Missing Query Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Query": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called By Gateway (Execute Workflow)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
