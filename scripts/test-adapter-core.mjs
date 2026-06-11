@@ -45,6 +45,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   check(id, '自检 -> gateway-selftest', mapMessageToIntent('来个自检').intent === 'gateway-selftest', '');
   const q = mapMessageToIntent('导出按钮为什么崩溃?');
   check(id, 'free question -> rag with text as query', q.intent === 'rag' && q.payload.query === '导出按钮为什么崩溃?', JSON.stringify(q.payload));
+  check(id, 'rag payload requests live retrieval (rag X4 falls back to stub on a live miss)', q.payload.retrievalSource === 'supabase', q.payload.retrievalSource);
   check(id, 'empty text -> null intent (usage hint)', mapMessageToIntent('  ').intent === null, '');
   check(id, 'every mapped intent is allowlisted', ['日报', 'selftest', 'anything'].every((t) => { const m = mapMessageToIntent(t); return m.intent === null || INTENT_ALLOWLIST.includes(m.intent); }), '');
 }
@@ -70,14 +71,26 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const fail401 = buildReplyText('rag', { ok: false, status: 401 });
   check(id, 'gateway failure -> honest failure reply', /未通过网关/.test(fail401) && /401/.test(fail401), fail401);
 
+  // REAL gateway shape (caught live 2026-06-10): rag's executeWorkflow output is the FULL record
+  // { statusCode, runtime, response } — the reply builder must unwrap .response or a HIT reads as
+  // an abstain (every field undefined). This fixture pins the real nested shape.
   const ragHit = buildReplyText('rag', {
     ok: true, traceId: 'gw-t1',
-    result: { perTarget: [{ target: 'rag', result: { abstained: false, answer: { text: '已知问题:导出在移动端崩溃,2.4 修复。', citations: [{ chunkId: 'known-export-mobile-crash', source: 'Internal KB' }] } } }] }
+    result: { perTarget: [{ target: 'rag', result: { statusCode: 200, runtime: { queryLang: 'zh' }, response: { ok: true, abstained: false, retrievalSource: 'supabase', answer: '已知问题:导出在移动端崩溃,2.4 修复。', citations: [{ chunkId: 'known-export-mobile-crash', source: 'Internal KB' }] } } }] }
   });
-  check(id, 'rag hit -> answer + citation + traceId', /已知问题/.test(ragHit) && /known-export-mobile-crash/.test(ragHit) && /gw-t1/.test(ragHit), ragHit.slice(0, 80));
+  check(id, 'rag hit (REAL nested gateway shape) -> answer + citation + traceId', /已知问题/.test(ragHit) && /known-export-mobile-crash/.test(ragHit) && /gw-t1/.test(ragHit), ragHit.slice(0, 80));
+  check(id, 'rag hit surfaces the actual retrieval source (observability)', /\(retrieval supabase\)/.test(ragHit), ragHit.slice(-60));
+  check(id, 'rag hit is NOT misread as abstain (the unwrap bug)', !/没有足够的信息/.test(ragHit), '');
 
-  const ragAbstain = buildReplyText('rag', { ok: true, result: { perTarget: [{ target: 'rag', result: { abstained: true } }] } });
-  check(id, 'rag abstain -> honest abstain reply (never fabricates)', /没有足够的信息/.test(ragAbstain), ragAbstain);
+  const ragHitBare = buildReplyText('rag', {
+    ok: true,
+    result: { perTarget: [{ target: 'rag', result: { abstained: false, retrievalSource: 'stub', answer: { text: '答案。', citations: [{ chunkId: 'c1', source: 's' }] } } }] }
+  });
+  check(id, 'rag hit (legacy bare shape) still parsed', /答案/.test(ragHitBare) && /c1/.test(ragHitBare), ragHitBare.slice(0, 60));
+
+  const ragAbstain = buildReplyText('rag', { ok: true, result: { perTarget: [{ target: 'rag', result: { statusCode: 200, response: { abstained: true, retrievalSource: 'supabase-fallback-stub', note: 'Not enough information to answer' } } }] } });
+  check(id, 'rag abstain (nested shape) -> honest abstain reply (never fabricates)', /没有足够的信息/.test(ragAbstain), ragAbstain);
+  check(id, 'rag abstain surfaces the degrade retrieval source', /supabase-fallback-stub/.test(ragAbstain), ragAbstain.slice(-60));
 
   const driftReply = buildReplyText('drift', {
     ok: true, traceId: 'gw-t2',
