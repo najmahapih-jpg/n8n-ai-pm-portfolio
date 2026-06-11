@@ -20,11 +20,11 @@ try {
   $gitRoot = $null
 }
 
-$repoRoot = if (-not [string]::IsNullOrWhiteSpace($gitRoot)) {
-  $gitRoot.Trim()
-} else {
-  (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-}
+# Scope the scan to THIS project's root, never the git toplevel: inside the portfolio monorepo the
+# toplevel is the whole tree, and scanning sibling projects would flag their intentional
+# secret-SHAPED test fixtures (e.g. the gateway's secret-stripping goldens). git stays in use below
+# for tracked-file enumeration relative to this root.
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 
 $failures = New-Object System.Collections.Generic.List[string]
 
