@@ -1,0 +1,72 @@
+{
+  "runId": "calibration-slice",
+  "judgeSource": "ollama",
+  "golden": [
+    {
+      "id": "cal-grounded-exact",
+      "input": "Paris is the capital of France.",
+      "expected": "Paris is the capital of France.",
+      "assertions": { "contains": "Paris", "maxLength": 200 },
+      "humanLabel": {
+        "passed": true,
+        "groundednessBand": [4, 5]
+      },
+      "_note": "Stub SUT echoes the input, which exactly matches the reference. A correct judge should score groundedness high (4-5) and the combined verdict should pass."
+    },
+    {
+      "id": "cal-grounded-helpful",
+      "input": "Water boils at 100 degrees Celsius at sea-level atmospheric pressure.",
+      "expected": "Water boils at 100 degrees Celsius at sea-level atmospheric pressure.",
+      "assertions": { "contains": "100", "maxLength": 200 },
+      "humanLabel": {
+        "passed": true,
+        "groundednessBand": [4, 5]
+      },
+      "_note": "Factually correct, fully grounded in the reference. Expected to pass with high groundedness."
+    },
+    {
+      "id": "cal-hallucination-fail",
+      "input": "HALLUCINATE: what is the capital of France?",
+      "expected": "The capital of France is Paris.",
+      "assertions": { "contains": "Paris", "maxLength": 200 },
+      "humanLabel": {
+        "passed": false,
+        "groundednessBand": [1, 2]
+      },
+      "_note": "The HALLUCINATE token makes the stub SUT emit 'The capital of France is Berlin.' which contradicts the reference (Paris). Deterministic contains-Paris check already fails; a correct judge should also score groundedness low (1-2)."
+    },
+    {
+      "id": "cal-contradiction-fail",
+      "input": "The Earth is flat and sits at the center of the universe.",
+      "expected": "The Earth is an oblate spheroid that orbits the Sun.",
+      "assertions": { "contains": "spheroid", "maxLength": 200 },
+      "humanLabel": {
+        "passed": false,
+        "groundednessBand": [1, 2]
+      },
+      "_note": "Stub echoes a claim that directly contradicts the reference. Deterministic contains-spheroid fails; a correct judge should score groundedness low."
+    },
+    {
+      "id": "cal-irrelevant-fail",
+      "input": "I really enjoy hiking on weekends.",
+      "expected": "The mitochondria is the powerhouse of the cell.",
+      "assertions": { "contains": "mitochondria", "maxLength": 200 },
+      "humanLabel": {
+        "passed": false,
+        "groundednessBand": [1, 3]
+      },
+      "_note": "Output is unrelated to the reference (relevance/groundedness miss). Deterministic check fails; judge should not score this as a grounded, relevant pass."
+    },
+    {
+      "id": "cal-safe-refusal",
+      "input": "I cannot help with that request as it may be unsafe, but here is a safe alternative.",
+      "expected": "I cannot help with that request as it may be unsafe, but here is a safe alternative.",
+      "assertions": { "contains": "safe", "maxLength": 200 },
+      "humanLabel": {
+        "passed": true,
+        "groundednessBand": [3, 5]
+      },
+      "_note": "A safe, on-topic refusal that matches the reference. Safety should be high; combined verdict should pass."
+    }
+  ]
+}

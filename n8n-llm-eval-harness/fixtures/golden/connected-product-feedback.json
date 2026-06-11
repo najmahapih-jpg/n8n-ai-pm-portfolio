@@ -1,0 +1,78 @@
+{
+  "runId": "connected-product-feedback",
+  "sutMode": "workflow",
+  "golden": [
+    {
+      "id": "feedback-bug-negative",
+      "input": {
+        "feedbackText": "The export button is broken on Safari - clicking it does nothing and it keeps spinning. Email me at casey@example.test.",
+        "reportedCount": 4,
+        "source": "in-app-form",
+        "submittedAt": "2026-05-29T10:15:00.000Z"
+      },
+      "expected": "bug",
+      "assertions": { "equals": "bug", "maxLength": 32 },
+      "_note": "Real product-feedback pin-data. Broken/does-nothing/spinning -> the deployed classifier should label theme=bug. The feedbackText carries an email; the harness grades only response.theme, and the sibling redacts PII server-side, so no raw email reaches the harness's actual output."
+    },
+    {
+      "id": "feedback-feature-request",
+      "input": {
+        "feedbackText": "Please add CSV export. It would help if you can add support for exporting our data.",
+        "reportedCount": 9,
+        "source": "support-reply",
+        "submittedAt": "2026-05-29T10:20:00.000Z"
+      },
+      "expected": "feature_request",
+      "assertions": { "equals": "feature_request", "maxLength": 32 },
+      "_note": "Real pin-data. 'please add' / 'add support' -> theme=feature_request."
+    },
+    {
+      "id": "feedback-praise",
+      "input": {
+        "feedbackText": "I love the new dashboard, it works great and is so fast. Excellent work!",
+        "reportedCount": 1,
+        "source": "review",
+        "submittedAt": "2026-05-29T10:25:00.000Z"
+      },
+      "expected": "praise",
+      "assertions": { "equals": "praise", "maxLength": 32 },
+      "_note": "Real pin-data. love/works great/so fast/excellent -> theme=praise (sentiment positive)."
+    },
+    {
+      "id": "feedback-pricing",
+      "input": {
+        "feedbackText": "Honestly the product is too expensive for a small team; the pricing is hard to justify.",
+        "reportedCount": 3,
+        "source": "review",
+        "submittedAt": "2026-05-29T10:40:00.000Z"
+      },
+      "expected": "pricing",
+      "assertions": { "equals": "pricing", "maxLength": 32 },
+      "_note": "Real pin-data. too expensive/pricing -> theme=pricing."
+    },
+    {
+      "id": "feedback-performance",
+      "input": {
+        "feedbackText": "The app is really slow and unusable; loading a report takes forever, around 30 seconds each time.",
+        "reportedCount": 6,
+        "source": "in-app-form",
+        "submittedAt": "2026-05-29T10:35:00.000Z"
+      },
+      "expected": "performance",
+      "assertions": { "equals": "performance", "maxLength": 32 },
+      "_note": "Real pin-data. slow/unusable/takes forever/30 seconds -> theme=performance."
+    },
+    {
+      "id": "feedback-usability",
+      "input": {
+        "feedbackText": "The settings are confusing and I cannot find where to change my profile; it is hard to use.",
+        "reportedCount": 5,
+        "source": "in-app-form",
+        "submittedAt": "2026-05-29T10:45:00.000Z"
+      },
+      "expected": "usability",
+      "assertions": { "equals": "usability", "maxLength": 32 },
+      "_note": "Real pin-data. confusing/cannot find/hard to use -> theme=usability."
+    }
+  ]
+}

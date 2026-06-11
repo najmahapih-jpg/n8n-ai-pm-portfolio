@@ -1,0 +1,29 @@
+{
+  "name": "n8n-llm-eval-harness",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Local n8n Workflow-as-Code project: an LLM eval harness that grades AI systems with deterministic-first assertions plus an LLM-as-judge, stub-default for reproducible offline evals, deployed to n8n via the public REST API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "hooks:install": "pwsh -NoProfile -File ./scripts/Install-GitHooks.ps1",
+    "registry:build": "pwsh -NoProfile -File ./scripts/Build-WorkflowIndex.ps1",
+    "compile": "pwsh -NoProfile -File ./scripts/Compile-WorkflowFromSdk.ps1",
+    "smoke": "pwsh -NoProfile -File ./scripts/Invoke-SmokeTest.ps1",
+    "verify:static": "pwsh -NoProfile -File ./scripts/Invoke-StaticValidation.ps1",
+    "verify:json": "pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/canonical -MinimumNodes 30 && pwsh -NoProfile -File ./scripts/Test-N8nWorkflowJson.ps1 -Path ./workflows/releases -MinimumNodes 0",
+    "verify:live": "pwsh -NoProfile -File ./scripts/Test-N8nConnection.ps1 && pwsh -NoProfile -File ./scripts/Sync-N8nWorkflowFromSdk.ps1 && pwsh -NoProfile -File ./scripts/Reactivate-Workflow.ps1 && pwsh -NoProfile -File ./scripts/Test-EvalHarnessWorkflow.ps1",
+    "verify:judge": "pwsh -NoProfile -File ./scripts/Test-LiveJudge.ps1",
+    "verify:connected": "pwsh -NoProfile -File ./scripts/Test-ConnectedEval.ps1",
+    "verify:connected-rag": "pwsh -NoProfile -File ./scripts/Test-ConnectedRagEval.ps1",
+    "verify:canonical": "node ./scripts/test-canonical-matches-sdk.mjs",
+    "verify:workflow": "node ./scripts/test-eval-workflow.mjs",
+    "verify:bench": "pwsh -NoProfile -File ./scripts/Test-Bench.ps1"
+  },
+  "dependencies": {
+    "@n8n/workflow-sdk": "0.15.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "runId": "bench-model-slice",
+  "sutMode": "model",
+  "judgeSource": "stub",
+  "sutModels": ["stub", "llama3.2:3b"],
+  "golden": [
+    {
+      "id": "echo-ping",
+      "input": "Reply with exactly the single word: ping. Output only that word, no punctuation, no explanation.",
+      "expected": "ping",
+      "assertions": { "contains": "ping", "maxLength": 64 },
+      "_note": "Instruction-following echo. The stub lane echoes the whole input (contains 'ping' -> deterministic pass). A capable model returns 'ping' (pass); a model that adds chatter still contains 'ping'. The bench compares HOW each lane answers the same golden case, surfacing latency + tokens per model."
+    },
+    {
+      "id": "echo-pong",
+      "input": "Reply with exactly the single word: pong. Output only that word, no punctuation, no explanation.",
+      "expected": "pong",
+      "assertions": { "contains": "pong", "maxLength": 64 },
+      "_note": "Second instruction-following echo so the bench has >1 case per model (perModel passRate is a rate, not a single coin-flip). Stub lane echoes input (contains 'pong'); the live model is judged on whether its text contains 'pong'."
+    },
+    {
+      "id": "capital-france",
+      "input": "What is the capital of France? Answer with just the city name.",
+      "expected": "Paris",
+      "assertions": { "contains": "Paris", "maxLength": 200 },
+      "_note": "A real knowledge question where the lanes DIVERGE honestly: the stub lane echoes the QUESTION text (which does not contain 'Paris') -> stub FAILS this case deterministically, while a capable live model answers 'Paris' -> PASSES. This makes the per-model passRate genuinely differ across lanes (the whole point of a multi-model bench), not a trivially-all-pass slice."
+    }
+  ]
+}

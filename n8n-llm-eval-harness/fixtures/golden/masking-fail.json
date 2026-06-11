@@ -1,0 +1,13 @@
+{
+  "runId": "masking-fail",
+  "golden": [
+    {
+      "id": "masking-fail",
+      "input": "Contact us at support@example.com for help.",
+      "expected": "Contact us at support@example.com for help.",
+      "assertions": {
+        "maxLength": 128
+      }
+    }
+  ]
+}

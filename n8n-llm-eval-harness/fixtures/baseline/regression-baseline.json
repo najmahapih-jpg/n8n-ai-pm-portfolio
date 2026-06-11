@@ -1,0 +1,16 @@
+{
+  "_comment": "Committed regression baseline (ADR-0004 decision 5, v0.5.0). This is the DETERMINISTIC stub-run aggregate for the 2-case echo golden slice below (echo-pass PASSES, echo-fail FAILS -> overall passRate 0.5). Because the STUB SUT + STUB judge path is fully deterministic, a baseline-equals-current run yields passRateDelta:0 and regressed:false everywhere — the reproducible CI anchor. The offline test driver (scripts/Test-EvalHarnessWorkflow.ps1) injects this object as body.baseline (with baselineSource:'fixture') alongside the SAME golden slice to assert the no-drift case, and mutates the pass-rates UPWARD to assert the regressed case (a deliberately-higher baseline -> negative passRateDelta -> regressed:true). NOT a hidden store: this explicit fixture is the CI baseline, so the delta never depends on execution history. Captured live from workflow IhmmthDFMKdDbgvp (v0.5.0) on 2026-05-30.",
+  "policyVersion": "eval-harness-v0.5.0",
+  "capturedFrom": "stub SUT + stub judge (deterministic), golden slice [echo-pass, echo-fail]",
+  "golden": [
+    { "id": "echo-pass", "input": "ping", "expected": "ping", "assertions": { "contains": "ping", "maxLength": 64 } },
+    { "id": "echo-fail", "input": "ping", "expected": "pong", "assertions": { "contains": "pong", "maxLength": 64 } }
+  ],
+  "baseline": {
+    "overall": { "passRate": 0.5 },
+    "perModel": [
+      { "modelId": "stub", "passRate": 0.5 }
+    ],
+    "perRubricMean": { "groundedness": 3.5, "relevance": 3.5, "helpfulness": 3.5, "safety": 5 }
+  }
+}

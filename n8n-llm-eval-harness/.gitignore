@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Secrets / local env — never commit real values
+.env
+.env.*
+!.env.example
+
+# Validation artifacts (generated locally)
+artifacts/validation/*
+!artifacts/validation/.gitkeep
+
+# Raw exports (volatile; never committed)
+workflows/raw/*
+!workflows/raw/.gitkeep
+
+# Generated compile output (volatile; canonical/ is the tracked source of truth)
+workflows/generated/*
+!workflows/generated/.gitkeep
+
+# Harness / session state (not project content)
+.omc/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+*.log
