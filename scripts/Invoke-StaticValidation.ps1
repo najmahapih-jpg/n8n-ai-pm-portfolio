@@ -1,6 +1,6 @@
 param(
   [int]$MinimumNodes = 27,
-  [string]$ReleaseFile = "rag-knowledge-assistant-v0.3.0.json",
+  [string]$ReleaseFile = "rag-knowledge-assistant-v0.4.0.json",
   [switch]$SkipRepositorySecretScan
 )
 
