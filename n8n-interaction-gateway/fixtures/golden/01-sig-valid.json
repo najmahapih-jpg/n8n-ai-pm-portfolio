@@ -1,0 +1,7 @@
+{
+  "id": "sig-valid",
+  "description": "Correct HMAC over (timestamp + '.' + rawBody) with a fresh timestamp -> accepted; routed to the resolved target.",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 65536 },
+  "request": { "intent": "support-triage", "payload": { "subject": "Cannot reset password", "message": "The reset email never arrives." }, "timestamp": 1000000, "sign": true },
+  "expect": { "statusCode": 200, "ok": true, "routedTo": ["support-triage"], "routedToLength": 1, "traceIdNonEmpty": true, "strippedCountMin": 0, "noSecretInOutput": true }
+}

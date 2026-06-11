@@ -1,0 +1,52 @@
+name: Workflow improvement
+description: Propose a new node, adapter, contract change, or workflow hardening improvement.
+title: "[Workflow]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow gap or user need should this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the node, adapter, contract, fixture, or documentation change.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Workflow contract
+        - Security function (signature, body-size, secret-strip, routing)
+        - Sibling adapter or intent allowlist
+        - Error handling
+        - Data persistence
+        - Documentation
+        - CI or tooling
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - Static verification passes
+        - JSON verification passes
+        - verify:gateway passes
+        - verify:workflow passes
+        - Fixture added or updated
+        - README/docs updated
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and tradeoffs
+      description: Include security, credential, live-mode, and compatibility risks.

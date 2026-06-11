@@ -1,0 +1,7 @@
+{
+  "id": "intent-unknown",
+  "description": "intent not in the allowlist -> 422; request NOT routed (SSRF-closed: callers never name a URL).",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 65536 },
+  "request": { "intent": "delete-everything", "payload": { "x": 1 }, "timestamp": 1000000, "sign": true },
+  "expect": { "statusCode": 422, "ok": false, "notRouted": true }
+}

@@ -1,0 +1,7 @@
+{
+  "id": "intent-product-feedback",
+  "description": "The product-feedback intent resolves to the real product-feedback SUT (now callable via executeWorkflowTrigger). OFFLINE this exercises the routing DECISION (routedTo == [product-feedback]); the actual in-process Execute-Workflow execution + the SUT's real classification are proven by verify:live.",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 65536 },
+  "request": { "intent": "product-feedback", "payload": { "feedbackText": "the export button is broken", "source": "app" }, "timestamp": 1000000, "sign": true },
+  "expect": { "statusCode": 200, "ok": true, "routedTo": ["product-feedback"], "routedToLength": 1, "traceIdNonEmpty": true }
+}

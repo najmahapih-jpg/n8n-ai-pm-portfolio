@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "slug": "interaction-gateway",
+  "title": "Portfolio - Interaction Gateway",
+  "description": "Generic SIGNED-webhook edge for the n8n Workflow-as-Code portfolio. One authenticated POST entry point that VERIFIES (timing-safe HMAC-SHA256 over timestamp + '.' + rawBody, with a replay window) -> SIZE-LIMITS -> SECRET-STRIPS -> ROUTES a request by an allowlisted INTENT to sibling workflow(s), so each business workflow keeps its clean JSON contract and the gateway owns the production-edge controls. The four security functions are the single source of truth in scripts/lib/gateway-core.mjs; the n8n Code nodes MIRROR them inline, and scripts/test-gateway-workflow.mjs extracts the COMPILED Code-node bodies, runs the golden scenarios against them, AND differentially pins the four security gates (size/signature/strip/route -- verdicts, reasons, whole-body strip) to the .mjs, so the deployed security logic cannot silently drift from the audited core. Pipeline order is size-before-signature (reject an oversized body before spending crypto): enforceBodySize -> 413, verifySignature -> 401, stripSecrets (never forwarded/echoed/logged), resolveRoute (fixed intent -> allowlist; callers never name a URL -> SSRF-closed by construction) -> 422. Security CONFIG (secret, body cap, replay window, live-mode) comes from env/credential ONLY -- a webhook caller can neither loosen a cap nor force live routing. STUB-DEFAULT: v0.1.0 proves verify + size + strip + the ROUTING DECISION offline (the eval-plan Layer-2 scope). Live Execute-Workflow sibling EXECUTION (in-process, no secret over HTTP) is the opt-in next increment (requires each target to expose an executeWorkflowTrigger). Every routed call + the response carry a generated traceId. Deploys to n8n via the public REST API (no MCP).",
+  "owner": "portfolio",
+  "department": "Product",
+  "version": "0.4.0",
+  "status": "live-tested",
+  "project": "n8n-interaction-gateway",
+  "lastWriter": "n8n public REST API",
+  "n8nWorkflowId": "YKT4FJmC8Xg2G9hs",
+  "source": "interaction-gateway.workflow.js",
+  "canonical": "interaction-gateway.canonical.json",
+  "release": "interaction-gateway-v0.4.0.json",
+  "request": "interaction-gateway.md",
+  "trigger": "webhook (signed POST) + manual (editor demo)",
+  "integrations": [
+    "n8n Webhook Trigger (POST /webhook/portfolio/interaction-gateway, responseMode=responseNode, rawBody enabled for exact-bytes HMAC; authentication=none at the n8n layer, authenticated by the in-workflow HMAC check)",
+    "n8n Manual Trigger (editor demo: builds a validly-signed request so a manual run shows a full accepted round-trip)",
+    "Security core mirrored from scripts/lib/gateway-core.mjs (verifySignature / enforceBodySize / stripSecrets / resolveRoute)",
+    "Sibling routing by allowlisted intent. v0.4.0: DYNAMIC live Execute-Workflow execution + MULTI-TARGET FAN-OUT (executeWorkflow mode 'each', one intent -> N callable siblings, results collected per-target) IMPLEMENTED + PROVEN LIVE (in-process, no secret over HTTP) against the gateway-selftest-sibling, the real product-feedback SUT (6Gc3wmri0tJre07B), AND a 2-sibling fan-out (feedback-multi -> product-feedback + selftest); non-callable intents stay decision-only. Callable targets now ALSO include rag (jZ5Xfml8jbKexYqf, grounded-answer SUT) + eval-harness (IhmmthDFMKdDbgvp, the flagship A) -- both proven live in-process (gateway -> rag -> 3 citations; gateway -> eval -> stub eval report); ALL 6 business/test siblings now wired callable: + scheduled-drift-monitor (Gjd7wma62zubk3Wy, proven gateway->drift in-process) + support-triage (RPkw9jGJ93lqs7jO, proven then RESTORED to inactive -- route works only while it is active). Every portfolio workflow is now reachable in-process via the gateway",
+    "Redacted audit event (ids + counts + verdicts only; never the payload or any secret)"
+  ],
+  "tags": [
+    "gateway",
+    "signed-webhook",
+    "hmac",
+    "secret-stripping",
+    "intent-routing",
+    "ssrf-closed",
+    "trace-propagation",
+    "stub-default",
+    "workflow-as-code"
+  ],
+  "fixtures": [
+    "golden/01-sig-valid.json",
+    "golden/02-sig-tampered.json",
+    "golden/03-sig-missing.json",
+    "golden/04-sig-expired.json",
+    "golden/05-body-oversize.json",
+    "golden/06-secret-in-payload.json",
+    "golden/07-intent-unknown.json",
+    "golden/08-intent-fanout.json",
+    "golden/09-traceid-present.json",
+    "golden/10-secret-in-requestid.json",
+    "golden/11-secret-in-intent.json",
+    "golden/12-secret-in-array.json",
+    "golden/13-secret-in-key.json"
+  ],
+  "smokeCases": [
+    "sig-valid",
+    "sig-tampered",
+    "secret-in-payload",
+    "intent-fanout"
+  ],
+  "localOnly": true,
+  "buildMechanism": "sdk-standalone (@n8n/workflow-sdk 0.15.1) compiled to JSON via scripts/lib/compile-sdk.mjs (parseWorkflowCode + validateWorkflow), deployed via the n8n public REST API (no MCP). The n8n Code nodes mirror gateway-core.mjs as inline jsCode; scripts/test-gateway-workflow.mjs proves the COMPILED copy offline (behavioral golden scenarios + a differential vs the core). Mirrors the sibling n8n-scheduled-drift-monitor / n8n-llm-eval-harness toolchain + stub-default discipline.",
+  "notes": "v0.1.0 -- the portfolio's eighth project and first production EDGE/gateway. 12 nodes (2 triggers: signed webhook + manual demo; 1 sticky; 8 code: normalize/enforceBodySize/verifySignature/stripSecrets/resolveRoute/routeToSiblings/buildResponse/buildDemoRequest; 1 respondToWebhook). Gates green: verify:gateway (20/20 pure core) + verify:workflow (13 golden scenarios / 133 assertions incl. differential-vs-core, OFFLINE, runs the COMPILED jsCode) + verify:static + verify:json. Hard acceptance criteria asserted as REJECTED NEGATIVES: signature-reject (401) / oversized-body-reject (413) / secret-strip / non-allowlisted-intent-reject (422) / traceId-present. SSRF-closed by construction (intent->allowlist, never a caller URL). Security config is env-only (a webhook caller cannot loosen caps or force live mode). STUB-DEFAULT: v0.1.0 proves verify + size + strip + the routing DECISION offline; live Execute-Workflow sibling execution is the opt-in next increment (it requires each target sibling to expose an executeWorkflowTrigger -- none currently do; the ADR rejected HTTP-to-webhook routing to preserve the no-secret-over-HTTP property). DEPLOYED + LIVE-VERIFIED 2026-06-03 as n8n workflow YKT4FJmC8Xg2G9hs (active): verify:live passes -- valid signed request -> 200 + echoed traceId (gw-live-0001), tampered body -> 401 -- proving the deployed jsCode end-to-end (HMAC over the exact rawBody via text/plain, the secret read from the runner env). DEPLOY REQUIREMENTS (n8n external task-runner): the Code nodes load crypto via require('crypto'), so the runner needs NODE_FUNCTION_ALLOW_BUILTIN=crypto, and GATEWAY_SIGNING_SECRET must be set in the runner's env (where JS Code nodes execute) -- both added to docker-compose. LIVE TESTING CAUGHT WHAT OFFLINE COULD NOT: the first live run failed 'crypto is not defined' (the external runner sandbox exposes no crypto global; the offline harness had injected it) -- fixed by require('crypto') + the allow-builtin flag, with the harness updated to inject require so the differential still pins the deployed copy. verify:live (Test-GatewayLive.ps1) SKIPs honestly (exit 0, labeled) when n8n / the secret / the deployed webhook is absent. DEFERRED: live sibling routing + per-sibling executeWorkflowTrigger, fan-out live execution, thin Feishu/Slack/Teams inbound adapters onto this generic core, rate limiting (gateway/platform-delegated). Never touches the 5 existing workflow ids.",
+  "updatedAt": "2026-06-03T00:00:00Z"
+}
