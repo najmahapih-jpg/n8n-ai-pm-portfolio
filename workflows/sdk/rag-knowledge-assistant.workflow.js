@@ -878,11 +878,10 @@ const callOllamaChat = node({
       // citations are still recomputed from the corpus, never from this prose, so citation-integrity
       // holds regardless of what the model writes.
       jsonBody: '={{ ({ model: ($json.runtime.genModel || "llama3.2:3b"), temperature: 0, stream: false, messages: [ { role: "system", content: ($json.runtime.queryLang === "en" ? "You are a retrieval-grounded assistant. Answer ONLY from the provided context, in English; use no knowledge outside the context. If the context cannot answer the question, reply with exactly this sentence: Not enough information to answer. Be concise (1-3 sentences)." : "你是一个基于检索的助手。只依据提供的上下文用简体中文作答;不要使用上下文以外的任何知识。若上下文不足以回答,则只回答这一句:信息不足,无法回答。请简洁(1-3 句)。") }, { role: "user", content: ($json.runtime.queryLang === "en" ? "Context:\\n" : "上下文:\\n") + $json.gen.contextText + ($json.runtime.queryLang === "en" ? "\\n\\nQuestion:\\n" : "\\n\\n问题:\\n") + $json.query } ] }) }}',
-      // Authorization is harmless for local Ollama (ignored) and REQUIRED by cloud providers; the key
-      // comes from the n8n container env (LLM_API_KEY, gitignored .env -> compose passthrough), never
-      // from the request payload (the gateway strips payload secrets by design) and never from tracked JSON.
-      sendHeaders: true,
-      headerParameters: { parameters: [{ name: 'Authorization', value: '={{ "Bearer " + ($env.LLM_API_KEY || "ollama") }}' }] },
+      // NO Authorization header in tracked JSON (the JSON gate scrubs sensitive header values, and the
+      // repo's discipline keeps ALL auth wiring out of the canonical). Local Ollama needs none. Cloud
+      // providers: attach an n8n httpHeaderAuth credential (Authorization: Bearer <key>) to THIS node at
+      // deploy time — the exact pattern the Supabase RPC node uses; the key lives encrypted in n8n only.
       options: { timeout: 120000 }
     }
   }
