@@ -68,11 +68,14 @@ request already parameterizes everything (`normalizeRequest` accepts per-request
   Alibaba DashScope (Qwen), Zhipu GLM, OpenAI, Anthropic-via-gateway. Same request schema; you
   change `base URL + API key + model name`, nothing else.
 
-One-time code note: the shipped 'Generate Answer (Ollama)' node speaks Ollama-native `/api/chat`.
-To make local↔cloud a pure config swap, convert that one node to the OpenAI-compatible
-`/v1/chat/completions` shape (request `{model, messages, temperature}`, parse
-`choices[0].message.content`) and point it at Ollama's `/v1` locally or your provider's URL in the
-cloud. Everything downstream is unchanged because of the safety invariant below.
+This unification is ALREADY SHIPPED: the 'Generate Answer (Ollama)' node speaks OpenAI-compatible
+`/v1/chat/completions` (request `{model, messages, temperature}`, parse
+`choices[0].message.content`; the legacy Ollama-native response shapes are still accepted). The
+default `ollamaChatUrl` points at local Ollama's `http://host.docker.internal:11434/v1/chat/completions`;
+override it per request (`body.ollamaChatUrl` + `body.genModel`) or change the default for your
+deploy. The node sends `Authorization: Bearer <LLM_API_KEY>` from the n8n container env (set
+`LLM_API_KEY` in your compose `.env`; local Ollama ignores the header, cloud providers require it).
+The system prompt follows `runtime.queryLang`, so a cloud model answers in the user's language too.
 
 **Why the swap is safe by construction:** citations are NEVER parsed from the model — they are
 derived from the retrieved chunks before generation. A better (or worse) LLM changes the prose

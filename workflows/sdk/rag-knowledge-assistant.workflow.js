@@ -131,7 +131,7 @@ const generationSource = requestedGenerationSource === 'ollama' ? 'ollama' : 'st
 // supabaseRpcUrl is the match_documents RPC; the Supabase API CREDENTIAL (predefined auth on the
 // HTTP node) injects apikey + Authorization, so NO secret/URL host ever lives in the workflow JSON.
 const ollamaEmbedUrl = text(body.ollamaEmbedUrl) || 'http://host.docker.internal:11434/api/embeddings';
-const ollamaChatUrl = text(body.ollamaChatUrl) || 'http://host.docker.internal:11434/api/chat';
+const ollamaChatUrl = text(body.ollamaChatUrl) || 'http://host.docker.internal:11434/v1/chat/completions';
 const embedModel = text(body.embedModel) || 'nomic-embed-text-v2-moe';
 const genModel = text(body.genModel) || 'llama3.2:3b';
 // Supabase match_documents RPC URL. The Supabase project host is a SECRET-SCANNED token, so it must
@@ -196,7 +196,7 @@ return [{
       retrievalSource: 'stub', generationSource: 'stub',
       requestedRetrievalSource: 'stub', requestedGenerationSource: 'stub',
       ollamaEmbedUrl: 'http://host.docker.internal:11434/api/embeddings',
-      ollamaChatUrl: 'http://host.docker.internal:11434/api/chat',
+      ollamaChatUrl: 'http://host.docker.internal:11434/v1/chat/completions',
       embedModel: 'nomic-embed-text-v2-moe', genModel: 'llama3.2:3b',
       supabaseRpcUrl: '__SUPABASE_RPC_URL__'
     }
@@ -792,7 +792,7 @@ return [{
 
 // --- LIVE GENERATION (generationSource:"ollama") ----------------------------------------------
 // Mirrors the eval-harness judgeSource:"ollama" IF idiom on the GROUNDED branch: an IF gate routes to
-// a live Ollama /api/chat call grounded ONLY on the retrieved chunks (system prompt: "answer ONLY from
+// a live OpenAI-compatible chat call (local Ollama /v1 or a cloud API) grounded ONLY on the retrieved chunks (system prompt: "answer ONLY from
 // the provided context; if it is not there, abstain"; temperature 0), then a parse node extracts the
 // answer text. CRITICAL SAFETY INVARIANT: the citations are ALWAYS the grounded extracts derived from
 // retrievedChunks (chunkId/source/quote=firstSentence) — NEVER parsed from the model — so
@@ -869,12 +869,20 @@ const callOllamaChat = node({
       sendBody: true,
       contentType: 'json',
       specifyBody: 'json',
-      // llama3.2:3b, temperature 0 (repeatable), stream:false. The system prompt CONSTRAINS the model to
-      // answer strictly from the provided context, IN SIMPLIFIED CHINESE, and to ABSTAIN with the exact
-      // zh sentinel ("信息不足,无法回答") when the context does not contain the answer — the grounding/
-      // abstention/Chinese-output policy from the spec (citations are still recomputed from the corpus,
-      // never from this prose, so citation-integrity holds regardless of what the model writes).
-      jsonBody: '={{ ({ model: ($json.runtime.genModel || "llama3.2:3b"), stream: false, options: { temperature: 0 }, messages: [ { role: "system", content: "你是一个基于检索的助手。只依据提供的上下文用简体中文作答;不要使用上下文以外的任何知识。若上下文不足以回答,则只回答这一句:信息不足,无法回答。请简洁(1-3 句)。" }, { role: "user", content: "上下文:\\n" + $json.gen.contextText + "\\n\\n问题:\\n" + $json.query } ] }) }}',
+      // OPENAI-COMPATIBLE protocol (/v1/chat/completions): the SAME request shape serves local Ollama
+      // (its /v1 endpoint) and any OpenAI-compatible cloud provider (DeepSeek / Kimi / DashScope / GLM /
+      // OpenAI) — swapping providers is ollamaChatUrl + genModel + LLM_API_KEY config, zero code (see
+      // docs/swap-corpus-and-models.md). temperature 0 (repeatable), stream:false. The system prompt
+      // CONSTRAINS the model to answer strictly from the provided context IN THE QUERY'S LANGUAGE
+      // (runtime.queryLang: zh -> 简体中文 + the zh abstain sentinel, en -> English + the en sentinel) —
+      // citations are still recomputed from the corpus, never from this prose, so citation-integrity
+      // holds regardless of what the model writes.
+      jsonBody: '={{ ({ model: ($json.runtime.genModel || "llama3.2:3b"), temperature: 0, stream: false, messages: [ { role: "system", content: ($json.runtime.queryLang === "en" ? "You are a retrieval-grounded assistant. Answer ONLY from the provided context, in English; use no knowledge outside the context. If the context cannot answer the question, reply with exactly this sentence: Not enough information to answer. Be concise (1-3 sentences)." : "你是一个基于检索的助手。只依据提供的上下文用简体中文作答;不要使用上下文以外的任何知识。若上下文不足以回答,则只回答这一句:信息不足,无法回答。请简洁(1-3 句)。") }, { role: "user", content: ($json.runtime.queryLang === "en" ? "Context:\\n" : "上下文:\\n") + $json.gen.contextText + ($json.runtime.queryLang === "en" ? "\\n\\nQuestion:\\n" : "\\n\\n问题:\\n") + $json.query } ] }) }}',
+      // Authorization is harmless for local Ollama (ignored) and REQUIRED by cloud providers; the key
+      // comes from the n8n container env (LLM_API_KEY, gitignored .env -> compose passthrough), never
+      // from the request payload (the gateway strips payload secrets by design) and never from tracked JSON.
+      sendHeaders: true,
+      headerParameters: { parameters: [{ name: 'Authorization', value: '={{ "Bearer " + ($env.LLM_API_KEY || "ollama") }}' }] },
       options: { timeout: 120000 }
     }
   }
@@ -889,9 +897,10 @@ const parseOllamaAnswer = node({
     parameters: {
       mode: 'runOnceForAllItems',
       language: 'javaScript',
-      jsCode: `// 'items[0]' is the Ollama /api/chat response. Recover the full run context (with gen.* and the
+      jsCode: `// 'items[0]' is the chat-completions response. Recover the full run context (with gen.* and the
 // retrieved chunks) from the 'Build Grounding Context' node. Extract the answer text defensively across
-// the shapes n8n may wrap it in. The CITATIONS are the pre-computed grounded citations (corpus-derived,
+// the shapes n8n may wrap it in — OpenAI-compatible (choices[0].message.content; local Ollama /v1 and
+// cloud providers alike) plus the legacy Ollama-native shapes. The CITATIONS are the pre-computed grounded citations (corpus-derived,
 // guaranteed to map to retrieval.topK) — we NEVER trust the model for attribution. On empty/unreachable
 // model output, engage the deterministic FALLBACK: the stub grounded extract, generationSource:
 // 'ollama-fallback' (so the response truthfully reflects that live generation did not produce text).
@@ -901,6 +910,7 @@ const http = items[0] ? items[0].json : null;
 function readContent(j) {
   if (j == null) return '';
   if (typeof j === 'string') return j;
+  if (Array.isArray(j.choices) && j.choices[0] && j.choices[0].message && typeof j.choices[0].message.content === 'string') return j.choices[0].message.content;
   if (j.message && typeof j.message.content === 'string') return j.message.content;
   if (typeof j.response === 'string') return j.response;
   return '';

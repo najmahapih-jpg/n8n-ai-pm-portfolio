@@ -109,7 +109,7 @@ export function normalizeRequest(source, opts = {}) {
   const generationSource = requestedGenerationSource === 'ollama' ? 'ollama' : 'stub';
 
   const ollamaEmbedUrl = text(body.ollamaEmbedUrl) || 'http://host.docker.internal:11434/api/embeddings';
-  const ollamaChatUrl = text(body.ollamaChatUrl) || 'http://host.docker.internal:11434/api/chat';
+  const ollamaChatUrl = text(body.ollamaChatUrl) || 'http://host.docker.internal:11434/v1/chat/completions';
   const embedModel = text(body.embedModel) || 'nomic-embed-text-v2-moe';
   const genModel = text(body.genModel) || 'llama3.2:3b';
   const supabaseRpcUrl = text(body.supabaseRpcUrl) || '__SUPABASE_RPC_URL__';
