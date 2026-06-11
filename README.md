@@ -11,7 +11,7 @@ Feishu group (@bot 提问 / 日报 / 自检)
   → WS long connection → this adapter (pure core: parse → intent → sign)
   → POST signed intent → interaction-gateway (HMAC verify / strip / route)
   → Execute Workflow (in-process) → rag / drift / selftest sibling
-  → adapter replies in the chat (answer + citations / drift verdict / ping)
+  → adapter replies in the chat (RAG card with answer + citations / drift verdict / ping)
 ```
 
 The adapter holds **no business logic and no privileged access** — it is just another gateway
@@ -43,9 +43,23 @@ npm run verify:connect   # 15s window: expect "ws client ready", then it exits 0
 npm run adapter:start    # long-running; @ the bot in your group
 ```
 
-Message routing: free text → `rag` (grounded answer with citations, honest abstain);
+Message routing: free text → `rag` (interactive answer card with citations, retrieval metadata,
+and honest abstain);
 `日报` / `漂移` / `drift` → `drift` (on-demand health run; the full digest card lands in the
 group via the drift monitor's own Feishu notify node); `自检` / `selftest` → `gateway-selftest`.
+
+RAG replies are sent as Feishu `interactive` cards when possible:
+
+- Answer section: short grounded answer, clipped for chat readability.
+- Sources section: up to 3 retrieved citations with `chunkId`, source title, quote, and source buttons
+  when a URL exists.
+- Observability note: actual `retrievalSource`, `generationSource`, score/threshold, and gateway
+  `traceId`.
+- Abstain state: a yellow card that explicitly says the knowledge base has insufficient evidence and
+  includes no fabricated answer or citation.
+
+If Feishu rejects a card, the live shell automatically retries with the same plain-text fallback that
+`verify:core` pins offline.
 
 ## Security
 
@@ -53,6 +67,7 @@ group via the drift monitor's own Feishu notify node); `自检` / `selftest` →
 - Every gateway request is HMAC-SHA256 signed over the exact bytes `${ts}.${rawBody}`
   (`X-Signature: sha256=…`), the same contract `verify:core` pins with a known vector.
 - Replies never fabricate: a gateway failure, an unexecuted route, and a rag abstention are
-  each reported as exactly that.
+  each reported as exactly that. RAG cards derive citations from the workflow response, not from
+  model-authored attribution.
 
 License: Apache-2.0.
