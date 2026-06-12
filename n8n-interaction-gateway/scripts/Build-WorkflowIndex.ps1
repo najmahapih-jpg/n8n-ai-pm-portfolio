@@ -15,9 +15,12 @@ function ConvertTo-RelativePath {
     [string]$Path
   )
 
-  $resolvedBase = (Resolve-Path -LiteralPath $BasePath).Path
-  $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
-  return [System.IO.Path]::GetRelativePath($resolvedBase, $resolvedPath).Replace("/", "\")
+  # GetRelativePath works on both Windows and Linux runners (the System.Uri approach treats
+  # POSIX paths as relative URIs and MakeRelativeUri throws). Registry entries are normalized
+  # to backslashes so the generated output is byte-identical to the committed registry on any OS.
+  $base = (Resolve-Path -LiteralPath $BasePath).Path
+  $full = (Resolve-Path -LiteralPath $Path).Path
+  return [System.IO.Path]::GetRelativePath($base, $full).Replace("/", "\")
 }
 
 function Escape-MarkdownCell {
@@ -28,18 +31,6 @@ function Escape-MarkdownCell {
   }
 
   return ([string]$Value).Replace("|", "\|").Replace("`r", " ").Replace("`n", " ")
-}
-
-function Normalize-NewLine {
-  param([string]$Value)
-
-  return ($Value -replace "`r`n", "`n") -replace "`r", "`n"
-}
-
-function Join-RegistryPath {
-  param([string[]]$Parts)
-
-  return ($Parts -join "\").Replace("/", "\")
 }
 
 function Get-WorkflowComplexity {
@@ -90,7 +81,8 @@ $entries = foreach ($canonicalFile in $canonicalFiles) {
   $nodeTypes = @($nodes | ForEach-Object { [string]$_.type } | Sort-Object -Unique)
   $triggerTypes = @($nodeTypes | Where-Object { $_ -match '(?i)(webhook|trigger)' })
   $release = if ($meta -and $meta.PSObject.Properties["release"]) { [string]$meta.release } else { "" }
-  $releasePath = if (-not [string]::IsNullOrWhiteSpace($release)) { Join-RegistryPath @("workflows", "releases", $release) } else { "" }
+  # registry values keep Windows-style separators on every OS (Join-Path would emit "/" on Linux)
+  $releasePath = if (-not [string]::IsNullOrWhiteSpace($release)) { "workflows\releases\" + $release } else { "" }
 
   [pscustomobject][ordered]@{
     slug = if ($meta -and $meta.PSObject.Properties["slug"]) { [string]$meta.slug } else { $slug }
@@ -103,10 +95,10 @@ $entries = foreach ($canonicalFile in $canonicalFiles) {
     project = if ($meta -and $meta.PSObject.Properties["project"]) { [string]$meta.project } else { "" }
     lastWriter = if ($meta -and $meta.PSObject.Properties["lastWriter"]) { [string]$meta.lastWriter } else { "" }
     n8nWorkflowId = if ($meta -and $meta.PSObject.Properties["n8nWorkflowId"]) { [string]$meta.n8nWorkflowId } else { "" }
-    source = if ($meta -and $meta.PSObject.Properties["source"]) { Join-RegistryPath @("workflows", "sdk", ([string]$meta.source)) } else { "" }
+    source = if ($meta -and $meta.PSObject.Properties["source"]) { "workflows\sdk\" + ([string]$meta.source) } else { "" }
     canonical = ConvertTo-RelativePath -BasePath $repoRoot -Path $canonicalFile.FullName
     release = $releasePath
-    request = if ($meta -and $meta.PSObject.Properties["request"]) { Join-RegistryPath @("fixtures", "requests", ([string]$meta.request)) } else { "" }
+    request = if ($meta -and $meta.PSObject.Properties["request"]) { "fixtures\requests\" + ([string]$meta.request) } else { "" }
     trigger = if ($meta -and $meta.PSObject.Properties["trigger"]) { [string]$meta.trigger } elseif ($triggerTypes.Count -gt 0) { $triggerTypes -join ", " } else { "" }
     integrations = [string[]]@(Get-ArrayValue -Object $meta -Name "integrations")
     tags = [string[]]@(Get-ArrayValue -Object $meta -Name "tags")
@@ -144,14 +136,13 @@ foreach ($entry in @($entries | Sort-Object slug)) {
   $markdownLines.Add("| $(Escape-MarkdownCell $entry.title) | $(Escape-MarkdownCell $entry.version) | $(Escape-MarkdownCell $entry.status) | $(Escape-MarkdownCell $entry.trigger) | $($entry.nodeCount) | $(Escape-MarkdownCell $entry.complexity) | $(Escape-MarkdownCell $integrationsCell) | $(Escape-MarkdownCell $releaseCell) | $(Escape-MarkdownCell $smokeCell) |") | Out-Null
 }
 
-$newline = "`n"
-$markdown = ($markdownLines -join $newline) + $newline
-$json = ($index | ConvertTo-Json -Depth 100) + $newline
+$markdown = ($markdownLines -join [Environment]::NewLine) + [Environment]::NewLine
+$json = ($index | ConvertTo-Json -Depth 100) + [Environment]::NewLine
 
 if ($Check) {
   $expectedRegistry = if (Test-Path -LiteralPath $RegistryPath -PathType Leaf) { Get-Content -LiteralPath $RegistryPath -Raw } else { "" }
   $expectedIndex = if (Test-Path -LiteralPath $IndexPath -PathType Leaf) { Get-Content -LiteralPath $IndexPath -Raw } else { "" }
-  if ((Normalize-NewLine $expectedRegistry) -ne (Normalize-NewLine $markdown) -or (Normalize-NewLine $expectedIndex) -ne (Normalize-NewLine $json)) {
+  if ($expectedRegistry -ne $markdown -or $expectedIndex -ne $json) {
     Write-Error "Workflow registry is stale. Run scripts/Build-WorkflowIndex.ps1 and commit the generated files."
     exit 1
   }
