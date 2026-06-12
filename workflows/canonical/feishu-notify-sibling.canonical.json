@@ -1,0 +1,90 @@
+{
+  "id": "feishu-notify-sibling",
+  "name": "Portfolio - Feishu Notify Sibling",
+  "nodes": [
+    {
+      "id": "a665a727-ef09-4ffe-a16d-df67e920c15c",
+      "name": "feishu-notify-sibling overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        170,
+        250
+      ],
+      "parameters": {
+        "content": "## Feishu Notify Sibling v0.1.0 — the portfolio's unified notification outlet. Callable ONLY through the signed interaction-gateway (intent 'notify' -> Execute Workflow, in-process): one signed request sends a Feishu group card, so no caller ever holds the webhook URL/secret. Build Notify Card is PURE (mirrors gateway-core normalizeNotifyInput + buildNotifyCard; differentially pinned offline). Send is env-gated: unconfigured -> skipped, error -> failed (degrade, never crash, never a fabricated sent). Level maps the header colour (info=blue / warn=yellow / error=red); the footer note carries the gateway traceId for end-to-end correlation. Not active (Execute Workflow calls by id regardless of active state).",
+        "color": 5,
+        "width": 780,
+        "height": 200
+      }
+    },
+    {
+      "id": "3c126542-ad40-4b2d-bb44-fd2e512a6e33",
+      "name": "Called By Gateway (Execute Workflow)",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "3a5988b2-13a8-46e5-8f91-9162d316b344",
+      "name": "Build Notify Card",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// PURE half — mirrors gateway-core.normalizeNotifyInput + buildNotifyCard (differentially pinned by\n// test-gateway-workflow.mjs, so this inline copy cannot drift from the audited core). The gateway already\n// secret-stripped the payload; this node only validates, bounds, and deterministically shapes the card.\nconst src = items[0].json || {};\nfunction normalizeNotifyInput(s) {\n  s = s && typeof s === 'object' ? s : {};\n  const payload = (s.payload && typeof s.payload === 'object') ? s.payload : s;\n  const text = String(payload.text ?? payload.message ?? '').trim().slice(0, 4000);\n  const title = String(payload.title ?? '').trim().slice(0, 120);\n  const rawLevel = String(payload.level ?? 'info').toLowerCase();\n  const level = (rawLevel === 'warn' || rawLevel === 'error') ? rawLevel : 'info';\n  const traceId = typeof s.traceId === 'string' ? s.traceId : (typeof payload.traceId === 'string' ? payload.traceId : '');\n  if (!text) return { ok: false, reason: 'missing text', notify: null };\n  return { ok: true, reason: 'ok', notify: { level: level, title: title, text: text, traceId: traceId } };\n}\nfunction buildNotifyCard(notify, siblingPolicyVersion) {\n  const n = notify && typeof notify === 'object' ? notify : { level: 'info', title: '', text: '', traceId: '' };\n  const TEMPLATES = { info: 'blue', warn: 'yellow', error: 'red' };\n  const ICONS = { info: '🔔', warn: '⚠️', error: '🚨' };\n  const level = TEMPLATES[n.level] ? n.level : 'info';\n  return {\n    config: { wide_screen_mode: true },\n    header: {\n      template: TEMPLATES[level],\n      title: { tag: 'plain_text', content: ICONS[level] + ' ' + (n.title ? n.title : 'Portfolio notification') }\n    },\n    elements: [\n      { tag: 'markdown', content: String(n.text || '') },\n      { tag: 'hr' },\n      { tag: 'note', elements: [{ tag: 'plain_text', content: 'traceId ' + String(n.traceId || '-') + ' · via interaction-gateway notify · ' + String(siblingPolicyVersion || '') }] }\n    ]\n  };\n}\nconst norm = normalizeNotifyInput(src);\nif (!norm.ok) {\n  // An empty notification is a CALLER bug surfaced honestly — never a silently-dropped or fabricated send.\n  return [{ json: {\n    ok: false,\n    handledBy: 'feishu-notify-sibling',\n    siblingPolicyVersion: 'feishu-notify-sibling-v0.1.0',\n    error: norm.reason,\n    feishuDelivery: { status: 'rejected', reason: norm.reason }\n  } }];\n}\nconst card = buildNotifyCard(norm.notify, 'feishu-notify-sibling-v0.1.0');\nreturn [{ json: {\n  ok: true,\n  handledBy: 'feishu-notify-sibling',\n  siblingPolicyVersion: 'feishu-notify-sibling-v0.1.0',\n  notify: norm.notify,\n  card: card\n} }];"
+      }
+    },
+    {
+      "id": "140ebf04-0df2-4f0c-994b-83ccc8379393",
+      "name": "Send Feishu Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// SEND half (live-only, intentionally NOT mirrored in core — offline the differential proves the CARD\n// instead). Env-gated like the drift monitor's digest: no webhook URL -> honest 'skipped'; optional\n// custom-bot HMAC signing (key = timestamp + '\\n' + secret over an EMPTY message, base64); a live send\n// error -> 'failed' (degrade, never crash — the gateway still gets a truthful record). The URL/secret are\n// read from the runner env ONLY and are never copied into the returned record.\nconst input = items[0].json || {};\nif (input.ok !== true) { return [{ json: input }]; }\nconst url = String($env.FEISHU_BOT_WEBHOOK_URL || '');\nconst secret = String($env.FEISHU_BOT_SIGNING_SECRET || '');\nif (!url) {\n  return [{ json: Object.assign({}, input, { feishuDelivery: { status: 'skipped', reason: 'FEISHU_BOT_WEBHOOK_URL not configured' } }) }];\n}\nconst payload = { msg_type: 'interactive', card: input.card };\nif (secret) {\n  const crypto = require('crypto');\n  const ts = String(Math.floor(Date.now() / 1000));\n  payload.timestamp = ts;\n  payload.sign = crypto.createHmac('sha256', ts + '\\n' + secret).update('').digest('base64');\n}\ntry {\n  const res = await this.helpers.httpRequest({ method: 'POST', url, body: payload, json: true });\n  const code = res && typeof res === 'object' && typeof res.code === 'number' ? res.code : null;\n  const ok = code === 0;\n  return [{ json: Object.assign({}, input, { feishuDelivery: { status: ok ? 'sent' : 'failed', code: code, msg: res && res.msg != null ? String(res.msg).slice(0, 120) : '' } }) }];\n} catch (e) {\n  return [{ json: Object.assign({}, input, { feishuDelivery: { status: 'failed', error: String(e && e.message ? e.message : e).slice(0, 200) } }) }];\n}"
+      }
+    }
+  ],
+  "connections": {
+    "Called By Gateway (Execute Workflow)": {
+      "main": [
+        [
+          {
+            "node": "Build Notify Card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notify Card": {
+      "main": [
+        [
+          {
+            "node": "Send Feishu Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
