@@ -13,7 +13,7 @@ import crypto from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { verifySignature, enforceBodySize, stripSecrets, resolveRoute } from './lib/gateway-core.mjs';
+import { verifySignature, enforceBodySize, stripSecrets, resolveRoute, normalizeNotifyInput, buildNotifyCard } from './lib/gateway-core.mjs';
 import { createRequire } from 'node:module';
 // The deployed Code nodes load crypto via require('crypto') (n8n's external runner has no crypto global);
 // provide a real require to the sandbox so the extracted jsCode runs identically here.
@@ -175,6 +175,50 @@ for (const f of files) {
     const first = Array.isArray(out) && out[0] && out[0].json && out[0].json.payload;
     check(SCEN, 'forward is ADDITIVE (clean payload field query preserved)', !!first && first.query === 'what is an AI PM', first && first.query);
   }
+}
+
+// --- feishu-notify sibling: the COMPILED card build is differentially pinned to gateway-core.mjs ---
+// The sibling's 'Build Notify Card' node mirrors normalizeNotifyInput + buildNotifyCard inline (Code nodes
+// cannot import the .mjs). Extract the compiled jsCode and prove: same input -> byte-identical card, honest
+// rejection on missing text, level coercion — so the deployed notify outlet cannot drift from the audited
+// core. The 'Send Feishu Notification' half is env-gated; with no FEISHU_BOT_WEBHOOK_URL it must return
+// 'skipped' WITHOUT touching the network (helpers throws here if called).
+{
+  const SCEN = 'notify-sibling-differential';
+  const sibPath = join(repoRoot, 'workflows', 'canonical', 'feishu-notify-sibling.canonical.json');
+  const sib = JSON.parse(readFileSync(sibPath, 'utf8'));
+  const sibNodeByName = {};
+  for (const n of sib.nodes) { sibNodeByName[n.name] = n; }
+  function runSibNode(name, items, env) {
+    const node = sibNodeByName[name];
+    if (!node) { throw new Error('missing Code node in sibling canonical: ' + name); }
+    const fn = new Function('items', 'Buffer', '$env', 'require', node.parameters.jsCode);
+    return fn(items, Buffer, env, require);
+  }
+  const SIB_POLICY = 'feishu-notify-sibling-v0.1.0';
+  const validInput = { payload: { title: 'Deploy done', text: 'CI is **green**', level: 'warn' }, intent: 'notify', traceId: 'gw-req-notify-1' };
+  const out = runSibNode('Build Notify Card', [{ json: validInput }], {});
+  const coreNorm = normalizeNotifyInput(validInput);
+  const coreCard = buildNotifyCard(coreNorm.notify, SIB_POLICY);
+  check(SCEN, 'valid notify -> ok:true from compiled node', out[0].json.ok === true);
+  check(SCEN, 'DIFF compiled card == core card (byte-identical)', JSON.stringify(out[0].json.card) === JSON.stringify(coreCard));
+  check(SCEN, 'DIFF compiled normalized notify == core', JSON.stringify(out[0].json.notify) === JSON.stringify(coreNorm.notify));
+  const rejected = runSibNode('Build Notify Card', [{ json: { payload: { title: 'no text' } } }], {});
+  const coreRejected = normalizeNotifyInput({ payload: { title: 'no text' } });
+  check(SCEN, 'missing text -> honest rejection (ok:false, status rejected), same verdict as core', rejected[0].json.ok === false && rejected[0].json.feishuDelivery.status === 'rejected' && coreRejected.ok === false && rejected[0].json.error === coreRejected.reason);
+  const coerced = runSibNode('Build Notify Card', [{ json: { payload: { text: 'x', level: 'panic' } } }], {});
+  check(SCEN, 'unknown level coerces to info (blue header), same as core', coerced[0].json.card.header.template === 'blue' && buildNotifyCard(normalizeNotifyInput({ payload: { text: 'x', level: 'panic' } }).notify, SIB_POLICY).header.template === 'blue');
+
+  // Send half: async node (await) -> AsyncFunction; no URL in env -> 'skipped' and helpers MUST NOT be called.
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const sendNode = sibNodeByName['Send Feishu Notification'];
+  const sendFn = new AsyncFunction('items', 'Buffer', '$env', 'require', sendNode.parameters.jsCode);
+  let helperCalled = false;
+  const thisArg = { helpers: { httpRequest: async () => { helperCalled = true; throw new Error('network must not be touched offline'); } } };
+  const sent = await sendFn.call(thisArg, [{ json: out[0].json }], Buffer, {}, require);
+  check(SCEN, 'send with no FEISHU_BOT_WEBHOOK_URL -> honest skipped, zero network calls', sent[0].json.feishuDelivery.status === 'skipped' && helperCalled === false, sent[0].json.feishuDelivery.status);
+  const passthrough = await sendFn.call(thisArg, [{ json: rejected[0].json }], Buffer, {}, require);
+  check(SCEN, 'send passes a rejected input through untouched (no send attempt)', passthrough[0].json.feishuDelivery.status === 'rejected' && helperCalled === false);
 }
 
 console.log('');
