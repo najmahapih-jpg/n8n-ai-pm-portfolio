@@ -57,7 +57,7 @@ NODES_EXCLUDE=["n8n-nodes-base.executeCommand","n8n-nodes-base.readWriteFile"]
 Restart n8n after changing the environment:
 
 ```powershell
-docker compose -f D:\docker\n8n\docker-compose.yml --env-file D:\docker\n8n\.env up -d --force-recreate n8n n8n-runners
+docker compose -f <your-n8n-docker-dir>\docker-compose.yml --env-file <your-n8n-docker-dir>\.env up -d --force-recreate n8n n8n-runners
 ```
 
 ## Validation
