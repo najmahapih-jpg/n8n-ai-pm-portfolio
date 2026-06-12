@@ -21,11 +21,14 @@ import { workflow, node, trigger, sticky, ifElse, expr } from '@n8n/workflow-sdk
 // Execute-Workflow (no secret over HTTP) and wraps the real result(s) — incl. MULTI-TARGET FAN-OUT (one intent →
 // N callable siblings via executeWorkflow mode 'each', results collected per-target). Proven live vs the selftest
 // sibling, the real product-feedback SUT, and a 2-sibling fan-out. Non-callable intents stay decision-only.
+// v0.5.0 adds the UNIFIED NOTIFICATION OUTLET: intent 'notify' -> the feishu-notify sibling (same in-process
+// Execute-Workflow path), so one signed request posts a Feishu group card and no caller ever holds the
+// Feishu webhook URL/secret.
 // SSRF is closed BY CONSTRUCTION: callers name an intent, never a URL,
 // and security CONFIG (secret, body cap, replay window, live-mode) comes only from env/credential — a
 // webhook caller can neither loosen a cap nor force live routing.
 
-const POLICY_VERSION = 'interaction-gateway-v0.4.0';
+const POLICY_VERSION = 'interaction-gateway-v0.5.0';
 
 const receiveSignedRequest = trigger({
   type: 'n8n-nodes-base.webhook',
@@ -304,12 +307,13 @@ const ALLOWLIST = {
   'drift': ['scheduled-drift-monitor'],
   'feedback-then-grade': ['product-feedback', 'eval-harness'],
   'gateway-selftest': ['gateway-selftest-sibling'],
-  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling']
+  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling'],
+  'notify': ['feishu-notify']
 };
 // target -> n8n workflow id, ONLY for targets that expose an executeWorkflowTrigger (callable IN-PROCESS via
 // Execute Workflow). Business targets stay decision-only until each gets a trigger (tracked per-sibling); the
 // selftest sibling is the proven live target. Single-target live execution only in v0.2.0.
-const TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B', 'rag': 'jZ5Xfml8jbKexYqf', 'eval-harness': 'IhmmthDFMKdDbgvp', 'scheduled-drift-monitor': 'Gjd7wma62zubk3Wy', 'support-triage': 'RPkw9jGJ93lqs7jO' };
+const TARGET_WORKFLOW_IDS = { 'gateway-selftest-sibling': 'yqjMTU3XHwBT8b0L', 'product-feedback': '6Gc3wmri0tJre07B', 'rag': 'jZ5Xfml8jbKexYqf', 'eval-harness': 'IhmmthDFMKdDbgvp', 'scheduled-drift-monitor': 'Gjd7wma62zubk3Wy', 'support-triage': 'RPkw9jGJ93lqs7jO', 'feishu-notify': '6QIm8x1EsmVlObKj' };
 function resolve(intent, allowlist) {
   if (!intent || typeof intent !== 'string') return { ok: false, targets: [], reason: 'missing intent' };
   const targets = allowlist[intent];
@@ -568,9 +572,11 @@ const overview = sticky(
   'cap, replay window, live-mode) comes from env/credential ONLY — a webhook caller can neither loosen a cap ' +
   'nor force live routing. v0.4.0 routes a CALLABLE intent IN-PROCESS via a DYNAMIC Execute-Workflow (no secret ' +
   'over HTTP) and wraps the real result(s) — incl. MULTI-TARGET FAN-OUT (one intent -> N siblings, results ' +
-  'per-target); proven live vs the selftest sibling, the product-feedback SUT, and a 2-sibling fan-out. Every routed call + the response carry a ' +
+  'per-target); proven live vs the selftest sibling, the product-feedback SUT, and a 2-sibling fan-out. v0.5.0 adds ' +
+  'the UNIFIED NOTIFICATION OUTLET: intent \'notify\' -> the feishu-notify sibling (same in-process path), so one ' +
+  'signed request posts a Feishu group card and no caller ever holds the webhook URL/secret. Every routed call + the response carry a ' +
   'generated traceId (the cross-workflow trace metadata the review flagged as absent). policyVersion ' +
-  'interaction-gateway-v0.1.0.',
+  'interaction-gateway-v0.5.0.',
   [receiveSignedRequest, runFromUi, buildDemoRequest, normalizeRequest, enforceBodySize, verifySignature, stripSecrets, resolveRoute, routeToSiblings, buildResponse, respond],
   { name: 'interaction-gateway overview', color: 4 }
 );
