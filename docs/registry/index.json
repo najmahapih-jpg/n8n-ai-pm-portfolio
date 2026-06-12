@@ -1,8 +1,48 @@
 {
   "schemaVersion": 1,
   "generator": "scripts/Build-WorkflowIndex.ps1",
-  "workflowCount": 2,
+  "workflowCount": 3,
   "workflows": [
+    {
+      "slug": "feishu-notify-sibling",
+      "title": "Portfolio - Feishu Notify Sibling",
+      "description": "The portfolio's UNIFIED notification outlet, callable ONLY through the signed interaction-gateway (intent 'notify' -> Execute Workflow, in-process). One signed gateway request sends a Feishu group card, so no caller ever holds the Feishu webhook URL/secret. Build Notify Card is PURE (mirrors gateway-core normalizeNotifyInput + buildNotifyCard; differentially pinned offline); Send is env-gated exactly like the drift monitor's digest: unconfigured -> honest 'skipped', live error -> 'failed' (degrade, never crash, never a fabricated 'sent').",
+      "owner": "portfolio",
+      "department": "Product",
+      "version": "0.1.0",
+      "status": "live-tested",
+      "project": "n8n-interaction-gateway",
+      "lastWriter": "n8n public REST API",
+      "n8nWorkflowId": "6QIm8x1EsmVlObKj",
+      "source": "workflows\\sdk\\feishu-notify-sibling.workflow.js",
+      "canonical": "workflows\\canonical\\feishu-notify-sibling.canonical.json",
+      "release": "",
+      "request": "fixtures\\requests\\",
+      "trigger": "executeWorkflowTrigger (callable sub-workflow)",
+      "integrations": [
+        "n8n Execute Workflow Trigger (passthrough) — invoked in-process by interaction-gateway (YKT4FJmC8Xg2G9hs) on intent 'notify'",
+        "Feishu custom-bot webhook (FEISHU_BOT_WEBHOOK_URL + optional FEISHU_BOT_SIGNING_SECRET from the runner env; never in tracked JSON)"
+      ],
+      "tags": [
+        "gateway",
+        "sub-workflow",
+        "execute-workflow",
+        "notify",
+        "feishu",
+        "workflow-as-code"
+      ],
+      "fixtures": [],
+      "smokeCases": [],
+      "localOnly": true,
+      "nodeCount": 4,
+      "nodeTypes": [
+        "n8n-nodes-base.code",
+        "n8n-nodes-base.executeWorkflowTrigger",
+        "n8n-nodes-base.stickyNote"
+      ],
+      "complexity": "basic",
+      "notes": "v0.1.0 — the unified notification outlet (P5). 4 nodes (sticky + executeWorkflowTrigger + 2 code). Level maps the card header colour (info=blue / warn=yellow / error=red); the footer note carries the gateway traceId for end-to-end correlation. The card build is differentially pinned against gateway-core.mjs by test-gateway-workflow.mjs; the send half is live-only and degrades honestly."
+    },
     {
       "slug": "gateway-selftest-sibling",
       "title": "Portfolio - Gateway Selftest Sibling",
@@ -48,14 +88,14 @@
       "description": "Generic SIGNED-webhook edge for the n8n Workflow-as-Code portfolio. One authenticated POST entry point that VERIFIES (timing-safe HMAC-SHA256 over timestamp + '.' + rawBody, with a replay window) -> SIZE-LIMITS -> SECRET-STRIPS -> ROUTES a request by an allowlisted INTENT to sibling workflow(s), so each business workflow keeps its clean JSON contract and the gateway owns the production-edge controls. The four security functions are the single source of truth in scripts/lib/gateway-core.mjs; the n8n Code nodes MIRROR them inline, and scripts/test-gateway-workflow.mjs extracts the COMPILED Code-node bodies, runs the golden scenarios against them, AND differentially pins the four security gates (size/signature/strip/route -- verdicts, reasons, whole-body strip) to the .mjs, so the deployed security logic cannot silently drift from the audited core. Pipeline order is size-before-signature (reject an oversized body before spending crypto): enforceBodySize -> 413, verifySignature -> 401, stripSecrets (never forwarded/echoed/logged), resolveRoute (fixed intent -> allowlist; callers never name a URL -> SSRF-closed by construction) -> 422. Security CONFIG (secret, body cap, replay window, live-mode) comes from env/credential ONLY -- a webhook caller can neither loosen a cap nor force live routing. STUB-DEFAULT: v0.1.0 proves verify + size + strip + the ROUTING DECISION offline (the eval-plan Layer-2 scope). Live Execute-Workflow sibling EXECUTION (in-process, no secret over HTTP) is the opt-in next increment (requires each target to expose an executeWorkflowTrigger). Every routed call + the response carry a generated traceId. Deploys to n8n via the public REST API (no MCP).",
       "owner": "portfolio",
       "department": "Product",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "status": "live-tested",
       "project": "n8n-interaction-gateway",
       "lastWriter": "n8n public REST API",
       "n8nWorkflowId": "YKT4FJmC8Xg2G9hs",
       "source": "workflows\\sdk\\interaction-gateway.workflow.js",
       "canonical": "workflows\\canonical\\interaction-gateway.canonical.json",
-      "release": "workflows\\releases\\interaction-gateway-v0.4.0.json",
+      "release": "workflows\\releases\\interaction-gateway-v0.5.0.json",
       "request": "fixtures\\requests\\interaction-gateway.md",
       "trigger": "webhook (signed POST) + manual (editor demo)",
       "integrations": [
@@ -109,7 +149,7 @@
         "n8n-nodes-base.webhook"
       ],
       "complexity": "intermediate",
-      "notes": "v0.1.0 -- the portfolio's eighth project and first production EDGE/gateway. 12 nodes (2 triggers: signed webhook + manual demo; 1 sticky; 8 code: normalize/enforceBodySize/verifySignature/stripSecrets/resolveRoute/routeToSiblings/buildResponse/buildDemoRequest; 1 respondToWebhook). Gates green: verify:gateway (20/20 pure core) + verify:workflow (13 golden scenarios / 133 assertions incl. differential-vs-core, OFFLINE, runs the COMPILED jsCode) + verify:static + verify:json. Hard acceptance criteria asserted as REJECTED NEGATIVES: signature-reject (401) / oversized-body-reject (413) / secret-strip / non-allowlisted-intent-reject (422) / traceId-present. SSRF-closed by construction (intent->allowlist, never a caller URL). Security config is env-only (a webhook caller cannot loosen caps or force live mode). STUB-DEFAULT: v0.1.0 proves verify + size + strip + the routing DECISION offline; live Execute-Workflow sibling execution is the opt-in next increment (it requires each target sibling to expose an executeWorkflowTrigger -- none currently do; the ADR rejected HTTP-to-webhook routing to preserve the no-secret-over-HTTP property). DEPLOYED + LIVE-VERIFIED 2026-06-03 as n8n workflow YKT4FJmC8Xg2G9hs (active): verify:live passes -- valid signed request -> 200 + echoed traceId (gw-live-0001), tampered body -> 401 -- proving the deployed jsCode end-to-end (HMAC over the exact rawBody via text/plain, the secret read from the runner env). DEPLOY REQUIREMENTS (n8n external task-runner): the Code nodes load crypto via require('crypto'), so the runner needs NODE_FUNCTION_ALLOW_BUILTIN=crypto, and GATEWAY_SIGNING_SECRET must be set in the runner's env (where JS Code nodes execute) -- both added to docker-compose. LIVE TESTING CAUGHT WHAT OFFLINE COULD NOT: the first live run failed 'crypto is not defined' (the external runner sandbox exposes no crypto global; the offline harness had injected it) -- fixed by require('crypto') + the allow-builtin flag, with the harness updated to inject require so the differential still pins the deployed copy. verify:live (Test-GatewayLive.ps1) SKIPs honestly (exit 0, labeled) when n8n / the secret / the deployed webhook is absent. DEFERRED: live sibling routing + per-sibling executeWorkflowTrigger, fan-out live execution, thin Feishu/Slack/Teams inbound adapters onto this generic core, rate limiting (gateway/platform-delegated). Never touches the 5 existing workflow ids."
+      "notes": "v0.1.0 -- the portfolio's eighth project and first production EDGE/gateway. 12 nodes (2 triggers: signed webhook + manual demo; 1 sticky; 8 code: normalize/enforceBodySize/verifySignature/stripSecrets/resolveRoute/routeToSiblings/buildResponse/buildDemoRequest; 1 respondToWebhook). Gates green: verify:gateway (20/20 pure core) + verify:workflow (13 golden scenarios / 133 assertions incl. differential-vs-core, OFFLINE, runs the COMPILED jsCode) + verify:static + verify:json. Hard acceptance criteria asserted as REJECTED NEGATIVES: signature-reject (401) / oversized-body-reject (413) / secret-strip / non-allowlisted-intent-reject (422) / traceId-present. SSRF-closed by construction (intent->allowlist, never a caller URL). Security config is env-only (a webhook caller cannot loosen caps or force live mode). STUB-DEFAULT: v0.1.0 proves verify + size + strip + the routing DECISION offline; live Execute-Workflow sibling execution is the opt-in next increment (it requires each target sibling to expose an executeWorkflowTrigger -- none currently do; the ADR rejected HTTP-to-webhook routing to preserve the no-secret-over-HTTP property). DEPLOYED + LIVE-VERIFIED 2026-06-03 as n8n workflow YKT4FJmC8Xg2G9hs (active): verify:live passes -- valid signed request -> 200 + echoed traceId (gw-live-0001), tampered body -> 401 -- proving the deployed jsCode end-to-end (HMAC over the exact rawBody via text/plain, the secret read from the runner env). DEPLOY REQUIREMENTS (n8n external task-runner): the Code nodes load crypto via require('crypto'), so the runner needs NODE_FUNCTION_ALLOW_BUILTIN=crypto, and GATEWAY_SIGNING_SECRET must be set in the runner's env (where JS Code nodes execute) -- both added to docker-compose. LIVE TESTING CAUGHT WHAT OFFLINE COULD NOT: the first live run failed 'crypto is not defined' (the external runner sandbox exposes no crypto global; the offline harness had injected it) -- fixed by require('crypto') + the allow-builtin flag, with the harness updated to inject require so the differential still pins the deployed copy. verify:live (Test-GatewayLive.ps1) SKIPs honestly (exit 0, labeled) when n8n / the secret / the deployed webhook is absent. DEFERRED: live sibling routing + per-sibling executeWorkflowTrigger, fan-out live execution, thin Feishu/Slack/Teams inbound adapters onto this generic core, rate limiting (gateway/platform-delegated). Never touches the 5 existing workflow ids. v0.5.0 adds the UNIFIED NOTIFICATION OUTLET: intent 'notify' -> the feishu-notify sibling (6QIm8x1EsmVlObKj) posts a Feishu group card in-process; the card build is differentially pinned to gateway-core (verify:gateway 28/28, verify:workflow 189/189 across 17 golden scenarios)."
     }
   ]
 }
