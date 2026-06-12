@@ -32,6 +32,11 @@ const PAIRS = [
     name: 'gateway-selftest-sibling',
     sdk: join(repoRoot, 'workflows', 'sdk', 'gateway-selftest-sibling.workflow.js'),
     canonical: join(repoRoot, 'workflows', 'canonical', 'gateway-selftest-sibling.canonical.json')
+  },
+  {
+    name: 'feishu-notify-sibling',
+    sdk: join(repoRoot, 'workflows', 'sdk', 'feishu-notify-sibling.workflow.js'),
+    canonical: join(repoRoot, 'workflows', 'canonical', 'feishu-notify-sibling.canonical.json')
   }
 ];
 

@@ -12,7 +12,8 @@ export const DEFAULT_ALLOWLIST = {
   'drift': ['scheduled-drift-monitor'],
   'feedback-then-grade': ['product-feedback', 'eval-harness'],
   'gateway-selftest': ['gateway-selftest-sibling'],
-  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling']
+  'feedback-multi': ['product-feedback', 'gateway-selftest-sibling'],
+  'notify': ['feishu-notify']
 };
 
 // Default secret patterns (value-side) + sensitive key names (key-side). Mirrors the portfolio scanner.
@@ -86,6 +87,46 @@ export function resolveRoute(intent, allowlist = DEFAULT_ALLOWLIST) {
   const targets = allowlist[intent];
   if (!Array.isArray(targets) || targets.length === 0) return { ok: false, targets: [], reason: `non-allowlisted intent: ${intent}` };
   return { ok: true, targets: [...targets], reason: 'ok' };
+}
+
+// (5) normalizeNotifyInput — pure half of the feishu-notify sibling's input handling. The gateway already
+// secret-stripped the payload, so this only validates + bounds the notification fields. text is REQUIRED
+// (an empty notification is a caller bug, surfaced honestly); level coerces to a known set; title/text are
+// trimmed and capped (Feishu markdown limit). Mirrored inline by the sibling's 'Build Notify Card' node and
+// differentially pinned by test-gateway-workflow.mjs.
+export function normalizeNotifyInput(src) {
+  src = src && typeof src === 'object' ? src : {};
+  const payload = (src.payload && typeof src.payload === 'object') ? src.payload : src;
+  const text = String(payload.text ?? payload.message ?? '').trim().slice(0, 4000);
+  const title = String(payload.title ?? '').trim().slice(0, 120);
+  const rawLevel = String(payload.level ?? 'info').toLowerCase();
+  const level = (rawLevel === 'warn' || rawLevel === 'error') ? rawLevel : 'info';
+  const traceId = typeof src.traceId === 'string' ? src.traceId : (typeof payload.traceId === 'string' ? payload.traceId : '');
+  if (!text) return { ok: false, reason: 'missing text', notify: null };
+  return { ok: true, reason: 'ok', notify: { level, title, text, traceId } };
+}
+
+// (6) buildNotifyCard — deterministic Feishu interactive card for a normalized notification. Header colour
+// maps level (info=blue / warn=yellow / error=red); the footer note carries the traceId so a group message
+// is correlatable back through the gateway to the original signed request. No env, no time, no randomness:
+// byte-identical between this core and the sibling's compiled node.
+export function buildNotifyCard(notify, siblingPolicyVersion) {
+  const n = notify && typeof notify === 'object' ? notify : { level: 'info', title: '', text: '', traceId: '' };
+  const TEMPLATES = { info: 'blue', warn: 'yellow', error: 'red' };
+  const ICONS = { info: '🔔', warn: '⚠️', error: '🚨' };
+  const level = TEMPLATES[n.level] ? n.level : 'info';
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: TEMPLATES[level],
+      title: { tag: 'plain_text', content: ICONS[level] + ' ' + (n.title ? n.title : 'Portfolio notification') }
+    },
+    elements: [
+      { tag: 'markdown', content: String(n.text || '') },
+      { tag: 'hr' },
+      { tag: 'note', elements: [{ tag: 'plain_text', content: 'traceId ' + String(n.traceId || '-') + ' · via interaction-gateway notify · ' + String(siblingPolicyVersion || '') }] }
+    ]
+  };
 }
 
 export const _internal = { SECRET_VALUE_PATTERNS, SECRET_KEY_NAMES };

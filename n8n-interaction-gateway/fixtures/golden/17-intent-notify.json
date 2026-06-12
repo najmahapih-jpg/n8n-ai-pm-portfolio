@@ -1,0 +1,7 @@
+{
+  "id": "intent-notify",
+  "description": "The notify intent resolves to the feishu-notify sibling (the portfolio's unified notification outlet). OFFLINE this exercises the routing DECISION (routedTo == [feishu-notify]); the in-process Execute-Workflow send is proven by verify:live (the send half is env-gated: unconfigured -> skipped, error -> failed, never a fabricated sent).",
+  "env": { "GATEWAY_SIGNING_SECRET": "gateway-test-secret", "GATEWAY_NOW_SECONDS": 1000000, "GATEWAY_REPLAY_WINDOW_SECONDS": 300, "GATEWAY_MAX_BODY_BYTES": 65536 },
+  "request": { "intent": "notify", "payload": { "title": "Portfolio CI", "text": "All 10 matrix jobs are green.", "level": "info" }, "timestamp": 1000000, "sign": true },
+  "expect": { "statusCode": 200, "ok": true, "routedTo": ["feishu-notify"], "routedToLength": 1, "traceIdNonEmpty": true }
+}

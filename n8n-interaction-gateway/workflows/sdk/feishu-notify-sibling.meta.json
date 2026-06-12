@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "slug": "feishu-notify-sibling",
+  "title": "Portfolio - Feishu Notify Sibling",
+  "description": "The portfolio's UNIFIED notification outlet, callable ONLY through the signed interaction-gateway (intent 'notify' -> Execute Workflow, in-process). One signed gateway request sends a Feishu group card, so no caller ever holds the Feishu webhook URL/secret. Build Notify Card is PURE (mirrors gateway-core normalizeNotifyInput + buildNotifyCard; differentially pinned offline); Send is env-gated exactly like the drift monitor's digest: unconfigured -> honest 'skipped', live error -> 'failed' (degrade, never crash, never a fabricated 'sent').",
+  "owner": "portfolio",
+  "department": "Product",
+  "version": "0.1.0",
+  "status": "live-tested",
+  "project": "n8n-interaction-gateway",
+  "lastWriter": "n8n public REST API",
+  "n8nWorkflowId": "6QIm8x1EsmVlObKj",
+  "source": "feishu-notify-sibling.workflow.js",
+  "canonical": "feishu-notify-sibling.canonical.json",
+  "release": "",
+  "request": "",
+  "trigger": "executeWorkflowTrigger (callable sub-workflow)",
+  "integrations": [
+    "n8n Execute Workflow Trigger (passthrough) — invoked in-process by interaction-gateway (YKT4FJmC8Xg2G9hs) on intent 'notify'",
+    "Feishu custom-bot webhook (FEISHU_BOT_WEBHOOK_URL + optional FEISHU_BOT_SIGNING_SECRET from the runner env; never in tracked JSON)"
+  ],
+  "tags": [ "gateway", "sub-workflow", "execute-workflow", "notify", "feishu", "workflow-as-code" ],
+  "fixtures": [],
+  "smokeCases": [],
+  "localOnly": true,
+  "buildMechanism": "sdk-standalone (@n8n/workflow-sdk 0.15.1) compiled via scripts/lib/compile-sdk.mjs, deployed via the n8n public REST API. Must be ACTIVE/published in n8n 2.x for the gateway's Execute Workflow node to reference it.",
+  "notes": "v0.1.0 — the unified notification outlet (P5). 4 nodes (sticky + executeWorkflowTrigger + 2 code). Level maps the card header colour (info=blue / warn=yellow / error=red); the footer note carries the gateway traceId for end-to-end correlation. The card build is differentially pinned against gateway-core.mjs by test-gateway-workflow.mjs; the send half is live-only and degrades honestly.",
+  "updatedAt": "2026-06-11T00:00:00Z"
+}

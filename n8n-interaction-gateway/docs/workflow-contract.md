@@ -4,12 +4,12 @@
 
 - Name: `Portfolio - Interaction Gateway`
 - n8n workflow id: `YKT4FJmC8Xg2G9hs` (active)
-- Version: `interaction-gateway-v0.4.0`
+- Version: `interaction-gateway-v0.5.0`
 - Primary entry point: `POST /webhook/portfolio/interaction-gateway`
 - Content type: `text/plain` (the exact raw bytes that are HMAC-signed)
 - Default mode: offline decision-only (no sibling execution without live n8n)
 - Source of truth: `workflows/sdk/interaction-gateway.workflow.js`
-- Release snapshot: `workflows/releases/interaction-gateway-v0.4.0.json`
+- Release snapshot: `workflows/releases/interaction-gateway-v0.5.0.json`
 
 ## Purpose
 
@@ -54,6 +54,7 @@ Request envelope fields:
 | `feedback-then-grade` | `product-feedback`, `eval-harness` (fan-out) |
 | `gateway-selftest` | `gateway-selftest-sibling` |
 | `feedback-multi` | `product-feedback`, `gateway-selftest-sibling` (fan-out) |
+| `notify` | `feishu-notify` (the portfolio's unified notification outlet -> Feishu group card) |
 
 Callers name an intent, never a URL. The allowlist is the only routing surface. SSRF is closed by construction.
 
@@ -81,7 +82,7 @@ Successful authenticated responses return HTTP 200:
     "fanout": false,
     "perTarget": []
   },
-  "policyVersion": "interaction-gateway-v0.4.0"
+  "policyVersion": "interaction-gateway-v0.5.0"
 }
 ```
 
@@ -104,7 +105,7 @@ When a callable sibling executes in-process (`executed: true`):
       }
     ]
   },
-  "policyVersion": "interaction-gateway-v0.4.0"
+  "policyVersion": "interaction-gateway-v0.5.0"
 }
 ```
 
@@ -125,6 +126,7 @@ Error responses always include `ok: false` and `traceId`.
 - Callable siblings are reached via n8n Execute Workflow (in-process). Each sibling must expose an `executeWorkflowTrigger` node to be callable.
 - The gateway **forwards its own `traceId` into the in-process sibling payload** (as `payload.traceId`, with `payload.requestId` set to the same value for the `traceId ?? requestId` fallback, and also at the item top level). A routed sibling that captures `body.traceId ?? body.requestId` therefore echoes back the SAME gateway `traceId`, making the gateway→sibling chain end-to-end correlatable. The gateway reuses its existing `traceId` (never generates a second id), and the forward is additive — the cleaned payload fields are preserved.
 - No external HTTP calls to sibling workflows (no credentials over the wire).
+- The `feishu-notify` sibling (the `notify` intent's target) makes ONE outbound HTTP call — to the Feishu custom-bot webhook (`FEISHU_BOT_WEBHOOK_URL` + optional `FEISHU_BOT_SIGNING_SECRET`, runner env only). Unconfigured -> honest `skipped`; a send error -> `failed` (degrade, never crash, never a fabricated `sent`).
 - `verify:live` (`scripts/Test-GatewayLive.ps1`) signs a real request to the deployed gateway and asserts `valid→200+traceId` and `tampered→401`. It skips honestly when n8n, the secret, or the webhook is absent.
 
 ## Security and Privacy Boundary
@@ -147,7 +149,7 @@ npm run verify:gateway
 npm run verify:workflow
 ```
 
-`verify:gateway` (20 assertions) pins the pure security-core functions. `verify:workflow` (171 assertions across 16 golden scenarios plus a live-branch traceId-forward check) runs the compiled pipeline and differentially pins every security decision against the core so the deployed logic cannot silently drift. The traceId-forward check drives an accepted, callable request through the compiled `Prepare Sibling Input` node and asserts the gateway's `traceId` is forwarded into the sibling payload (the live branch is otherwise uncovered by the offline differential pipeline).
+`verify:gateway` (28 assertions) pins the pure security-core functions. `verify:workflow` (189 assertions across 17 golden scenarios plus a live-branch traceId-forward check and a feishu-notify-sibling differential) runs the compiled pipeline and differentially pins every security decision against the core so the deployed logic cannot silently drift. The traceId-forward check drives an accepted, callable request through the compiled `Prepare Sibling Input` node and asserts the gateway's `traceId` is forwarded into the sibling payload (the live branch is otherwise uncovered by the offline differential pipeline).
 
 Live gate is opt-in: `npm run verify:live`.
 
@@ -157,7 +159,7 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
 
 ```json
 {
-  "contractVersion": "interaction-gateway-v0.4.0",
+  "contractVersion": "interaction-gateway-v0.5.0",
   "webhookPath": "webhook/portfolio/interaction-gateway",
   "request": {
     "contentType": "text/plain",
@@ -185,7 +187,8 @@ Parsed by `n8n-contract-test-runner` (`Test-Contract.ps1`). `request.limits` are
     "drift": ["scheduled-drift-monitor"],
     "feedback-then-grade": ["product-feedback", "eval-harness"],
     "gateway-selftest": ["gateway-selftest-sibling"],
-    "feedback-multi": ["product-feedback", "gateway-selftest-sibling"]
+    "feedback-multi": ["product-feedback", "gateway-selftest-sibling"],
+    "notify": ["feishu-notify"]
   }
 }
 ```

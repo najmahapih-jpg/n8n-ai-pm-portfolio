@@ -1,9 +1,9 @@
 # Requirement spec — interaction-gateway
 
-Status: **implemented v0.4.0** — authored eval-first (spec → eval-plan → ADR → build), then built + deployed +
+Status: **implemented v0.5.0** — authored eval-first (spec → eval-plan → ADR → build), then built + deployed +
 live-verified. Date: 2026-06-03. The security controls are proven OFFLINE (`verify:gateway` 20/20 +
 `verify:workflow` 16 scenarios / 166 assertions incl. a differential vs the core, run against the compiled jsCode);
-**v0.4.0 adds MULTI-TARGET FAN-OUT** (one intent → N callable siblings in-process via Execute-Workflow, results per-target), proven live.
+**v0.4.0 adds MULTI-TARGET FAN-OUT** (one intent → N callable siblings in-process via Execute-Workflow, results per-target), proven live. **v0.5.0 adds the UNIFIED NOTIFICATION OUTLET**: intent `notify` → the `feishu-notify` sibling posts a Feishu group card (env-gated send: unconfigured→skipped, error→failed, never a fabricated sent), so no caller ever holds the webhook URL/secret.
 
 ## Why this exists
 

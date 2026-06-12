@@ -2,7 +2,7 @@
 // Asserts every hard-acceptance criterion as a NEGATIVE that MUST be rejected, plus the positives, so the
 // security functions cannot silently no-op. No n8n, no network.
 import crypto from 'node:crypto';
-import { verifySignature, enforceBodySize, stripSecrets, resolveRoute } from './lib/gateway-core.mjs';
+import { verifySignature, enforceBodySize, stripSecrets, resolveRoute, normalizeNotifyInput, buildNotifyCard } from './lib/gateway-core.mjs';
 
 let pass = 0, fail = 0;
 function check(name, ok, detail = '') {
@@ -54,6 +54,18 @@ check('intent-fanout -> 2 targets (composition)', resolveRoute('feedback-then-gr
 check('intent-unknown -> 422 (not routed)', !resolveRoute('delete-everything').ok);
 check('intent-missing -> 422 (not routed)', !resolveRoute('').ok);
 check('targets are intent names, never URLs', resolveRoute('support-triage').targets.every((t) => !/https?:\/\//i.test(t)));
+check('intent-notify -> 1 target (unified notification outlet)', resolveRoute('notify').targets.length === 1 && resolveRoute('notify').targets[0] === 'feishu-notify');
+
+// --- notify (unified notification outlet: validation + deterministic card) ---
+const okNotify = normalizeNotifyInput({ payload: { title: 'Deploy done', text: 'CI is green', level: 'warn' }, traceId: 'gw-abc' });
+check('notify-valid -> normalized with level/title/text/traceId', okNotify.ok && okNotify.notify.level === 'warn' && okNotify.notify.title === 'Deploy done' && okNotify.notify.traceId === 'gw-abc');
+check('notify-missing-text -> rejected honestly (caller bug, not a silent drop)', !normalizeNotifyInput({ payload: { title: 'no body' } }).ok);
+check('notify-bad-level -> coerced to info (never an unknown header template)', normalizeNotifyInput({ payload: { text: 'x', level: 'panic' } }).notify.level === 'info');
+check('notify-text-capped at 4000 (Feishu markdown limit)', normalizeNotifyInput({ payload: { text: 'a'.repeat(5000) } }).notify.text.length === 4000);
+const card = buildNotifyCard(okNotify.notify, 'feishu-notify-sibling-v0.1.0');
+check('notify-card: level maps header colour (warn=yellow)', card.header.template === 'yellow');
+check('notify-card: footer note carries the traceId for end-to-end correlation', card.elements[2].elements[0].content.includes('gw-abc'));
+check('notify-card: deterministic (same input -> byte-identical card)', JSON.stringify(card) === JSON.stringify(buildNotifyCard(okNotify.notify, 'feishu-notify-sibling-v0.1.0')));
 
 console.log('');
 console.log(`gateway-core self-test: ${pass} passed, ${fail} failed`);
