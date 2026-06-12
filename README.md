@@ -5,8 +5,8 @@ authenticated entry point that verifies → normalizes → routes a request to t
 so each business workflow keeps its clean JSON contract and the gateway owns the production-edge controls
 (HMAC signature, body-size cap, secret-stripping, intent allowlist, trace propagation).
 
-> **Status: implemented v0.4.0 (2026-06-03).** The SDK workflow + pure security core are built and proven
-> OFFLINE: `verify:gateway` (20/20 pure core) and `verify:workflow` (16 golden scenarios / 171 assertions incl. a differential
+> **Status: implemented v0.5.0 (2026-06-12).** The SDK workflow + pure security core are built and proven
+> OFFLINE: `verify:gateway` (28/28 pure core) and `verify:workflow` (17 golden scenarios / 189 assertions incl. a differential
 > vs the core, run against the COMPILED jsCode), plus `verify:static` / `verify:json`. **v0.4.0 routes a callable
 > intent IN-PROCESS via dynamic Execute Workflow — incl. MULTI-TARGET FAN-OUT (one intent → N siblings, results
 > per-target)**; proven live vs the real product-feedback SUT + a 2-sibling fan-out. Non-callable intents stay decision-only.
@@ -18,8 +18,8 @@ Prereqs: Node ≥ 20 and [PowerShell 7+](https://learn.microsoft.com/powershell/
 
 ```bash
 npm ci
-npm run verify:static   # everything offline: secret scan, JSON shape, 20/20 security core,
-                        # 171-assertion compiled-workflow differential, canonical==SDK gate
+npm run verify:static   # everything offline: secret scan, JSON shape, 28/28 security core,
+                        # 189-assertion compiled-workflow differential, canonical==SDK gate
 ```
 
 Every gate is **stub-default**: a fresh clone runs green with no n8n, no keys, no network. The live
@@ -64,10 +64,10 @@ signature-reject · oversized-body-reject · secret-strip · non-allowlisted-int
 ## Status & roadmap
 
 **Done (v0.1.0 → v0.2.0):**
-1. ✅ The four pure functions (`scripts/lib/gateway-core.mjs`) + offline self-test (`verify:gateway`, 20/20).
+1. ✅ The four pure functions (`scripts/lib/gateway-core.mjs`) + offline self-test (`verify:gateway`, 28/28).
 2. ✅ The SDK workflow (`workflows/sdk/interaction-gateway.workflow.js`, 17 nodes): normalize → enforceBodySize
    → verifySignature → stripSecrets → resolveRoute → (live Execute-Workflow | route-decision) → respond, with `traceId`.
-3. ✅ `verify:workflow` — runs the **compiled** jsCode against 16 golden scenarios **and** differentially pins
+3. ✅ `verify:workflow` — runs the **compiled** jsCode against 17 golden scenarios **and** differentially pins
    the four security gates against the core (verdicts, reasons, whole-body strip), so the deployed logic can't
    silently drift. Plus `verify:static` / `verify:json`.
 4. ✅ Opt-in `verify:live` (`scripts/Test-GatewayLive.ps1`) — signs a real request to the deployed gateway,
