@@ -15,9 +15,12 @@ function ConvertTo-RelativePath {
     [string]$Path
   )
 
-  $baseUri = [System.Uri]((Resolve-Path -LiteralPath $BasePath).Path.TrimEnd("\") + "\")
-  $pathUri = [System.Uri]((Resolve-Path -LiteralPath $Path).Path)
-  return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($pathUri).ToString()).Replace("/", "\")
+  # GetRelativePath works on both Windows and Linux runners (the System.Uri approach treats
+  # POSIX paths as relative URIs and MakeRelativeUri throws). Registry entries are normalized
+  # to backslashes so the generated output is byte-identical to the committed registry on any OS.
+  $base = (Resolve-Path -LiteralPath $BasePath).Path
+  $full = (Resolve-Path -LiteralPath $Path).Path
+  return [System.IO.Path]::GetRelativePath($base, $full).Replace("/", "\")
 }
 
 function Escape-MarkdownCell {
@@ -78,7 +81,8 @@ $entries = foreach ($canonicalFile in $canonicalFiles) {
   $nodeTypes = @($nodes | ForEach-Object { [string]$_.type } | Sort-Object -Unique)
   $triggerTypes = @($nodeTypes | Where-Object { $_ -match '(?i)(webhook|trigger)' })
   $release = if ($meta -and $meta.PSObject.Properties["release"]) { [string]$meta.release } else { "" }
-  $releasePath = if (-not [string]::IsNullOrWhiteSpace($release)) { Join-Path "workflows\releases" $release } else { "" }
+  # registry values keep Windows-style separators on every OS (Join-Path would emit "/" on Linux)
+  $releasePath = if (-not [string]::IsNullOrWhiteSpace($release)) { "workflows\releases\" + $release } else { "" }
 
   [pscustomobject][ordered]@{
     slug = if ($meta -and $meta.PSObject.Properties["slug"]) { [string]$meta.slug } else { $slug }
@@ -91,10 +95,10 @@ $entries = foreach ($canonicalFile in $canonicalFiles) {
     project = if ($meta -and $meta.PSObject.Properties["project"]) { [string]$meta.project } else { "" }
     lastWriter = if ($meta -and $meta.PSObject.Properties["lastWriter"]) { [string]$meta.lastWriter } else { "" }
     n8nWorkflowId = if ($meta -and $meta.PSObject.Properties["n8nWorkflowId"]) { [string]$meta.n8nWorkflowId } else { "" }
-    source = if ($meta -and $meta.PSObject.Properties["source"]) { Join-Path "workflows\sdk" ([string]$meta.source) } else { "" }
+    source = if ($meta -and $meta.PSObject.Properties["source"]) { "workflows\sdk\" + ([string]$meta.source) } else { "" }
     canonical = ConvertTo-RelativePath -BasePath $repoRoot -Path $canonicalFile.FullName
     release = $releasePath
-    request = if ($meta -and $meta.PSObject.Properties["request"]) { Join-Path "fixtures\requests" ([string]$meta.request) } else { "" }
+    request = if ($meta -and $meta.PSObject.Properties["request"]) { "fixtures\requests\" + ([string]$meta.request) } else { "" }
     trigger = if ($meta -and $meta.PSObject.Properties["trigger"]) { [string]$meta.trigger } elseif ($triggerTypes.Count -gt 0) { $triggerTypes -join ", " } else { "" }
     integrations = [string[]]@(Get-ArrayValue -Object $meta -Name "integrations")
     tags = [string[]]@(Get-ArrayValue -Object $meta -Name "tags")
